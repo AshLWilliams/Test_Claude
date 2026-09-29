@@ -13,6 +13,6 @@
 Рекорд сохраняется в `localStorage`.
 
 ## Telegram
-Игра запускается как Telegram Game. В @BotFather: `/newgame` → короткое имя `stardodger` и URL страницы игры.
+Игра запускается как Telegram Game. В @BotFather: `/setinline`, затем `/newgame` с коротким именем `stardodger`. Адрес игры бот отдаёт сам (`GAME_URL`).
 Бот (`bot/bot.js`, Node 18+): `BOT_TOKEN=... node bot/bot.js` — отвечает на `/start` и `/play` сообщением с игрой.
 Токен бота хранится только в переменной окружения, в репозиторий его не добавляйте.
