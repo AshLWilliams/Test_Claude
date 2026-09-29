@@ -26,13 +26,61 @@ function reset() {
 }
 reset();
 
+// Типы астероидов: обычный, ледяной (мелкий и быстрый), железный (виляет), лавовый (крупный, медленный)
+const ROCK_TYPES = {
+  rock: { fill: ['#7d7688', '#4a4556'], edge: '#b4adc4', glow: null, size: [16, 34], speed: [110, 190], sway: 0 },
+  ice:  { fill: ['#bfeaff', '#4f8fc7'], edge: '#e6f8ff', glow: '#7fd4ff', size: [10, 20], speed: [220, 320], sway: 0 },
+  iron: { fill: ['#b9b2a6', '#5c5852'], edge: '#e2ddd2', glow: null, size: [18, 28], speed: [120, 180], sway: 90 },
+  lava: { fill: ['#ff9a3c', '#8a1d0c'], edge: '#ffd27a', glow: '#ff5a1f', size: [30, 46], speed: [70, 120], sway: 0 },
+};
+
+function pickRockType() {
+  const t = Math.random(), late = Math.min(1, time / 60);
+  if (t < 0.12 + late * 0.10) return 'lava';
+  if (t < 0.34 + late * 0.14) return 'ice';
+  if (t < 0.56 + late * 0.14) return 'iron';
+  return 'rock';
+}
+
 function makeRock() {
-  const r = rand(14, 34);
-  const pts = Array.from({ length: 9 }, (_, i) => {
-    const a = (i / 9) * Math.PI * 2, d = r * rand(0.75, 1.15);
+  const type = pickRockType(), T = ROCK_TYPES[type];
+  const r = rand(...T.size);
+  const pts = Array.from({ length: 11 }, (_, i) => {
+    const a = (i / 11) * Math.PI * 2, d = r * (type === 'ice' ? rand(0.85, 1.1) : rand(0.75, 1.15));
     return [Math.cos(a) * d, Math.sin(a) * d];
   });
-  rocks.push({ x: rand(r, W - r), y: -r, r, pts, vy: rand(110, 190) + time * 4, rot: 0, vr: rand(-2, 2) });
+  const craters = Array.from({ length: 3 }, () => ({ x: rand(-r, r) * 0.5, y: rand(-r, r) * 0.5, s: rand(0.12, 0.25) * r }));
+  rocks.push({
+    type, x: rand(r, W - r), y: -r, r, pts, craters,
+    vy: rand(...T.speed) + time * 4, rot: 0, vr: rand(-2, 2) * (type === 'lava' ? 0.4 : 1),
+    baseX: 0, swayT: rand(0, 6), sway: T.sway,
+  });
+  rocks[rocks.length - 1].baseX = rocks[rocks.length - 1].x;
+}
+
+function drawRock(r) {
+  const T = ROCK_TYPES[r.type];
+  ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.rot);
+  if (T.glow) { ctx.shadowColor = T.glow; ctx.shadowBlur = r.type === 'lava' ? 26 : 14; }
+  const g = ctx.createRadialGradient(-r.r * 0.35, -r.r * 0.35, r.r * 0.1, 0, 0, r.r * 1.1);
+  g.addColorStop(0, T.fill[0]); g.addColorStop(1, T.fill[1]);
+  ctx.fillStyle = g; ctx.strokeStyle = T.edge; ctx.lineWidth = 2;
+  ctx.beginPath(); r.pts.forEach(([px, py], i) => i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)); ctx.closePath();
+  ctx.fill(); ctx.shadowBlur = 0; ctx.stroke();
+  if (r.type === 'ice') { // блики-грани
+    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-r.r * 0.5, -r.r * 0.1); ctx.lineTo(0, -r.r * 0.5); ctx.lineTo(r.r * 0.4, -r.r * 0.05); ctx.stroke();
+  } else if (r.type === 'iron') { // заклёпки-полосы
+    ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-r.r * 0.7, 0); ctx.lineTo(r.r * 0.7, 0); ctx.moveTo(0, -r.r * 0.7); ctx.lineTo(0, r.r * 0.7); ctx.stroke();
+  } else if (r.type === 'lava') { // раскалённые трещины
+    ctx.strokeStyle = '#ffe08a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-r.r * 0.6, r.r * 0.1); ctx.lineTo(-r.r * 0.1, -r.r * 0.2); ctx.lineTo(r.r * 0.2, r.r * 0.3); ctx.lineTo(r.r * 0.6, -r.r * 0.1); ctx.stroke();
+  } else { // кратеры
+    ctx.fillStyle = 'rgba(0,0,0,.25)';
+    for (const c of r.craters) { ctx.beginPath(); ctx.arc(c.x, c.y, c.s, 0, 7); ctx.fill(); }
+  }
+  ctx.restore();
 }
 
 function burst(x, y, color, n = 16) {
@@ -66,6 +114,7 @@ function update(dt) {
 
   for (const r of rocks) {
     r.y += r.vy * dt; r.rot += r.vr * dt;
+    if (r.sway) { r.swayT += dt * 2.5; r.x = Math.max(r.r, Math.min(W - r.r, r.baseX + Math.sin(r.swayT) * r.sway)); }
     if (invuln <= 0 && Math.hypot(r.x - ship.x, r.y - ship.y) < r.r * 0.85 + 14) {
       r.dead = true; lives--; invuln = 1.5; shake = 10;
       burst(ship.x, ship.y, '#ff5d5d', 26); burst(r.x, r.y, '#b9a99a', 14);
@@ -94,12 +143,34 @@ function gameOver() {
 function drawShip() {
   if (mode === 'over') return;
   if (invuln > 0 && Math.floor(invuln * 12) % 2) return; // мигание
+  const w = ship.w, h = ship.h, flick = 0.8 + Math.random() * 0.4;
   ctx.save(); ctx.translate(ship.x, ship.y);
   ctx.rotate(ship.vx / 2500);
-  ctx.fillStyle = '#ffd76a'; ctx.strokeStyle = '#fff3c4'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(0, -ship.h / 2); ctx.lineTo(ship.w / 2, ship.h / 2); ctx.lineTo(0, ship.h / 4); ctx.lineTo(-ship.w / 2, ship.h / 2); ctx.closePath();
+  ctx.lineJoin = 'round';
+  // пламя двигателей
+  const fl = ctx.createLinearGradient(0, h / 2, 0, h / 2 + 22 * flick);
+  fl.addColorStop(0, '#fff6c0'); fl.addColorStop(0.4, '#ff9a3c'); fl.addColorStop(1, 'rgba(255,80,20,0)');
+  ctx.fillStyle = fl;
+  for (const ex of [-7, 7]) { ctx.beginPath(); ctx.moveTo(ex - 4, h / 2 - 4); ctx.lineTo(ex, h / 2 + 22 * flick); ctx.lineTo(ex + 4, h / 2 - 4); ctx.fill(); }
+  // крылья
+  const wing = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+  wing.addColorStop(0, '#c0392b'); wing.addColorStop(0.5, '#ff6b4a'); wing.addColorStop(1, '#c0392b');
+  ctx.fillStyle = wing; ctx.strokeStyle = '#ffd0c4'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-6, -2); ctx.lineTo(-w / 2 - 2, h / 2 - 2); ctx.lineTo(-w / 2 + 6, h / 2 + 2); ctx.lineTo(-5, h / 2 - 8); ctx.closePath();
+  ctx.moveTo(6, -2); ctx.lineTo(w / 2 + 2, h / 2 - 2); ctx.lineTo(w / 2 - 6, h / 2 + 2); ctx.lineTo(5, h / 2 - 8); ctx.closePath();
   ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#5ff0ff'; ctx.beginPath(); ctx.arc(0, 2, 5, 0, 7); ctx.fill();
+  // корпус
+  const hull = ctx.createLinearGradient(-8, 0, 8, 0);
+  hull.addColorStop(0, '#9fb0d0'); hull.addColorStop(0.5, '#f4f7ff'); hull.addColorStop(1, '#8496b8');
+  ctx.fillStyle = hull; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, -h / 2 - 2); ctx.quadraticCurveTo(10, -h / 6, 8, h / 2 - 4); ctx.lineTo(-8, h / 2 - 4); ctx.quadraticCurveTo(-10, -h / 6, 0, -h / 2 - 2); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // кабина
+  const cp = ctx.createRadialGradient(-1, -6, 1, 0, -3, 9);
+  cp.addColorStop(0, '#e8ffff'); cp.addColorStop(1, '#1fb5d4');
+  ctx.fillStyle = cp; ctx.beginPath(); ctx.ellipse(0, -4, 4.5, 8, 0, 0, 7); ctx.fill();
+  // огни на крыльях
+  ctx.fillStyle = '#ffd76a'; ctx.beginPath(); ctx.arc(-w / 2 + 2, h / 2 - 2, 2, 0, 7); ctx.arc(w / 2 - 2, h / 2 - 2, 2, 0, 7); ctx.fill();
   ctx.restore();
 }
 
@@ -120,12 +191,7 @@ function draw() {
   ctx.fillStyle = '#0a0d24'; ctx.fillRect(-20, -20, W + 40, H + 40);
   for (const s of stars) { ctx.fillStyle = `rgba(200,215,255,${0.3 + s.z * 0.4})`; ctx.fillRect(s.x, s.y, s.z * 1.8, s.z * 1.8); }
   for (const g of gems) drawGem(g);
-  for (const r of rocks) {
-    ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.rot);
-    ctx.fillStyle = '#5b5568'; ctx.strokeStyle = '#a79fb8'; ctx.lineWidth = 2;
-    ctx.beginPath(); r.pts.forEach(([px, py], i) => i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)); ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.restore();
-  }
+  for (const r of rocks) drawRock(r);
   drawShip();
   for (const p of particles) { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.fillRect(p.x - 2, p.y - 2, 4, 4); }
   ctx.globalAlpha = 1;
