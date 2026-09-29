@@ -6,3 +6,8 @@ compatibility_date = "2025-09-01"
 GAME_URL = "https://ashlwilliams.github.io/Test_Claude/"
 GAME_SHORT_NAME = "stardodger"
 # Секрет BOT_TOKEN задаётся командой: npx wrangler secret put BOT_TOKEN
+
+# Общий рейтинг всех игроков (Cloudflare KV)
+[[kv_namespaces]]
+binding = "LB"
+id = "afeb06c43081439a9beba1a30ec71ad9"

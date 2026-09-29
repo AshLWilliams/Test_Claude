@@ -3,3 +3,7 @@ main { min-height: 100%; display: flex; flex-direction: column; align-items: cen
 h1 { margin: 0; font-size: 1.4rem; letter-spacing: .1em; color: #ffd76a; }
 canvas { max-width: 96vw; max-height: 82vh; aspect-ratio: 3 / 4; background: #0a0d24; border: 2px solid #2a3170; border-radius: 10px; box-shadow: 0 0 30px #2a317088; touch-action: none; cursor: none; }
 .hint { margin: 0; font-size: .8rem; opacity: .7; }
+#nameForm { display: flex; gap: 8px; }
+#nameForm[hidden] { display: none; }
+#nameForm input, #nameForm button { font: inherit; font-size: 1rem; padding: 8px 12px; border-radius: 8px; border: 2px solid #2a3170; background: #0a0d24; color: #cfd8ff; }
+#nameForm button { background: #ffd76a; color: #05060f; border-color: #ffd76a; font-weight: bold; cursor: pointer; }
