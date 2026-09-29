@@ -15,7 +15,7 @@ const TICKET_TTL = 24 * 3600; // секунд
 // Игры бота: короткое имя из @BotFather → папка на сайте, команда бота и граница правдоподобия (очков в секунду + запас)
 const GAMES = {
   stardodger:  { path: '',          cmd: 'play', rate: 40, base: 100 },
-  levelrunner: { path: 'surveyor/', cmd: 'run',  rate: 80, base: 4000 },
+  levelrunner: { path: 'surveyor/', cmd: 'run',  rate: 400, base: 10000 }, // кампания из 10 участков с бонусами за каждый
 };
 const gameOf = name => (GAMES[name] ? name : 'stardodger'); // старые билеты без игры — Star Dodger
 const plausible = (g, score, duration) => score >= 0 && duration > 0 && duration < 3600 && score <= GAMES[g].rate * duration + GAMES[g].base;
