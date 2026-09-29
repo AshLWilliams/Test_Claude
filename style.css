@@ -7,3 +7,4 @@ canvas { max-width: 96vw; max-height: 82vh; aspect-ratio: 3 / 4; background: #0a
 #nameForm[hidden] { display: none; }
 #nameForm input, #nameForm button { font: inherit; font-size: 1rem; padding: 8px 12px; border-radius: 8px; border: 2px solid #2a3170; background: #0a0d24; color: #cfd8ff; }
 #nameForm button { background: #ffd76a; color: #05060f; border-color: #ffd76a; font-weight: bold; cursor: pointer; }
+.hint a { color: #ffd76a; }
