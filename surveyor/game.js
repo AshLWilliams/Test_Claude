@@ -3,7 +3,14 @@
 // Уровень один, но каждый раз генерируется заново. Рейка — оружие, на врагов можно и прыгать сверху.
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const W = canvas.width, H = canvas.height;
+const H = 360;       // высота кадра в игровых единицах постоянна
+let W = 640;         // ширина подстраивается под экран: на вытянутом телефоне видно больше уровня
+let scale = 1;       // пикселей холста на игровую единицу (с учётом плотности экрана)
+let cssScale = 1;    // CSS-пикселей на игровую единицу
+let rotated = false; // телефон держат вертикально — сцена повёрнута на 90°
+const IS_TOUCH = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+const stage = document.getElementById('stage');
+if (IS_TOUCH) document.body.classList.add('touch');
 
 const GAME = 'levelrunner';
 const API = 'https://star-dodger.ashlwilliams.workers.dev';
@@ -34,7 +41,8 @@ let mode = 'menu'; // menu | play | pause | over | win
 let overAt = 0;
 let board = null, globalBoard = null, session = null, final = null;
 
-const input = { left: false, right: false, down: false, jumpHeld: false };
+const input = { left: false, right: false, down: false, jumpHeld: false }; // итоговое состояние: клавиатура + сенсорные кнопки
+const kb = { left: false, right: false, down: false, jump: false };
 let jumpBuf = 0, attackQueued = false;
 
 const nameForm = document.getElementById('nameForm'), nameInput = document.getElementById('nameInput');
@@ -46,6 +54,34 @@ function mulberry32(a) {
 }
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+// ---------- раскладка: горизонтальный кадр на любом экране ----------
+function layout() {
+  const vw = innerWidth, vh = innerHeight;
+  rotated = IS_TOUCH && vh > vw;
+  document.body.classList.toggle('rotated', rotated);
+  let sw = rotated ? vh : vw, sh = rotated ? vw : vh; // размеры сцены в её собственной, горизонтальной системе
+  if (!IS_TOUCH) { sw = Math.min(vw * 0.96, 1100, vh * 0.78 * 16 / 9); sh = sw * 9 / 16; } // компьютер — окно 16:9
+  stage.style.width = sw + 'px'; stage.style.height = sh + 'px';
+  W = Math.round(Math.max(560, Math.min(860, H * sw / sh)));
+  cssScale = Math.min(sw / W, sh / H);
+  const cw = W * cssScale, ch = H * cssScale;
+  Object.assign(canvas.style, { width: cw + 'px', height: ch + 'px', left: (sw - cw) / 2 + 'px', top: (sh - ch) / 2 + 'px' });
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+  scale = canvas.width / W;
+}
+addEventListener('resize', layout);
+addEventListener('orientationchange', () => setTimeout(layout, 250));
+layout();
+
+// точка на экране → координаты игры (с учётом поворота сцены)
+function toGame(e) {
+  let x = e.clientX, y = e.clientY;
+  if (rotated) { const t = x; x = y; y = innerWidth - t; }
+  else { const r = stage.getBoundingClientRect(); x -= r.left; y -= r.top; }
+  return { x: (x - canvas.offsetLeft) / cssScale, y: (y - canvas.offsetTop) / cssScale };
+}
+
 const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
 // ---------- генерация уровня ----------
@@ -615,23 +651,24 @@ function drawHUD() {
     ctx.beginPath(); ctx.arc(128 + i * 22, 20, 7, Math.PI, 0); ctx.fill(); ctx.fillRect(120 + i * 22, 19, 16, 2);
   }
   // прогресс до финиша
-  const px = 210, pw = 260, prog = clamp(player.x / finishX, 0, 1);
+  const right = IS_TOUCH ? W - 46 : W - 12; // на телефоне справа кнопка паузы
+  const px = 205, pw = clamp(right - 150 - px, 120, 320), prog = clamp(player.x / finishX, 0, 1);
   ctx.fillStyle = 'rgba(255,255,255,.2)'; ctx.fillRect(px, 13, pw, 4);
   ctx.fillStyle = '#ffb02e'; ctx.fillRect(px, 13, pw * prog, 4);
   for (const c of checkpoints) if (!c.start) { ctx.fillStyle = c.on ? '#6cff8a' : '#aaa'; ctx.fillRect(px + pw * c.x / finishX - 1, 9, 2, 12); }
   ctx.fillStyle = '#e53935'; ctx.fillRect(px + pw - 2, 6, 6, 6);
   ctx.fillStyle = '#ff7a1a'; ctx.beginPath(); ctx.arc(px + pw * prog, 15, 5, 0, 7); ctx.fill();
-  text(`${Math.floor(time / 60)}:${String(Math.floor(time % 60)).padStart(2, '0')}`, W - 12, 20, 14, '#f1e6d6', 'right');
-  text('Рекорд: ' + best, W - 62, 20, 12, '#c9b89e', 'right');
+  text(`${Math.floor(time / 60)}:${String(Math.floor(time % 60)).padStart(2, '0')}`, right, 20, 14, '#f1e6d6', 'right');
+  text('Рекорд: ' + best, right - 48, 20, 12, '#c9b89e', 'right');
 }
 
-function drawTable(b, title, x1, x2, y) {
+function drawTable(b, title, x1, x2, y, maxRows = 7) {
   const cx = (x1 + x2) / 2, maxName = x2 - x1 < 260 ? 12 : 18;
   text(title, cx, y, 14, '#ffb02e');
   if (!b) return;
   if (b.state !== 'ok') { text(b.state === 'loading' ? 'Загрузка…' : 'Нет связи с сервером', cx, y + 22, 12, '#c9b89e'); return; }
   if (!b.rows.length) { text('Пока пусто — будьте первым!', cx, y + 22, 12, '#c9b89e'); return; }
-  const rows = b.rows.slice().sort((a, c) => a.pos - c.pos).slice(0, 7);
+  const rows = b.rows.slice().sort((a, c) => a.pos - c.pos).slice(0, maxRows);
   const me = b.rows.find(r => r.me);
   if (me && !rows.includes(me)) rows[rows.length - 1] = me;
   for (const r of rows) {
@@ -654,12 +691,12 @@ function drawEnd() {
   let line = `Очки: ${final.score}   Рекорд: ${best}   Врагов: ${kills}   Время: ${Math.floor(time)} с`;
   text(line, W / 2, 80, 14, '#f1e6d6');
   if (won) text(`Бонусы: финиш +1000 · время +${final.bonus.timeBonus} · каски +${final.bonus.lifeBonus}`, W / 2, 100, 12, '#c9b89e');
-  text('Пробел или тап — новая смена (новый участок)', W / 2, won ? 122 : 104, 12, '#c9b89e');
-  const y = 150;
-  if (TICKET) { drawTable(globalBoard, 'Мировой рейтинг', 40, 300, y); drawTable(board, 'Рекорды чата', 340, 600, y); }
+  text((IS_TOUCH ? 'Тап' : 'Пробел или тап') + ' — новая смена (новый участок)', W / 2, won ? 122 : 104, 12, '#c9b89e');
+  const y = 150, ox = (W - 640) / 2;
+  if (TICKET) { drawTable(globalBoard, 'Мировой рейтинг', ox + 40, ox + 300, y); drawTable(board, 'Рекорды чата', ox + 340, ox + 600, y); }
   else {
-    drawTable(globalBoard, 'Мировой рейтинг', 190, 450, y);
-    if (!nameForm.hidden) text('Введите имя под игрой, чтобы попасть в рейтинг', W / 2, H - 12, 12, '#c9b89e');
+    drawTable(globalBoard, 'Мировой рейтинг', ox + 190, ox + 450, y, 5); // внизу остаётся место для поля имени
+    if (!nameForm.hidden) text('Введите имя, чтобы попасть в рейтинг', W / 2, y + 128, 12, '#c9b89e');
   }
 }
 
@@ -671,6 +708,7 @@ function overlay(title, lines, hint) {
 }
 
 function draw() {
+  ctx.setTransform(scale, 0, 0, scale, 0, 0); // рисуем в игровых единицах, холст — в пикселях экрана
   ctx.save();
   if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
   drawSky(); drawCity(); drawCranes(); drawFence();
@@ -693,8 +731,10 @@ function draw() {
   ctx.restore();
   ctx.restore();
   drawHUD();
-  if (mode === 'menu') overlay('LEVEL RUNNER', ['Геодезист спешит сдать объект. Беги через стройку,', 'отбивайся нивелирной рейкой, собирай чертежи.', `Участок № ${seed % 10000}`], 'Пробел или тап — начать смену');
-  if (mode === 'pause') overlay('ПАУЗА', [], 'P, пробел или тап — продолжить');
+  if (IS_TOUCH && mode === 'play') drawControls();
+  const how = IS_TOUCH ? 'Слева — бег и ▼ (спрыгнуть с лесов), справа — прыжок и рейка' : '← → бег · пробел прыжок · J удар рейкой';
+  if (mode === 'menu') overlay('LEVEL RUNNER', ['Геодезист спешит сдать объект. Беги через стройку,', 'отбивайся нивелирной рейкой, собирай чертежи.', how, `Участок № ${seed % 10000}`], IS_TOUCH ? 'Тап — начать смену' : 'Пробел или тап — начать смену');
+  if (mode === 'pause') overlay('ПАУЗА', [], IS_TOUCH ? 'Тап — продолжить' : 'P, пробел или тап — продолжить');
   if (mode === 'over' || mode === 'win') drawEnd();
 }
 
@@ -738,42 +778,105 @@ function startOrToggle() {
   else if (mode === 'play') mode = 'pause';
   else if (performance.now() - overAt > 700) { reset(); mode = 'play'; newSession(); } // пауза после финала, чтобы не перезапустить случайно
 }
-function pressJump() { if (mode === 'play') { jumpBuf = JUMP_BUFFER; input.jumpHeld = true; } else startOrToggle(); }
+function pressJump() { if (mode === 'play') jumpBuf = JUMP_BUFFER; else startOrToggle(); }
 function pressAttack() { if (mode === 'play') attackQueued = true; }
 
 const KEYMAP = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowDown: 'down', KeyS: 'down' };
+const JUMP_KEYS = ['Space', 'ArrowUp', 'KeyW', 'KeyK'];
 addEventListener('keydown', e => {
   if (e.target === nameInput) return;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
-  if (KEYMAP[e.code]) { input[KEYMAP[e.code]] = true; return; }
+  if (KEYMAP[e.code]) { kb[KEYMAP[e.code]] = true; syncInput(); return; }
   if (e.repeat) return;
-  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'KeyK') pressJump();
+  if (JUMP_KEYS.includes(e.code)) { kb.jump = true; syncInput(); pressJump(); }
   else if (e.code === 'KeyJ' || e.code === 'KeyX' || e.code === 'KeyF') pressAttack();
   else if (e.code === 'KeyP' || e.code === 'Escape') { if (mode === 'play' || mode === 'pause') startOrToggle(); }
   else if (e.code === 'Enter' && mode !== 'play') startOrToggle();
 });
 addEventListener('keyup', e => {
   if (e.target === nameInput) return;
-  if (KEYMAP[e.code]) input[KEYMAP[e.code]] = false;
-  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'KeyK') input.jumpHeld = false;
+  if (KEYMAP[e.code]) kb[KEYMAP[e.code]] = false;
+  if (JUMP_KEYS.includes(e.code)) kb.jump = false;
+  syncInput();
 });
-canvas.addEventListener('pointerdown', e => { if (mode === 'play') { if (e.pointerType === 'mouse') pressAttack(); } else startOrToggle(); });
-canvas.addEventListener('contextmenu', e => e.preventDefault());
-addEventListener('blur', () => { if (mode === 'play') mode = 'pause'; for (const k in input) input[k] = false; });
 
-// экранные кнопки для телефонов (и Telegram)
-const touch = document.getElementById('touch');
-if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) { touch.hidden = false; document.querySelector('.hint').hidden = true; } // на телефоне подсказка про клавиатуру не нужна
-for (const btn of touch.querySelectorAll('button')) {
-  const k = btn.dataset.k;
-  const down = e => {
-    e.preventDefault(); btn.classList.add('on');
-    if (k === 'jump') pressJump(); else if (k === 'attack') { if (mode === 'play') pressAttack(); else startOrToggle(); } else input[k] = true;
-  };
-  const up = () => { btn.classList.remove('on'); if (k === 'jump') input.jumpHeld = false; else if (k !== 'attack') input[k] = false; };
-  btn.addEventListener('pointerdown', down);
-  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) btn.addEventListener(ev, up);
-  btn.addEventListener('contextmenu', e => e.preventDefault());
+// ---------- сенсорное управление: полупрозрачные кнопки прямо в кадре ----------
+// Кнопка срабатывает и чуть за своим кругом; палец можно вести между ◀ и ▶ не отрывая. Работает мультитач.
+const buttons = () => ({
+  left:   { x: 62,      y: H - 62,  r: 36 },
+  right:  { x: 152,     y: H - 62,  r: 36 },
+  down:   { x: 107,     y: H - 140, r: 24 },
+  attack: { x: W - 166, y: H - 54,  r: 38 },
+  jump:   { x: W - 68,  y: H - 92,  r: 44 },
+});
+const PAUSE_BTN = () => ({ x: W - 22, y: 15, r: 13 });
+const touches = new Map(); // pointerId → кнопка
+
+function buttonAt(p) {
+  const b = buttons(); let hit = null, bestD = Infinity;
+  for (const k in b) { const d = Math.hypot(p.x - b[k].x, p.y - b[k].y); if (d < b[k].r * 1.5 && d < bestD) { hit = k; bestD = d; } }
+  return hit;
+}
+function syncInput() {
+  const held = new Set(touches.values());
+  input.left = kb.left || held.has('left');
+  input.right = kb.right || held.has('right');
+  input.down = kb.down || held.has('down');
+  input.jumpHeld = kb.jump || held.has('jump');
+}
+
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const p = toGame(e);
+  if (mode === 'play' && e.pointerType !== 'mouse') {
+    const pb = PAUSE_BTN();
+    if (Math.hypot(p.x - pb.x, p.y - pb.y) < pb.r * 2) { startOrToggle(); return; }
+    const k = buttonAt(p);
+    if (!k) return;
+    touches.set(e.pointerId, k);
+    if (k === 'jump') pressJump(); else if (k === 'attack') pressAttack();
+    syncInput();
+  } else if (mode === 'play') pressAttack(); // мышь: клик — удар
+  else startOrToggle();
+});
+canvas.addEventListener('pointermove', e => {
+  const old = touches.get(e.pointerId);
+  if (!old || (old !== 'left' && old !== 'right')) return;
+  const k = buttonAt(toGame(e));
+  if (k === 'left' || k === 'right') { touches.set(e.pointerId, k); syncInput(); }
+});
+for (const ev of ['pointerup', 'pointercancel']) addEventListener(ev, e => { if (touches.delete(e.pointerId)) syncInput(); });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+addEventListener('blur', () => {
+  if (mode === 'play') mode = 'pause';
+  for (const k in kb) kb[k] = false;
+  touches.clear(); syncInput();
+});
+
+function drawControls() {
+  const b = buttons(), held = new Set(touches.values());
+  ctx.save();
+  for (const k in b) {
+    const c = b[k], on = held.has(k);
+    ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, 7);
+    ctx.fillStyle = on ? 'rgba(255,176,46,.35)' : 'rgba(255,255,255,.10)'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = on ? 'rgba(255,176,46,.8)' : 'rgba(255,255,255,.32)'; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.7)';
+    ctx.beginPath();
+    if (k === 'left') { ctx.moveTo(c.x - 12, c.y); ctx.lineTo(c.x + 8, c.y - 12); ctx.lineTo(c.x + 8, c.y + 12); }
+    else if (k === 'right') { ctx.moveTo(c.x + 12, c.y); ctx.lineTo(c.x - 8, c.y - 12); ctx.lineTo(c.x - 8, c.y + 12); }
+    else if (k === 'down') { ctx.moveTo(c.x, c.y + 8); ctx.lineTo(c.x - 9, c.y - 6); ctx.lineTo(c.x + 9, c.y - 6); }
+    else if (k === 'jump') { ctx.moveTo(c.x, c.y - 16); ctx.lineTo(c.x + 14, c.y + 2); ctx.lineTo(c.x - 14, c.y + 2); }
+    ctx.fill();
+    if (k === 'jump') text('прыжок', c.x, c.y + 20, 11, 'rgba(255,255,255,.7)');
+    if (k === 'attack') { // значок — маленькая нивелирная рейка
+      ctx.save(); ctx.globalAlpha = 0.8; ctx.translate(c.x - 14, c.y + 12); ctx.rotate(-0.85); ctx.scale(0.5, 0.8); drawStaff(66); ctx.restore();
+      text('рейка', c.x, c.y + 26, 11, 'rgba(255,255,255,.7)');
+    }
+  }
+  const pb = PAUSE_BTN(); // пауза
+  ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillRect(pb.x - 6, pb.y - 7, 4, 14); ctx.fillRect(pb.x + 2, pb.y - 7, 4, 14);
+  ctx.restore();
 }
 
 let last = performance.now();

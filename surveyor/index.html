@@ -2,28 +2,22 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="screen-orientation" content="landscape">
 <title>Level Runner</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main>
   <h1>⛑ Level Runner</h1>
-  <canvas id="game" width="640" height="360"></canvas>
-  <div id="touch" hidden>
-    <div class="pad">
-      <button data-k="left" aria-label="Влево">◀</button>
-      <button data-k="right" aria-label="Вправо">▶</button>
-    </div>
-    <div class="pad">
-      <button data-k="attack" class="act">Рейка</button>
-      <button data-k="jump" class="act">Прыжок</button>
-    </div>
+  <!-- сцена: на компьютере — окно 16:9, на телефоне — весь экран; в вертикальном положении поворачивается на 90° -->
+  <div id="stage">
+    <canvas id="game"></canvas>
+    <form id="nameForm" hidden>
+      <input id="nameInput" maxlength="20" placeholder="Ваше имя" autocomplete="nickname">
+      <button>В рейтинг</button>
+    </form>
   </div>
-  <form id="nameForm" hidden>
-    <input id="nameInput" maxlength="20" placeholder="Ваше имя" autocomplete="nickname">
-    <button>В рейтинг</button>
-  </form>
   <p class="hint">← → / A D — бег · Пробел / ↑ / W — прыжок (↓ + прыжок — спрыгнуть с лесов) · J / X / клик — удар рейкой · P — пауза</p>
   <p class="hint"><a href="../">Другая игра: Star Dodger</a></p>
 </main>
