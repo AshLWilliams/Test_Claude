@@ -17,7 +17,13 @@ const stars = Array.from({ length: 90 }, () => ({
 // Telegram: бот открывает игру со ссылкой ?t=<билет>. Без билета (обычный сайт) рекорды не отправляются.
 const API = 'https://star-dodger.ashlwilliams.workers.dev';
 const TICKET = new URLSearchParams(location.search).get('t');
-let board = null; // таблица рекордов чата: { state: 'loading' | 'ok' | 'error', rows, newRecord }
+let board = null;       // таблица рекордов чата (только в Telegram): { state: 'loading' | 'ok' | 'error', rows, newRecord }
+let globalBoard = null; // мировой рейтинг: { state, rows, rank, improved, sent }
+let session = null;     // Promise с подписанной сессией партии от сервера (нужна для мирового рейтинга)
+let final = null;       // итог партии для отправки: { score, duration }
+const NAME_KEY = 'star-dodger-name';
+const nameForm = document.getElementById('nameForm'), nameInput = document.getElementById('nameInput');
+try { nameInput.value = localStorage.getItem(NAME_KEY) || ''; } catch (e) {}
 
 const FIRE_DELAY = 0.18;   // секунд между выстрелами
 const BULLET_SPEED = 700;  // пикселей в секунду
@@ -33,7 +39,8 @@ function reset() {
   ship = { x: W / 2, y: H - 70, w: 34, h: 40, vx: 0 };
   rocks = []; gems = []; bullets = []; particles = []; popups = [];
   score = 0; kills = 0; lives = 3; time = 0; spawnT = 0; gemT = 2; shake = 0; invuln = 0; fireCD = 0;
-  board = null;
+  board = null; globalBoard = null; final = null;
+  nameForm.hidden = true;
 }
 reset();
 
@@ -211,15 +218,50 @@ function gameOver() {
     best = Math.floor(score);
     try { localStorage.setItem(STORAGE_KEY, best); } catch (e) {}
   }
-  if (TICKET) submitScore();
+  final = { score: Math.floor(score), duration: time };
+  if (TICKET) { submitScore(); submitGlobal(); } // в Telegram имя берётся из аккаунта
+  else { loadGlobal(); nameForm.hidden = false; } // на сайте игрок сам вводит имя
 }
+
+function newSession() {
+  session = fetch(API + '/session').then(r => r.json()).then(d => d.s).catch(() => null);
+}
+
+async function loadGlobal() {
+  const g = globalBoard = { state: 'loading', rows: [] };
+  try { Object.assign(g, { state: 'ok', rows: (await (await fetch(API + '/global')).json()).top }); } catch (e) { g.state = 'error'; }
+}
+
+async function submitGlobal(name) {
+  const g = globalBoard = { state: 'loading', rows: [] };
+  try {
+    const s = await session;
+    if (!s) throw new Error('no session');
+    const res = await fetch(API + '/global', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ s, t: TICKET, name, ...final }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    Object.assign(g, { state: 'ok', rows: data.top, rank: data.rank, improved: data.improved, sent: true });
+  } catch (e) { g.state = 'error'; }
+}
+
+nameForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const name = nameInput.value.trim();
+  if (!name) { nameInput.focus(); return; }
+  try { localStorage.setItem(NAME_KEY, name); } catch (err) {}
+  nameForm.hidden = true; nameInput.blur();
+  submitGlobal(name);
+});
 
 async function submitScore() {
   const b = board = { state: 'loading', rows: [] };
   try {
     const res = await fetch(API + '/score', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ t: TICKET, score: Math.floor(score), duration: time }),
+      body: JSON.stringify({ t: TICKET, ...final }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
@@ -227,20 +269,39 @@ async function submitScore() {
   } catch (e) { b.state = 'error'; }
 }
 
-function drawBoard() {
-  if (!board) return;
-  let y = H / 2 + 135;
-  const title = board.newRecord ? 'Рекорды чата — новый рекорд!' : 'Рекорды чата';
-  text(title, W / 2, y, 16, '#ffd76a');
-  if (board.state !== 'ok') { text(board.state === 'loading' ? 'Отправляю результат…' : 'Не удалось отправить результат', W / 2, y + 28, 14, '#9aa5e0'); return; }
-  let rows = board.rows.slice().sort((a, b) => a.pos - b.pos).slice(0, 6);
-  const me = board.rows.find(r => r.me);
+// таблица результатов в колонке от x1 до x2
+function drawTable(b, title, x1, x2, y) {
+  const cx = (x1 + x2) / 2, maxName = x2 - x1 < 260 ? 11 : 18;
+  text(title, cx, y, 15, '#ffd76a');
+  if (!b) return;
+  if (b.state !== 'ok') { text(b.state === 'loading' ? 'Загрузка…' : 'Нет связи с сервером', cx, y + 26, 13, '#9aa5e0'); return; }
+  if (!b.rows.length) { text('Пока пусто — будьте первым!', cx, y + 26, 13, '#9aa5e0'); return; }
+  const rows = b.rows.slice().sort((a, c) => a.pos - c.pos).slice(0, 10);
+  const me = b.rows.find(r => r.me);
   if (me && !rows.includes(me)) rows[rows.length - 1] = me;
   for (const r of rows) {
-    y += 24;
+    y += 22;
     const color = r.me ? '#ffd76a' : '#cfd8ff';
-    text(`${r.pos}. ${r.name}`, 110, y, 15, color, 'left');
-    text(String(r.score), W - 110, y, 15, color, 'right');
+    const name = r.name.length > maxName ? r.name.slice(0, maxName - 1) + '…' : r.name;
+    text(`${r.pos}. ${name}`, x1, y, 13, color, 'left');
+    text(String(r.score), x2, y, 13, color, 'right');
+  }
+  let note = '';
+  if (b.sent) note = b.rank ? `Ваше место: ${b.rank}${b.improved ? ' · рекорд!' : ''}` : 'Вы пока вне топ-100';
+  else if (b.newRecord) note = 'Новый рекорд чата!';
+  if (note) text(note, cx, y + 26, 12, '#9aa5e0');
+}
+
+function drawOver() {
+  ctx.fillStyle = 'rgba(5,6,15,.82)'; ctx.fillRect(0, 0, W, H);
+  text('КОНЕЦ ИГРЫ', W / 2, 105, 36, '#ffd76a');
+  text(`Очки: ${Math.floor(score)}   Рекорд: ${best}`, W / 2, 148, 18, '#cfd8ff');
+  text(`Сбито астероидов: ${kills}`, W / 2, 174, 16, '#cfd8ff');
+  text('Пробел или тап — играть снова', W / 2, 208, 14, '#9aa5e0');
+  if (TICKET) { drawTable(globalBoard, 'Мировой рейтинг', 20, 228, 250); drawTable(board, 'Рекорды чата', 252, 460, 250); }
+  else {
+    drawTable(globalBoard, 'Мировой рейтинг', 100, 380, 250);
+    if (!nameForm.hidden) text('Введите имя под игрой, чтобы попасть в рейтинг', W / 2, H - 22, 13, '#9aa5e0');
   }
 }
 
@@ -321,8 +382,7 @@ function draw() {
 
   if (mode === 'menu') overlay('STAR DODGER', 'Стреляй, уворачивайся,\nсобирай кристаллы\nОгонь — пробел, клик или касание', 'Нажми пробел или тапни, чтобы начать');
   if (mode === 'pause') overlay('ПАУЗА', '', 'Пробел, P или тап — продолжить');
-  if (mode === 'over') overlay('КОНЕЦ ИГРЫ', `Очки: ${Math.floor(score)}   Рекорд: ${best}\nСбито астероидов: ${kills}`, 'Пробел или тап — играть снова');
-  if (mode === 'over') drawBoard();
+  if (mode === 'over') drawOver();
 }
 
 function overlay(title, sub, hint) {
@@ -333,13 +393,15 @@ function overlay(title, sub, hint) {
 }
 
 function startOrToggle() {
-  if (mode === 'menu' || mode === 'pause') mode = 'play';
+  if (mode === 'menu') { mode = 'play'; newSession(); }
+  else if (mode === 'pause') mode = 'play';
   else if (mode === 'play') mode = 'pause';
   // короткая задержка после проигрыша, чтобы не перезапустить игру случайным нажатием
-  else if (mode === 'over' && performance.now() - overAt > 700) { reset(); mode = 'play'; }
+  else if (mode === 'over' && performance.now() - overAt > 700) { reset(); mode = 'play'; newSession(); }
 }
 
 addEventListener('keydown', e => {
+  if (e.target === nameInput) return; // ввод имени не управляет игрой
   if (e.code === 'Space') { // вне игры — старт/продолжить, в игре — огонь, пока пробел зажат
     e.preventDefault();
     if (mode !== 'play' && !e.repeat) startOrToggle();
@@ -349,7 +411,8 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyP' || e.code === 'Escape') { if (!e.repeat && (mode === 'play' || mode === 'pause')) startOrToggle(); return; }
   keys[e.code] = true;
 });
-addEventListener('keyup', e => { if (e.code === 'Space') firing.key = false; keys[e.code] = false; });
+addEventListener('keyup', e => {
+  if (e.target === nameInput) return; if (e.code === 'Space') firing.key = false; keys[e.code] = false; });
 function pointer(e) {
   const rect = canvas.getBoundingClientRect();
   targetX = (e.clientX - rect.left) * (W / rect.width);

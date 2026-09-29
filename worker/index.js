@@ -2,6 +2,9 @@
 //  POST /telegram  — webhook бота (/start, /play, кнопка «Play», inline-режим)
 //  POST /score     — игра присылает очки { t: билет, score, duration } → setGameScore
 //  GET  /scores?t= — таблица рекордов чата → getGameHighScores
+//  GET  /session   — подписанная сессия партии (время старта), нужна для общего рейтинга
+//  POST /global    — результат в общий рейтинг { s: сессия, t?: билет Telegram, name?, score, duration }
+//  GET  /global    — топ-10 общего рейтинга (хранится в KV)
 // Билет выдаётся при нажатии «Play»: кто играет и в каком сообщении, с HMAC-подписью.
 
 const enc = new TextEncoder();
@@ -54,7 +57,8 @@ async function handleUpdate(env, u) {
   const q = u.callback_query;
   if (q && q.game_short_name === env.GAME_SHORT_NAME) {
     const place = q.inline_message_id ? { i: q.inline_message_id } : { c: q.message.chat.id, m: q.message.message_id };
-    const ticket = await makeTicket(env, { u: q.from.id, ...place });
+    const name = [q.from.first_name, q.from.last_name].filter(Boolean).join(' ').slice(0, 20);
+    const ticket = await makeTicket(env, { u: q.from.id, n: name, ...place });
     await tg(env, 'answerCallbackQuery', { callback_query_id: q.id, url: `${env.GAME_URL}?t=${encodeURIComponent(ticket)}` });
   }
   const iq = u.inline_query;
@@ -70,6 +74,47 @@ async function highScores(env, t) {
     pos: s.position, score: s.score, me: s.user.id === t.u,
     name: [s.user.first_name, s.user.last_name].filter(Boolean).join(' ').slice(0, 24),
   }));
+}
+
+// Общий рейтинг: один JSON-список лучших результатов игроков (до 100) в KV.
+// Игрок из Telegram определяется по id, игрок с сайта — по имени.
+const TOP_SIZE = 100;
+const cleanName = s => String(s || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 20);
+
+async function loadTop(env) { return JSON.parse(await env.LB.get('top') || '[]'); }
+const publicRow = (e, i, meId) => ({ pos: i + 1, name: e.name, score: e.score, src: e.src, me: e.id === meId });
+
+async function submitGlobal(env, body) {
+  const sess = await readTicket(env, body.s);
+  if (!sess || !sess.sid) return [{ error: 'bad session' }, 403];
+  const score = Math.floor(Number(body.score)), duration = Number(body.duration);
+  const elapsed = Date.now() / 1000 - sess.ts;
+  // длительность партии не больше реально прошедшего с выдачи сессии времени, очки — правдоподобные
+  if (!(score >= 0 && duration > 0 && duration <= elapsed + 3 && score <= 40 * duration + 100)) return [{ error: 'implausible score' }, 400];
+  let player;
+  const t = body.t && await readTicket(env, body.t);
+  if (t && t.u) player = { id: 'tg:' + t.u, name: t.n || 'Игрок', src: 'tg' };
+  else {
+    const name = cleanName(body.name);
+    if (!name) return [{ error: 'name required' }, 400];
+    player = { id: 'web:' + name.toLowerCase(), name, src: 'web' };
+  }
+  // одна сессия — один результат
+  if (await env.LB.get('used:' + sess.sid)) return [{ error: 'session already used' }, 409];
+  await env.LB.put('used:' + sess.sid, '1', { expirationTtl: TICKET_TTL });
+
+  const top = await loadTop(env);
+  let entry = top.find(e => e.id === player.id), improved = false;
+  if (!entry) { entry = { ...player, score, at: Date.now() }; top.push(entry); improved = true; }
+  else if (score > entry.score) { Object.assign(entry, player, { score, at: Date.now() }); improved = true; }
+  top.sort((a, b) => b.score - a.score || a.at - b.at);
+  const kept = top.slice(0, TOP_SIZE);
+  if (improved) await env.LB.put('top', JSON.stringify(kept));
+  const idx = kept.findIndex(e => e.id === player.id);
+  return [{
+    improved, best: entry.score, rank: idx >= 0 ? idx + 1 : null,
+    top: kept.slice(0, 10).map((e, i) => publicRow(e, i, player.id)),
+  }, 200];
 }
 
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type' };
@@ -89,7 +134,7 @@ export default {
     if (url.pathname === '/score' && req.method === 'POST') {
       const body = await req.json().catch(() => ({}));
       const t = await readTicket(env, body.t);
-      if (!t) return json({ error: 'bad ticket' }, 403);
+      if (!t || !t.u) return json({ error: 'bad ticket' }, 403);
       const score = Math.floor(Number(body.score)), duration = Number(body.duration);
       // простая проверка правдоподобия: не больше 40 очков за секунду полёта
       if (!(score >= 0 && duration > 0 && duration < 3600 && score <= 40 * duration + 100)) return json({ error: 'implausible score' }, 400);
@@ -102,8 +147,21 @@ export default {
 
     if (url.pathname === '/scores' && req.method === 'GET') {
       const t = await readTicket(env, url.searchParams.get('t'));
-      if (!t) return json({ error: 'bad ticket' }, 403);
+      if (!t || !t.u) return json({ error: 'bad ticket' }, 403);
       return json({ scores: await highScores(env, t) });
+    }
+
+    if (url.pathname === '/session' && req.method === 'GET') {
+      return json({ s: await makeTicket(env, { sid: crypto.randomUUID() }) });
+    }
+
+    if (url.pathname === '/global' && req.method === 'POST') {
+      const [data, status] = await submitGlobal(env, await req.json().catch(() => ({})));
+      return json(data, status);
+    }
+
+    if (url.pathname === '/global' && req.method === 'GET') {
+      return json({ top: (await loadTop(env)).slice(0, 10).map((e, i) => publicRow(e, i, null)) });
     }
 
     return new Response('Star Dodger server', { headers: cors });
