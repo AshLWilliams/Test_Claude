@@ -14,6 +14,11 @@ const stars = Array.from({ length: 90 }, () => ({
   x: rand(0, W), y: rand(0, H), z: rand(0.3, 1.5),
 }));
 
+// Telegram: бот открывает игру со ссылкой ?t=<билет>. Без билета (обычный сайт) рекорды не отправляются.
+const API = 'https://star-dodger.ashlwilliams.workers.dev';
+const TICKET = new URLSearchParams(location.search).get('t');
+let board = null; // таблица рекордов чата: { state: 'loading' | 'ok' | 'error', rows, newRecord }
+
 const FIRE_DELAY = 0.18;   // секунд между выстрелами
 const BULLET_SPEED = 700;  // пикселей в секунду
 
@@ -28,6 +33,7 @@ function reset() {
   ship = { x: W / 2, y: H - 70, w: 34, h: 40, vx: 0 };
   rocks = []; gems = []; bullets = []; particles = []; popups = [];
   score = 0; kills = 0; lives = 3; time = 0; spawnT = 0; gemT = 2; shake = 0; invuln = 0; fireCD = 0;
+  board = null;
 }
 reset();
 
@@ -205,6 +211,37 @@ function gameOver() {
     best = Math.floor(score);
     try { localStorage.setItem(STORAGE_KEY, best); } catch (e) {}
   }
+  if (TICKET) submitScore();
+}
+
+async function submitScore() {
+  const b = board = { state: 'loading', rows: [] };
+  try {
+    const res = await fetch(API + '/score', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ t: TICKET, score: Math.floor(score), duration: time }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    Object.assign(b, { state: 'ok', rows: data.scores, newRecord: data.newRecord });
+  } catch (e) { b.state = 'error'; }
+}
+
+function drawBoard() {
+  if (!board) return;
+  let y = H / 2 + 135;
+  const title = board.newRecord ? 'Рекорды чата — новый рекорд!' : 'Рекорды чата';
+  text(title, W / 2, y, 16, '#ffd76a');
+  if (board.state !== 'ok') { text(board.state === 'loading' ? 'Отправляю результат…' : 'Не удалось отправить результат', W / 2, y + 28, 14, '#9aa5e0'); return; }
+  let rows = board.rows.slice().sort((a, b) => a.pos - b.pos).slice(0, 6);
+  const me = board.rows.find(r => r.me);
+  if (me && !rows.includes(me)) rows[rows.length - 1] = me;
+  for (const r of rows) {
+    y += 24;
+    const color = r.me ? '#ffd76a' : '#cfd8ff';
+    text(`${r.pos}. ${r.name}`, 110, y, 15, color, 'left');
+    text(String(r.score), W - 110, y, 15, color, 'right');
+  }
 }
 
 function drawShip() {
@@ -285,6 +322,7 @@ function draw() {
   if (mode === 'menu') overlay('STAR DODGER', 'Стреляй, уворачивайся,\nсобирай кристаллы\nОгонь — пробел, клик или касание', 'Нажми пробел или тапни, чтобы начать');
   if (mode === 'pause') overlay('ПАУЗА', '', 'Пробел, P или тап — продолжить');
   if (mode === 'over') overlay('КОНЕЦ ИГРЫ', `Очки: ${Math.floor(score)}   Рекорд: ${best}\nСбито астероидов: ${kills}`, 'Пробел или тап — играть снова');
+  if (mode === 'over') drawBoard();
 }
 
 function overlay(title, sub, hint) {

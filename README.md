@@ -21,7 +21,15 @@
 
 Кристалл — 10 очков, каждая секунда полёта — 2 очка. Рекорд сохраняется в `localStorage`.
 
-## Telegram
-Игра запускается как Telegram Game. В @BotFather: `/setinline`, затем `/newgame` с коротким именем `stardodger`. Адрес игры бот отдаёт сам (`GAME_URL`).
-Бот (`bot/bot.js`, Node 18+): `BOT_TOKEN=... node bot/bot.js` — отвечает на `/start` и `/play` сообщением с игрой.
-Токен бота хранится только в переменной окружения, в репозиторий его не добавляйте.
+## Telegram и таблица рекордов
+Игра подключена как Telegram Game (`/setinline` и `/newgame` с коротким именем `stardodger` в @BotFather).
+Бот и таблица рекордов работают на Cloudflare Workers (`worker/`):
+- `POST /telegram` — webhook бота: `/start` и `/play` присылают игру, кнопка «Play» открывает её с подписанным билетом (кто играет и в каком чате), через `@бот` в любом чате игру можно отправить друзьям;
+- `POST /score` — игра после проигрыша присылает очки, сервер проверяет подпись и правдоподобие и вызывает `setGameScore`;
+- `GET /scores` — таблица рекордов чата (`getGameHighScores`).
+
+Рекорды хранит сам Telegram, своя база не нужна. Таблица своя в каждом чате.
+
+Деплой: `cd worker && npx wrangler deploy`, токен бота — секрет `npx wrangler secret put BOT_TOKEN`.
+Webhook: `setWebhook` на `https://<воркер>/telegram` с `secret_token` = первые 32 символа base64url(SHA-256("webhook:" + токен)).
+Токены храните только в секретах, в репозиторий их не добавляйте.
