@@ -1,0 +1,16 @@
+html, body { margin: 0; height: 100%; background: #14110f; color: #f1e6d6; font-family: system-ui, sans-serif; -webkit-user-select: none; user-select: none; }
+main { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 8px 0; box-sizing: border-box; }
+h1 { margin: 0; font-size: 1.3rem; letter-spacing: .08em; color: #ffb02e; }
+canvas { width: min(96vw, 960px, calc(78vh * 16 / 9)); aspect-ratio: 16 / 9; background: #1e2a4a; border: 2px solid #5a4632; border-radius: 10px; box-shadow: 0 0 30px #ff8a1a33; touch-action: none; }
+.hint { margin: 0; font-size: .8rem; opacity: .7; text-align: center; padding: 0 12px; }
+.hint a { color: #ffb02e; }
+#touch { display: flex; justify-content: space-between; width: min(96vw, 960px); gap: 12px; }
+#touch[hidden] { display: none; }
+#touch .pad { display: flex; gap: 12px; }
+#touch button { width: 72px; height: 64px; border-radius: 14px; border: 2px solid #5a4632; background: #2a221b; color: #f1e6d6; font: bold 1.3rem system-ui, sans-serif; touch-action: none; }
+#touch button.act { width: 96px; font-size: 1rem; background: #ff8a1a; color: #1a120a; border-color: #ffb02e; }
+#touch button.on { filter: brightness(1.4); transform: scale(.96); }
+#nameForm { display: flex; gap: 8px; }
+#nameForm[hidden] { display: none; }
+#nameForm input, #nameForm button { font: inherit; font-size: 1rem; padding: 8px 12px; border-radius: 8px; border: 2px solid #5a4632; background: #2a221b; color: #f1e6d6; }
+#nameForm button { background: #ffb02e; color: #1a120a; border-color: #ffb02e; font-weight: bold; cursor: pointer; }
