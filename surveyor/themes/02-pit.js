@@ -608,7 +608,10 @@
         } else if (e.sT >= 0.8) { // после вспышки — веер из трёх капель шлака
           e.st = 'idle'; e.cd = api.rand(1.5, 1.9); e.throwT = 0.3;
           const ox = e.x + e.w / 2 + e.dir * 14, oy = e.y + 12, tx = P.x + P.w / 2, ty = P.y + P.h - 8;
-          const tf = api.clamp(Math.abs(tx - ox) / 230, 0.55, 1.2), vx = (tx - ox) / tf, vy = ((ty - oy) - 0.5 * 900 * tf * tf) / tf;
+          const dy = ty - oy, vyMin = 30 - Math.sqrt(1800 * Math.max(0, oy - 46)); // вершина дуги (и у боковых капель) не выше y≈46 — шлак не прячется под HUD
+          let tf = api.clamp(Math.abs(tx - ox) / 230, 0.55, 1.2), vy = (dy - 450 * tf * tf) / tf;
+          if (vy < vyMin) { vy = vyMin; tf = (-vy + Math.sqrt(Math.max(0, vy * vy + 1800 * dy))) / 900; } // дальний бросок — площе и быстрее
+          const vx = (tx - ox) / tf;
           for (let i = -1; i <= 1; i++) api.shoot({ x: ox, y: oy, w: 8, h: 8, vx: vx + i * 75, vy: vy - Math.abs(i) * 30, color: '#ff9a30', draw: drawSlag, source: e, pts: 15 });
           api.burst(ox, oy, '#fff3b0', 6, 120, 300);
         }
@@ -617,12 +620,13 @@
         const t = e.t, arc = e.st === 'arc', ph = arc ? Math.min(1, e.sT / 0.8) : 0, bob = Math.sin(t * 2.5) * 0.6;
         // кабель держака
         ctx.strokeStyle = '#141414'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(-6, -22); ctx.quadraticCurveTo(-16, -8, -24, 0); ctx.stroke();
-        ctx.fillStyle = '#26323e'; ctx.fillRect(-6, -17, 5, 17); ctx.fillRect(1, -17, 5, 17);    // брюки
+        ctx.fillStyle = '#34485c'; ctx.fillRect(-6, -17, 5, 17); ctx.fillRect(1, -17, 5, 17);    // брюки (светлее распорки за спиной)
         ctx.fillStyle = '#111'; ctx.fillRect(-7, -3, 7, 3); ctx.fillRect(1, -3, 7, 3);            // сапоги
         ctx.fillStyle = '#3f6f94'; ctx.fillRect(-8, -36 + bob, 16, 20);                           // синяя роба
         ctx.fillStyle = '#e9f2f2'; ctx.fillRect(-8, -24 + bob, 4, 2);                             // светоотражающая полоса
         ctx.fillStyle = '#6b4a2e'; ctx.fillRect(-3, -31 + bob, 10, 17);                           // кожаный фартук
-        ctx.fillStyle = '#2b2f35'; ctx.fillRect(-6, -49 + bob, 14, 13);                           // сварочная маска
+        ctx.fillStyle = '#8d949c'; ctx.fillRect(-7, -50 + bob, 16, 15);                           // светлый кант маски — читается на тёмном фоне
+        ctx.fillStyle = '#3a4049'; ctx.fillRect(-6, -49 + bob, 14, 13);                           // сварочная маска
         ctx.fillStyle = '#e0a526'; ctx.fillRect(-7, -51 + bob, 12, 4);                            // оголовье маски
         ctx.fillStyle = arc ? '#d8ffe4' : '#2e7d4f'; ctx.fillRect(2, -45 + bob, 6, 4);            // светофильтр
         // рука с держаком: в покое варит у ног, на вспышке поднята, при броске — вперёд

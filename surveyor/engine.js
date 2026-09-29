@@ -143,7 +143,12 @@ function generateLevel(s) {
   let x = 0, gy = Math.round((gMin + gMax) / 2 + 20), lastCP = 0;
   gy = clamp(gy, gMin, gMax);
 
-  const ground = (x0, w, y) => solids.push({ x: x0, y, w, h: H + 200 - y, kind: 'ground' });
+  let prevGy = null; // перепад меньше 20 единиц незаметен глазу, но о него спотыкаются — выравниваем
+  const ground = (x0, w, y) => {
+    if (prevGy !== null && y !== prevGy && Math.abs(y - prevGy) < 20) y = prevGy;
+    prevGy = y; gy = y;
+    solids.push({ x: x0, y, w, h: H + 200 - y, kind: 'ground' });
+  };
   const progress = () => x / LENGTH; // сложность растёт к концу участка
   const decorKinds = theme.decor && theme.decor.length ? theme.decor : null;
 

@@ -5,7 +5,7 @@
 (() => {
   // ---------- общее ----------
   let skyG = null;                           // градиент неба создаётся один раз
-  const st = { splats: [] };                 // состояние темы: остывающие кляксы асфальта от бросков дорожника
+  const st = { splats: [], berm: null, bermT: 0 }; // состояние темы: остывающие кляксы асфальта; высота насыпи ближнего фона
   const MAX_SPLATS = 8, SPLAT_LIFE = 2.6;
   const BALLOONS = ['#e53935', '#fdd835', '#1e88e5', '#43a047', '#ffffff'];
   const STONE = ['#a09a90', '#6e6a64', '#b0aca3'];                     // цвета щебня
@@ -166,16 +166,23 @@
       }
     }
 
-    // ближний фон: насыпь, бытовки, самосвал, асфальтоукладчик, дорожные знаки
+    // ближний фон: насыпь, бытовки, самосвал, асфальтоукладчик, дорожные знаки.
+    // Бровка насыпи плавно держится чуть выше самой высокой видимой дороги — иначе при высокой земле
+    // над асфальтом торчат только крыши бытовок и кузова, и их легко принять за препятствия.
+    let top = 255;
+    for (const s of api.solids) if (s.kind === 'ground' && s.x < camX + W && s.x + s.w > camX && s.y - 3 < top) top = s.y - 3;
+    const bdt = api.clamp(now - st.bermT, 0, 0.1); st.bermT = now;
+    st.berm = st.berm === null ? top : st.berm + (top - st.berm) * Math.min(1, bdt * 3);
+    const by = Math.round(st.berm * 2) / 2;
     off = camX * 0.55;
-    ctx.fillStyle = '#7fae55'; ctx.fillRect(0, 254, W, FLOOR - 254);
+    ctx.fillStyle = '#7fae55'; ctx.fillRect(0, by - 1, W, FLOOR - by + 1);
     ctx.fillStyle = '#6c9b47'; ctx.beginPath();
     step = 13;
-    for (let i = Math.floor(off / step) - 1; i < (off + W) / step + 1; i++) { const x = i * step - off, h = 3 + hash(i + 200) * 5; ctx.moveTo(x, 255); ctx.lineTo(x + 3, 255 - h); ctx.lineTo(x + 6, 255); }
+    for (let i = Math.floor(off / step) - 1; i < (off + W) / step + 1; i++) { const x = i * step - off, h = 3 + hash(i + 200) * 5; ctx.moveTo(x, by); ctx.lineTo(x + 3, by - h); ctx.lineTo(x + 6, by); }
     ctx.fill();
     step = 300;
     for (let i = Math.floor(off / step) - 1; i < (off + W) / step + 1; i++) {
-      const x = i * step - off + hash(i + 210) * 90, c = hash(i + 211), y = 255;
+      const x = i * step - off + hash(i + 210) * 90, c = hash(i + 211), y = by;
       if (c < 0.22) { // бытовки
         for (let k = 0; k < 2; k++) {
           const bx = x + k * 50;
@@ -524,11 +531,13 @@
             ctx.fillStyle = '#ff9a3c'; ctx.fillRect(bx - 1, -9.5, 2, 1);
           }
         }
-        ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#f2f2f2'; // струйки пара поднимаются вверх
+        ctx.lineCap = 'round'; // струйки пара поднимаются вверх; серая подложка — чтобы пар читался и на светлой траве
         for (let k = 0; k < 3; k++) {
           const ph = (e.t * 0.7 + k / 3) % 1, bx = -13 + k * 13, y0 = -8 - ph * 36, s = ph * 7 + k;
           ctx.globalAlpha = 0.7 * Math.sin(ph * Math.PI);
-          ctx.beginPath(); ctx.moveTo(bx + Math.sin(s) * 3, y0 + 8); ctx.quadraticCurveTo(bx + Math.sin(s + 1.5) * 6, y0 + 2, bx + Math.sin(s + 3) * 3, y0 - 5); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(bx + Math.sin(s) * 3, y0 + 8); ctx.quadraticCurveTo(bx + Math.sin(s + 1.5) * 6, y0 + 2, bx + Math.sin(s + 3) * 3, y0 - 5);
+          ctx.strokeStyle = 'rgba(70,70,74,.45)'; ctx.lineWidth = 5; ctx.stroke();
+          ctx.strokeStyle = '#f7f7f7'; ctx.lineWidth = 3; ctx.stroke();
         }
         ctx.globalAlpha = 1;
       },
@@ -545,7 +554,8 @@
           if (e.windT <= 0) { e.windT = 0; throwClump(e, api); e.throwT = 0.3; e.cd = 1.4; }
         } else {
           e.cd -= dt;
-          if (e.cd <= 0 && inRange) e.windT = 0.8;
+          const seen = e.x + e.w > api.camX + 8 && e.x < api.camX + api.W - 8; // замах начинается только в кадре — его видно
+          if (e.cd <= 0 && inRange && seen) e.windT = 0.8;
         }
       },
       draw(e, ctx) {
@@ -603,7 +613,7 @@
       { type: 'paver', where: 'upper', weight: 1 },
       { type: 'bitumen', where: 'hazard', weight: 1 },
     ],
-    init(api) { st.splats.length = 0; fixTinySteps(api); },
+    init(api) { st.splats.length = 0; st.berm = null; fixTinySteps(api); },
     update(dt) { // кляксы остывают и исчезают
       for (const sp of st.splats) sp.t += dt;
       while (st.splats.length && st.splats[0].t > SPLAT_LIFE) st.splats.shift();

@@ -55,7 +55,7 @@ const PAGE = 'file://' + path.resolve(__dirname, '..', 'surveyor', 'index.html')
         if (lives < lastLives) { deaths++; lastLives = lives; }
       }
       levels.push({ level: li + 1, id: theme.id, mode, seconds: +levelTime.toFixed(1), deaths, score: Math.floor(score), ms: +((performance.now() - t0) / steps).toFixed(2) });
-      if (mode === 'clear') { overAt = 0; startOrToggle(); continue; }
+      if (mode === 'clear') { overAt = -1e9; startOrToggle(); continue; }
       break;
     }
     kb.right = false; syncInput();

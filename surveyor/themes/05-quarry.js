@@ -44,12 +44,16 @@
   }
   const dynLand = (p, api) => boom(p.x + p.w / 2, p.y + p.h, api);
   function dynHit(p, dt, api) { // попадание в героя: движок снимает шашку без onLand — взрыв показываем сами (урон наносит движок)
-    if (!p.reflected && !p.boomed && api.overlap(api.player, p)) { p.boomed = true; boom(p.x + p.w / 2, p.y + p.h / 2, api); }
+    if (p.reflected || p.boomed) return;
+    if (api.overlap(api.player, p)) { p.boomed = true; boom(p.x + p.w / 2, p.y + p.h / 2, api); return; }
+    const cx = p.x + p.w / 2, b = p.y + p.h;
+    for (const q of api.platforms) if (cx >= q.x && cx <= q.x + q.w && b >= q.y && b - p.vy * dt - 1 <= q.y) { p.dead = true; dynLand(p, api); return; } // упала на ленту или мостки
   }
   function rockLand(p, api) { // глыба раскололась о землю
     api.burst(p.x + p.w / 2, p.y + p.h, p.color, 8, 150, 700); api.burst(p.x + p.w / 2, p.y + p.h, '#e6cfa6', 5, 80, 200);
   }
   function wallRockLand(p, api) { rockLand(p, api); api.shake(1.5); }
+  function wallRockFall(p, dt, api) { if (p.y + p.h >= p.gy) { p.dead = true; wallRockLand(p, api); } } // долетел до своей опоры (в т.ч. платформы)
 
   // ---------- фон: небо в дымке и три борта карьера ----------
   // Уступы борта — параллельные ступени: светлая берма, под ней откос с бороздами и тенью у подошвы, по диагонали —
@@ -61,6 +65,9 @@
   const pMid = u => Math.sin(u * 0.0024) * 12 + Math.sin(u * 0.0083 + 1) * 5 + Math.sin(u * 0.031) * 1.2;
   const pNear = u => 222 + Math.sin(u * 0.0042) * 6 + Math.sin(u * 0.017 + 2) * 2.5;
   const frac = v => v - Math.floor(v);
+  function surfaceAt(api, x, y) { // верх ближайшей опоры не выше y в точке x: земля, препятствие или платформа (null — провал)
+    let top = api.groundAt(x); for (const p of api.platforms) if (x >= p.x && x <= p.x + p.w && p.y >= y && (top === null || p.y < top)) top = p.y; return top;
+  }
   const prof = new Float32Array(96); // профиль бровки видимой части слоя: считается один раз на слой за кадр
   let pu0 = 0, pn = 0;
   function profile(f, off, W, step) {
@@ -318,6 +325,7 @@
         ctx.moveTo(cx - Math.sin(a) * 4.5, y + 5 + Math.cos(a) * 4.5); ctx.lineTo(cx + Math.sin(a) * 4.5, y + 5 - Math.cos(a) * 4.5); ctx.stroke();
       }
       ctx.fillStyle = '#3f7d5a'; ctx.fillRect(x1 - 6, y + 12, 13, 9); ctx.fillStyle = '#2d5a41'; ctx.fillRect(x1 - 6, y + 15, 13, 2); // привод
+      shadows(p, ctx, api);
     } else { // деревянные мостки над конвейером
       const n = Math.max(1, Math.round(p.w / 60));
       ctx.strokeStyle = '#7a5434'; ctx.lineWidth = 3; ctx.beginPath();
@@ -332,6 +340,7 @@
       ctx.fillStyle = '#7a5434'; ctx.fillRect(p.x - 4, p.y - 16, p.w + 8, 2);
       for (let x = p.x - 4; x <= p.x + p.w + 2; x += Math.max(24, (p.w + 6) / 4)) ctx.fillRect(x, p.y - 16, 2.5, 16);
       for (let x = p.x - 4, i = 0; x < p.x + p.w + 4; x += 8, i++) { ctx.fillStyle = i % 2 ? '#f2efe6' : '#e0452f'; ctx.fillRect(x, p.y - 10, Math.min(8, p.x + p.w + 4 - x), 2); } // сигнальная лента
+      shadows(p, ctx, api);
     }
   }
 
@@ -463,7 +472,8 @@
         const dx = api.dx(e), P = api.player, d = Math.sign(dx) || e.dir;
         if (e.state === 'rest') {
           const room = d > 0 ? e.maxX - e.x - e.w : e.x - e.minX; // есть куда катиться?
-          if ((e.cd -= dt) <= 0 && room > 24 && Math.abs(dx) < 260 && Math.abs(P.y + P.h - e.y - e.h) < 150) { e.state = 'wobble'; e.wob = 0.8; e.dir = d; }
+          const pc = P.x + P.w / 2, home = pc > e.minX - 4 && pc < e.maxX + 4; // только если герой на этом уступе (иначе валун запрёт место приземления за провалом)
+          if ((e.cd -= dt) <= 0 && home && room > 24 && Math.abs(dx) < 260 && Math.abs(P.y + P.h - e.y - e.h) < 150) { e.state = 'wobble'; e.wob = 0.8; e.dir = d; }
         } else if (e.state === 'wobble') {
           if ((e.wob -= dt) <= 0) { e.state = 'roll'; api.burst(e.x + e.w / 2, e.y + e.h, '#d8b98f', 6, 90, 300); }
         } else {
@@ -598,7 +608,7 @@
       draw(e, ctx, api) {
         const arming = e.state === 'arm', blink = arming ? Math.floor(e.t * 14) % 2 === 0 : Math.sin(e.t * 5) > 0.6;
         if (arming) { // прицел на земле: пунктир вниз и мигающее кольцо
-          const gy = api.groundAt(e.x + e.w / 2);
+          const gy = surfaceAt(api, e.x + e.w / 2, e.y + e.h); // кольцо — там, куда шашка действительно упадёт
           if (gy !== null) {
             const d = gy - (e.y + e.h), r = 10 + 8 * (e.arm / 0.8);
             ctx.fillStyle = 'rgba(255,50,40,.5)'; for (let y = 16; y < d - 8; y += 10) ctx.fillRect(-1, y, 2, 5);
@@ -639,24 +649,25 @@
     for (let i = st.warns.length - 1; i >= 0; i--) {
       const w = st.warns[i];
       w.t -= dt;
-      if (!w.p && w.t <= 0) w.p = api.shoot({ x: w.x, y: -14, w: 14, h: 12, vy: 140, spin: api.rand(-7, 7), color: '#9c8672', draw: drawChunk, pts: 15, onLand: wallRockLand });
+      if (!w.p && w.t <= 0) w.p = api.shoot({ x: w.x, y: -14, w: 14, h: 12, vy: 140, spin: api.rand(-7, 7), color: '#9c8672', draw: drawChunk, pts: 15, gy: w.gy, onLand: wallRockLand, update: wallRockFall });
       if ((w.p && w.p.dead) || w.t < -2) st.warns.splice(i, 1);
     }
     if ((st.pebT -= dt) > 0) return;
     st.pebT = 0.6; // неудачное место — попробуем чуть позже
     const x = P.x + P.w / 2 + P.vx * api.rand(0.5, 1.3) + api.rand(-30, 50), gy = api.groundAt(x);
     if (P.x > 600 && api.progress < 0.95 && gy !== null && st.warns.length < 3) {
-      st.warns.push({ x, gy, t: WARN, p: null });
+      st.warns.push({ x, gy: surfaceAt(api, x, P.y + P.h - 4), t: WARN, p: null }); // камень ляжет на ту опору, где герой (лента, мостки или земля)
       st.pebT = api.rand(3.4, 5.6) - api.progress * 1.2;
     }
   }
 
   function drawForeground(ctx, api) {
     const { now } = api;
-    ctx.fillStyle = '#b98c5c'; // струйка песка сыплется с борта над местом будущего камнепада
-    for (const w of st.warns) {
+    for (const w of st.warns) { // струйка песка сыплется с борта над местом будущего камнепада, наверху клубится пыль
       if (w.p) continue;
-      for (let j = 0; j < 6; j++) ctx.fillRect(w.x - 1 + Math.sin(j * 2.1 + now * 9) * 2.5, 32 + ((now * 240 + j * 19) % 110), 2, 2.5);
+      ctx.fillStyle = 'rgba(214,176,128,.75)'; circle(ctx, w.x, 34, 5 + Math.sin(now * 17) * 1.5); circle(ctx, w.x + 5, 36, 3.5);
+      ctx.fillStyle = '#6e4526';
+      for (let j = 0; j < 9; j++) ctx.fillRect(w.x - 1.5 + Math.sin(j * 2.1 + now * 9) * 2.5, 34 + ((now * 240 + j * 13) % 116), 3, 3);
     }
     for (const f of st.flashes) { // вспышки взрывов
       const k = f.t / 0.35;

@@ -8,6 +8,7 @@
   const RING = 56, P_WALL = 0.3;      // ширина кольца-тюбинга на стене и скорость параллакса стены
   const BLOCK = 6, SW = BLOCK * RING; // колец в блоке стены; блок — тоннель, тоннель со сбойкой или участок станции
   const edges = new WeakMap();        // у каких краёв отрезка земли виден торец (сосед ниже или провал)
+  const seen = (api, x) => x > api.camX - 60 && x < api.camX + api.W + 60; // искры — только в кадре (разбуженные враги живут и за ним)
   const blockType = b => { const m = ((b % 4) + 4) % 4; return m === 2 ? 'station' : m === 0 ? 'portal' : 'tunnel'; };
 
   // Свет — ступенчатый: несколько вложенных полупрозрачных эллипсов. Выглядит «плоско», как весь стиль игры,
@@ -382,7 +383,7 @@
       ctx.fillStyle = '#1b1d20'; for (let k = 0; k < 3; k++) ctx.fillRect(x + 3, y - 40 + k * 3, 2, 2);
       const on = Math.sin(now * 4 + x) > 0.3;
       ctx.fillStyle = on ? '#ff4a3a' : '#6a1a14'; ctx.fillRect(x - 2, y - 48, 4, 4);
-      api.text('SOS', x, y - 20, 6, '#f0c419');
+      api.text('ТЕЛ', x, y - 20, 6, '#f0c419');
     } else if (d.kind === 'coil') { // бухта кабеля
       ctx.strokeStyle = '#15171a'; ctx.lineWidth = 3;
       for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.ellipse(x + k * 2 - 2, y - 5, 11 - k * 2, 4.5, 0, 0, 7); ctx.stroke(); }
@@ -455,18 +456,21 @@
   function drawWave(p, ctx, api) { // гребень из осколков бетона над раскалённой трещиной (центр снаряда — 0,0; низ — y = 6)
     const t = api.now * 28;
     ctx.scale(Math.sign(p.vx) || 1, 1);
-    glow(ctx, '#ff8a2a', 2, 4, 22, 9, 2.2);
+    glow(ctx, '#ff6a1a', 2, 3, 26, 12, 3.2);
     ctx.fillStyle = 'rgba(232,214,178,.5)'; ctx.beginPath(); ctx.ellipse(-12, 2, 14, 6, 0, 0, 7); ctx.fill(); // пыльный шлейф
-    ctx.fillStyle = '#ff9a3c'; // остывающая трещина за волной
-    for (let k = 0; k < 3; k++) { ctx.globalAlpha = 0.6 - k * 0.2; ctx.fillRect(-38 - k * 18, 5, 18, 1.5); }
-    ctx.globalAlpha = 1; ctx.fillStyle = '#ffb347'; ctx.fillRect(-20, 4.5, 32, 2);
-    ctx.fillStyle = '#fff0c0'; ctx.fillRect(-4, 5, 14, 1);
-    ctx.fillStyle = '#dccdb2'; ctx.strokeStyle = '#4a3f33'; ctx.lineWidth = 1; ctx.beginPath();
+    ctx.fillStyle = '#ff7a1a'; // остывающая трещина за волной
+    for (let k = 0; k < 3; k++) { ctx.globalAlpha = 0.75 - k * 0.22; ctx.fillRect(-38 - k * 18, 4.5, 18, 2); }
+    ctx.globalAlpha = 1; ctx.fillStyle = '#ff9a2a'; ctx.fillRect(-20, 4, 34, 2.5);
+    ctx.fillStyle = '#fff0c0'; ctx.fillRect(-4, 4.5, 16, 1.2);
+    ctx.fillStyle = '#f4e6c8'; ctx.strokeStyle = '#2a2018'; ctx.lineWidth = 1.6; ctx.lineJoin = 'round'; ctx.beginPath(); // осколки с тёмным контуром — видны и на рельсах
     ctx.moveTo(-13, 6); ctx.lineTo(-9, -1 - Math.sin(t) * 2); ctx.lineTo(-4, 6);
     ctx.moveTo(-5, 6); ctx.lineTo(1, -8 - Math.sin(t + 2) * 2); ctx.lineTo(7, 6);
     ctx.moveTo(5, 6); ctx.lineTo(10, -3 - Math.sin(t + 4) * 2); ctx.lineTo(14, 6);
-    ctx.fill(); ctx.stroke();
-    ctx.strokeStyle = '#ffe7b0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(8, 6, 11, -1.4, -0.15); ctx.stroke(); // фронт волны
+    ctx.stroke(); ctx.fill();
+    ctx.strokeStyle = '#ff7a1a'; ctx.lineWidth = 1.3; ctx.beginPath();
+    ctx.moveTo(-9, -1 - Math.sin(t) * 2); ctx.lineTo(-4, 6); ctx.moveTo(1, -8 - Math.sin(t + 2) * 2); ctx.lineTo(7, 6); ctx.moveTo(10, -3 - Math.sin(t + 4) * 2); ctx.lineTo(14, 6); ctx.stroke(); // раскалённые грани
+    ctx.fillStyle = '#ffd27a'; for (let k = 0; k < 3; k++) { const q = (api.now * 3 + k / 3) % 1; ctx.fillRect(-2 + k * 6 - q * 10, -6 - q * 10 + q * q * 12, 2, 2); } // отлетающая крошка
+    ctx.strokeStyle = '#ffd27a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(8, 6, 11, -1.4, -0.15); ctx.stroke(); // фронт волны
   }
 
   const WIND = 0.8; // замах проходчика, с
@@ -486,7 +490,7 @@
         if (e.state === 'run' && ahead <= e.v * e.v / (2 * DEC) + 2) e.state = 'brake';
         if (e.state === 'brake') {
           e.v = Math.max(0, e.v - DEC * dt); e.sparkT -= dt;
-          if (e.sparkT <= 0 && e.v > 30) { e.sparkT = 0.05; api.burst(e.x + e.w / 2 + e.dir * 15, e.y + e.h - 2, '#ffb347', 2, 120, 500); }
+          if (e.sparkT <= 0 && e.v > 30 && seen(api, e.x)) { e.sparkT = 0.05; api.burst(e.x + e.w / 2 + e.dir * 15, e.y + e.h - 2, '#ffb347', 2, 120, 500); }
           if (e.v <= 0 || ahead <= 0) { e.v = 0; e.state = 'ring'; e.st = 0.9; }
         } else e.v = Math.min(165, e.v + 260 * dt);
         e.x = api.clamp(e.x + e.dir * e.v * dt, e.lo, e.hi - e.w);
@@ -653,7 +657,7 @@
     rail: { // оголённый контактный рельс под напряжением: искрит, перепрыгнуть
       w: 58, h: 14, hp: 1, pts: 0, invulnerable: true, stompable: false, knockback: false, flip: false,
       init(e) { e.zapT = 0.4; },
-      update(e, dt, api) { e.zapT -= dt; if (e.zapT <= 0) { e.zapT = api.rand(0.25, 0.8); api.burst(e.x + api.rand(6, e.w - 6), e.y + 3, '#9fe8ff', 5, 130, 500); } },
+      update(e, dt, api) { e.zapT -= dt; if (e.zapT <= 0 && seen(api, e.x)) { e.zapT = api.rand(0.25, 0.8); api.burst(e.x + api.rand(6, e.w - 6), e.y + 3, '#9fe8ff', 5, 130, 500); } },
       draw(e, ctx, api) {
         glow(ctx, '#6fd8ff', 0, -8, 40, 16, 1.2 + Math.sin(e.t * 11) * 0.4);
         for (const x of [-22, 0, 22]) { ctx.fillStyle = '#2c3036'; ctx.fillRect(x - 4, -4, 8, 4); ctx.fillStyle = '#e6dfc9'; ctx.fillRect(x - 2.5, -8, 5, 4); ctx.fillStyle = '#a89f86'; ctx.fillRect(x - 2.5, -6, 5, 1); } // изоляторы

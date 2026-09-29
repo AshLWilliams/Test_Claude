@@ -142,10 +142,10 @@
     off = camX * 0.07 + now * 1.5; step = 44;
     ctx.fillStyle = '#a97da6'; ctx.fillRect(0, 216, W, 16);
     ctx.fillStyle = '#c38dae'; ctx.beginPath();
-    for (let i = Math.floor(off / step) - 1; i < (off + W) / step + 1; i++) { const x = i * step - off, r = 13 + hash(i + 60) * 13; ctx.moveTo(x + r, 218); ctx.arc(x, 218, r, 0, TAU); }
+    for (let i = Math.floor(off / step) - 1; i < (off + W) / step + 1; i++) { const x = i * step - off, r = 13 + hash(i + 60) * 13, cy = 219 - hash(i + 62) * 8; ctx.moveTo(x + r, cy); ctx.arc(x, cy, r, 0, TAU); }
     ctx.fill();
     ctx.fillStyle = '#f5b9a6'; ctx.beginPath();
-    for (let i = Math.floor(off / step) - 1; i < (off + W) / step + 1; i++) { const x = i * step - off + 4, r = (13 + hash(i + 60) * 13) * 0.6; ctx.moveTo(x + r, 213 - r * 0.4); ctx.arc(x, 213 - r * 0.4, r, 0, TAU); }
+    for (let i = Math.floor(off / step) - 1; i < (off + W) / step + 1; i++) { const x = i * step - off + 4, r = (13 + hash(i + 60) * 13) * 0.6, cy = 214 - hash(i + 62) * 8 - r * 0.4; ctx.moveTo(x + r, cy); ctx.arc(x, cy, r, 0, TAU); }
     ctx.fill();
 
     // средний план: соседние высотки с башенными кранами
@@ -171,15 +171,21 @@
   }
 
   // ---------- метки падающих балок и упавшие балки (рисуются на поверхности, под героем) ----------
-  function drawSurfaceFx(x0, x1, y, ctx, api) {
+  const R_FX = BEAM_W / 2 + 6; // полуширина метки и лежащей балки
+  function drawSurfaceFx(x0, x1, y, ctx, api) { // каждая захватка рисует свою часть метки — соседняя плита на той же высоте её не закроет
+    let any = false;
+    for (const o of st.landed) if (Math.abs(o.y - y) <= 1 && o.x + R_FX > x0 && o.x - R_FX < x1) any = true;
+    for (const o of st.warns) if (Math.abs(o.y - y) <= 1 && o.x + R_FX > x0 && o.x - R_FX < x1) any = true;
+    if (!any) return;
+    ctx.save(); ctx.beginPath(); ctx.rect(x0 - 0.5, 0, x1 - x0 + 1, y + 2); ctx.clip();
     for (const b of st.landed) {
-      if (Math.abs(b.y - y) > 1 || b.x < x0 || b.x > x1) continue;
+      if (Math.abs(b.y - y) > 1 || b.x + R_FX < x0 || b.x - R_FX > x1) continue;
       ctx.globalAlpha = api.clamp((1.8 - b.t) / 0.6, 0, 1);
       ctx.save(); ctx.translate(b.x, y - 5); ctx.rotate(b.rot); ibeam(ctx, -BEAM_W / 2, -5, BEAM_W, 10); ctx.restore();
       ctx.globalAlpha = 1;
     }
     for (const w of st.warns) {
-      if (Math.abs(w.y - y) > 1 || w.x < x0 || w.x > x1) continue;
+      if (Math.abs(w.y - y) > 1 || w.x + R_FX < x0 || w.x - R_FX > x1) continue;
       const k = w.p ? 1 : api.clamp(1 - w.t / WARN, 0, 1), fl = Math.floor(api.now * (w.p ? 16 : 7)) % 2, r = BEAM_W / 2 + 4;
       ctx.fillStyle = `rgba(30,10,35,${0.22 + 0.4 * k})`; ctx.beginPath(); ctx.ellipse(w.x, y - 1, 10 + (r - 10) * k, 2.5 + 2 * k, 0, 0, TAU); ctx.fill(); // тень растёт
       ctx.strokeStyle = fl ? '#ff3b30' : '#ffd23a'; ctx.lineWidth = 2; ctx.beginPath(); // уголки-скобы вокруг места падения
@@ -189,6 +195,7 @@
       ctx.fillStyle = fl ? '#ff3b30' : '#ffd23a'; poly(ctx, [w.x, y - 22, w.x - 7, y - 10, w.x + 7, y - 10]); ctx.fill();
       api.text('!', w.x, y - 11.5, 9, '#1d1a22');
     }
+    ctx.restore();
   }
 
   // ---------- земля: перекрытие над пустотой ----------
@@ -277,11 +284,11 @@
     const hang = p.tier === 2 ? p.v > 0.3 : p.v > 0.55 && !api.platforms.some(q => q.tier === 2 && q.base === p.y && q.x < p.x + p.w && q.x + q.w > p.x);
     const cx = p.x + p.w / 2;
     if (hang) { // висит на стропах: трос уходит вверх к невидимому крану
-      const wide = p.w > 150, hy = p.y - (wide ? 58 : 44);
+      const wide = p.w > 150, hy = p.y - 72; // крюк высоко — робот на балке под ним помещается целиком
       ctx.strokeStyle = '#2a2332'; ctx.lineWidth = 1.2; line(ctx, cx - 2, 0, cx - 2, hy - 12); line(ctx, cx + 2, 0, cx + 2, hy - 12);
       ctx.strokeStyle = '#3b3545'; ctx.lineWidth = 1.5;
       if (wide) { // широкая балка — через траверсу
-        const sw = p.w * 0.32, sy = p.y - 24;
+        const sw = p.w * 0.36, sy = p.y - 54;
         line(ctx, cx, hy + 6, cx - sw, sy); line(ctx, cx, hy + 6, cx + sw, sy); line(ctx, cx - sw, sy, cx - sw, p.y); line(ctx, cx + sw, sy, cx + sw, p.y);
         ctx.fillStyle = '#e2b23a'; ctx.fillRect(cx - sw - 3, sy - 2, sw * 2 + 6, 4); ctx.fillStyle = '#1d1a22'; ctx.fillRect(cx - 6, sy - 2, 12, 4);
       } else { const a = p.w * 0.36; line(ctx, cx, hy + 6, cx - a, p.y); line(ctx, cx, hy + 6, cx + a, p.y); }
@@ -593,10 +600,10 @@
       w: 60, h: 22, hp: 2, pts: 250, flip: false, hitColor: '#ffe27a', deathColor: '#f2c230',
       init(e, api) {
         e.tilt = 0; e.sw = 0;
-        const fits = (cx, bot) => { // нет платформ (тросы прошли бы сквозь них) и земля не поднимается к люльке
+        const fits = (cx, bot) => { // под люлькой ровная плита без провалов и уступов (иначе её не перепрыгнуть честно), сверху нет платформ
           for (const x of [cx - e.w / 2 - 6, cx, cx + e.w / 2 + 6]) {
             const g = api.groundAt(x);
-            if (g !== null && g < bot + 50) return false;
+            if (g === null || Math.abs(g - bot - 58) > 4) return false;
             for (const p of api.platforms) if (x > p.x - 4 && x < p.x + p.w + 4) return false;
           }
           return true;
@@ -658,11 +665,12 @@
     return y;
   }
 
-  function dropBeam(w, api) {
-    return api.shoot({ x: w.x, y: 41, w: BEAM_W, h: 10, vy: 120, gravity: 1150, life: 3, destructible: false, hitsSolids: false, pts: 0, color: '#c24f37',
+  function dropBeam(w, api) { // урон считаем сами (hurts:false): движок гасит ранящий снаряд при касании, а балка должна долететь и лечь
+    return api.shoot({ x: w.x, y: 41, w: BEAM_W, h: 10, vy: 120, gravity: 1150, life: 3, destructible: false, hitsSolids: false, hurts: false, pts: 0, color: '#c24f37',
       draw: (p, ctx) => ibeam(ctx, -BEAM_W / 2, -5, BEAM_W, 10),
       update(p, dt, a) {
         p.rot = Math.sin(a.now * 11) * 0.05;
+        if (!p.hitP && a.overlap(p, a.player)) { p.hitP = true; a.hurtPlayer(p.x + p.w / 2); }
         if (p.y + p.h < w.y) return;
         p.y = w.y - p.h; p.dead = true; // грохнулась: пыль, дрожь, балка лежит ещё мгновение
         a.burst(w.x, w.y - 2, '#d3c6d6', 16, 180, 500); a.burst(w.x, w.y - 4, '#ffd36a', 5, 200, 700); a.shake(4);
@@ -693,7 +701,7 @@
     st.fallT = 0.5; // неудачный момент — попробуем чуть позже
     if (P.x < 600 || api.progress > 0.93 || st.warns.length >= 2 || api.arena) return;
     const x = P.x + P.w / 2 + P.vx * api.rand(0.9, 1.4) + api.rand(-20, 70), y = surfaceAt(x, api);
-    if (y === null || surfaceAt(x - 20, api) !== y || surfaceAt(x + 20, api) !== y) return;
+    for (const d of [-52, -20, 20, 52]) if (y === null || surfaceAt(x + d, api) !== y) return; // вся балка и запас на отброс — над ровной опорой, не у края
     st.warns.push({ x, y, t: WARN, p: null });
     st.fallT = api.rand(6, 9);
   }

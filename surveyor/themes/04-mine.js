@@ -15,6 +15,10 @@
   const addLight = (x, y, r, a, cool) => { if (st.lights.length < 24) st.lights.push({ x, y, r, a, cool }); }; // экранные координаты
   const flick = (api, k) => (api.hash(k * 13 + Math.floor(api.now * 9)) > 0.97 ? 0.4 : 1); // лампа изредка моргает
   const noop = () => {};
+  // Обход особенности движка: после прыжка сверху героя подбрасывает, но не выталкивает из врага, и на следующем
+  // кадре он, ещё «внутри» и уже летя вверх, получает урон. Пока враг мигает от удара (e.hit > 0), он не ранит.
+  const NOBOX = { x: -1e6, y: -1e6, w: 0, h: 0 };
+  const bodyAfterHit = e => (e.hit > 0 ? NOBOX : e);
 
   function post(ctx, xb, xt, w) { // наклонная стойка крепи: низ за грунтом, верх под верхняком
     ctx.beginPath(); ctx.moveTo(xb - w / 2, 312); ctx.lineTo(xb + w / 2, 312); ctx.lineTo(xt + w / 2, CEIL + 8); ctx.lineTo(xt - w / 2, CEIL + 8); ctx.fill();
@@ -321,6 +325,7 @@
   const enemies = {
     cart: { // вагонетка: стоит, пока герой не подойдёт; дребезжит 0,8 с и катится на него до края отрезка
       w: 44, h: 30, hp: 2, pts: 200, heavy: true, hitColor: '#ffb347', deathColor: '#8e3a22', glowR: 56,
+      bodybox: bodyAfterHit,
       init(e) { e.st = 'idle'; e.sT = 0; e.v = 0; e.wheel = 0; e.spark = 0; },
       update(e, dt, api) {
         const P = api.player, dx = api.dx(e), ox = e.x;
@@ -402,6 +407,7 @@
 
     beetle: { // жук-камнеед: каменный лоб рейку не берёт — бить сзади или прыгать сверху
       w: 42, h: 22, hp: 2, pts: 200, hitColor: '#d9895b', deathColor: '#6fd6ff', glowR: 46,
+      bodybox: bodyAfterHit,
       init(e) { e.st = 'walk'; e.sT = 0; e.clangT = 0; e.rx = e.x; },
       update(e, dt, api) {
         const P = api.player, dx = api.dx(e), same = Math.abs(P.y + P.h - e.groundY) < 40;

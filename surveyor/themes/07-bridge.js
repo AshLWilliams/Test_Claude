@@ -10,7 +10,7 @@
   const HORIZON = 184;   // линия дальнего берега: выше — небо, ниже — река
   const WATER = 342;     // вода прямо под мостом: видна в разрывах настила, в неё уходят опоры
   const DECK = 36;       // высота пролётного строения: плита, окаймляющая балка и главная балка
-  const WIND_V = 42, WIND_WARN = 0.9, WIND_LEN = 2; // снос героя порывом (ед/с), предупреждение и длина порыва (с)
+  const WIND_V = 34, WIND_WARN = 0.9, WIND_LEN = 2; // снос героя порывом (ед/с), предупреждение и длина порыва (с)
   const st = { bg: null, glow: null, wind: { phase: 'calm', t: 6, dir: 1, k: 0 }, splashes: [], wet: false };
 
   const circle = (ctx, x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); };
@@ -19,17 +19,21 @@
 
   // Обход особенности генератора: у края groundRange соседние отрезки изредка получают перепад в 1–4 ед. — глазу
   // незаметно, а герой упирается в «порожек». Поднимаем нижнюю серию отрезков вровень с соседом вместе с блоками,
-  // платформами, врагами и провалом за ней. Декор и чекпоинты (их нет в api) уходят в плиту на ≤ 4 ед. — не видно.
+  // платформами, врагами и провалом за ней. Декор и чекпоинты (их нет в api) сдвигаются относительно плиты на ≤ 4 ед. — не видно.
   function fixTinySteps(api) {
     const { solids, platforms, enemies, pits, player: P } = api, adj = (a, b) => Math.abs(a.x + a.w - b.x) < 0.5;
     for (let pass = 0; pass < 10; pass++) {
       const g = solids.filter(s => s.kind === 'ground').sort((a, b) => a.x - b.x);
       const i = g.findIndex((B, k) => k > 0 && adj(g[k - 1], B) && B.y !== g[k - 1].y && Math.abs(B.y - g[k - 1].y) <= 4);
       if (i < 0) break;
-      const lo = g[i - 1].y > g[i].y ? i - 1 : i, y0 = g[lo].y, d = -Math.abs(g[i].y - g[i - 1].y);
-      let a = lo, b = lo;
-      while (a > 0 && adj(g[a - 1], g[a]) && g[a - 1].y === y0) a--;
-      while (b + 1 < g.length && adj(g[b], g[b + 1]) && g[b + 1].y === y0) b++;
+      const run = k => { let a = k, b = k; const y = g[k].y;
+        while (a > 0 && adj(g[a - 1], g[a]) && g[a - 1].y === y) a--;
+        while (b + 1 < g.length && adj(g[b], g[b + 1]) && g[b + 1].y === y) b++;
+        return [a, b]; };
+      // обычно поднимаем нижнюю серию; если в ней финиш (его высоту движок уже запомнил) — опускаем верхнюю
+      let lo = g[i - 1].y > g[i].y ? i - 1 : i, d = -Math.abs(g[i].y - g[i - 1].y), [a, b] = run(lo);
+      if (b === g.length - 1) { lo = lo === i ? i - 1 : i; d = -d; [a, b] = run(lo); }
+      const y0 = g[lo].y;
       const x0 = g[a].x, x1 = g[b].x + g[b].w, inRun = o => { const c = o.x + (o.w || 0) / 2; return c >= x0 && c < x1; };
       for (const s of solids) if (inRun(s) && (s.kind === 'obstacle' || s.y === y0)) { s.y += d; if (s.kind !== 'obstacle') s.h -= d; }
       for (const p of platforms) if (inRun(p)) { p.y += d; p.base += d; }
@@ -38,6 +42,8 @@
     }
     const top = api.groundAt(P.x + P.w / 2);
     if (top !== null && P.y + P.h > top) P.y = top - P.h; // стартовый отрезок мог подняться — ставим героя на него
+    let n = 0; // номера пролётов по порядку: «П-1», «П-2», … без пропусков
+    for (const s of solids) if (s.kind === 'ground') s.span = ++n;
   }
 
   // ---------- фон: рассветное небо, река, дальний берег, соседний мост, плавкран ----------
@@ -289,7 +295,7 @@
       ctx.fillStyle = '#86352a'; ctx.fillRect(x - 7, y + 12.5, 16, 19);
       ctx.fillStyle = '#d98a70'; for (let by = y + 15; by < y + 30; by += 4) { ctx.fillRect(x - 5, by, 1.5, 1.5); ctx.fillRect(x + 5.5, by, 1.5, 1.5); }
     }
-    if (s.w > 150 && s.x + 30 > camX - 40 && s.x + 30 < camX + W) api.text('П-' + (1 + Math.floor(s.x / 300)), s.x + 34, y + 25, 8, 'rgba(255,236,214,.7)'); // номер пролёта
+    if (s.w > 150 && s.x + 30 > camX - 40 && s.x + 30 < camX + W) api.text('П-' + (s.span || 1 + Math.floor(s.x / 300)), s.x + 34, y + 25, 8, 'rgba(255,236,214,.7)'); // номер пролёта
     ctx.fillStyle = '#2c8391'; ctx.fillRect(L, y + 5, Wd, 6);                     // окаймляющая стальная балка с болтами
     ctx.fillStyle = '#a3e6ec'; ctx.beginPath();
     for (let x = Math.ceil(x0 / 12) * 12 + 4; x < x1 - 2; x += 12) ctx.rect(x, y + 7.2, 1.6, 1.6);
@@ -538,9 +544,10 @@
       w: 22, h: 38, hp: 2, pts: 250, flip: false, knockback: false, hitColor: '#ffe066', deathColor: '#ffd23f',
       init(e, api) {
         const span = e.maxX - e.minX, cx = e.x + e.w / 2;
-        e.amp = api.clamp(span / 2 - 24, 26, 90);
-        const lo = e.minX + e.amp + 14, hi = e.maxX - e.amp - 14;
-        e.ax = lo > hi ? (e.minX + e.maxX) / 2 : api.clamp(cx, lo, hi);
+        const land = api.groundAt(e.minX - 12) === null ? 40 : 0; // сразу за разрывом — место, чтобы приземлиться не под трос
+        e.amp = api.clamp((span - land) / 2 - 24, 26, 90);
+        const lo = e.minX + land + e.amp + 14, hi = e.maxX - e.amp - 14;
+        e.ax = lo > hi ? (e.minX + land + e.maxX) / 2 : api.clamp(cx, lo, hi);
         const hy = e.groundY - 18 - e.h;               // в нижней точке ноги на уровне груди героя
         e.len = api.clamp(hy - 46, 90, 150); e.ay = hy - e.len;
         e.th = Math.asin(Math.min(0.9, e.amp / (e.len + 19)));

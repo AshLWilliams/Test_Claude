@@ -2,8 +2,9 @@
 // Участок 10 — плотина ГЭС ночью: сдача объекта приёмочной комиссии и финальный босс. См. THEMES.md.
 (() => {
   // состояние темы (сбрасывается в init): отпечатки печатей и трещины на бетоне, салют победы, остов экскаватора
-  const S = { decals: [], cel: null, wreck: null };
-  const addDecal = d => { d.t = 0; d.r = (Math.random() - 0.5) * 0.3; S.decals.push(d); if (S.decals.length > 14) S.decals.shift(); };
+  const S = { decals: [], cel: null, wreck: null, dxs: [] }; // dxs — где уже стоит декор в этом кадре
+  const addDecal = d => { // новый оттиск заменяет соседний того же вида — без каши из наложенных надписей
+    d.t = 0; d.r = (Math.random() - 0.5) * 0.3; S.decals = S.decals.filter(q => !!q.crack !== !!d.crack || Math.abs(q.y - d.y) > 2 || Math.abs(q.x - d.x) > ((q.w || 44) + (d.w || 44)) / 2); S.decals.push(d); if (S.decals.length > 14) S.decals.shift(); };
 
   // ---------- фон ----------
   function ridge(ctx, api, p, step, base, amp, seed, color) { // горный хребет — ломаная по случайным вершинам
@@ -16,7 +17,7 @@
 
   function drawBackground(ctx, api) {
     const { W, camX, hash, now } = api, g = ctx.createLinearGradient(0, 0, 0, 240); g.addColorStop(0, '#030819'); g.addColorStop(0.6, '#0b1b42'); g.addColorStop(1, '#1b3a70');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, 250); // ниже всё закрыто парапетом и гребнем
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, 250); S.dxs.length = 0; // ниже всё закрыто парапетом и гребнем; новый кадр — декор заново
     ctx.fillStyle = '#e4ecff'; // звёзды мерцают
     for (let i = 0; i < 120; i++) {
       const x = ((hash(i * 7 + 1) * 1900 - camX * 0.02) % 1900 + 1900) % 1900, s = hash(i * 7 + 3) > 0.87 ? 2 : 1.1;
@@ -133,10 +134,11 @@
     const { H, hash } = api, A = api.arena, isArena = A && s.x === A.x1; if (isArena) drawArenaBack(s, ctx, api);
     const g = ctx.createLinearGradient(0, s.y, 0, H); g.addColorStop(0, '#8792a6'); g.addColorStop(0.3, '#5d687d'); g.addColorStop(1, '#232a39');
     ctx.fillStyle = g; ctx.fillRect(s.x - 0.5, s.y, s.w + 1, H - s.y + 10); // +1 — без щелей на стыках
+    const joinL = api.groundAt(s.x - 1) === s.y, joinR = api.groundAt(s.x + s.w + 1) === s.y, rl = s.x + (joinL ? -0.5 : 4), rr = s.x + s.w + (joinR ? 0.5 : -4); // стык с соседом вровень
     ctx.strokeStyle = '#6c7c9a'; ctx.lineWidth = 2; ctx.beginPath(); // ограждение (позади героя)
     for (let x = Math.ceil((s.x + 8) / 36) * 36; x < s.x + s.w - 4; x += 36) { ctx.moveTo(x, s.y); ctx.lineTo(x, s.y - 17); }
     ctx.stroke(); ctx.lineWidth = 1.5; ctx.beginPath();
-    ctx.moveTo(s.x + 4, s.y - 16); ctx.lineTo(s.x + s.w - 4, s.y - 16); ctx.moveTo(s.x + 4, s.y - 9); ctx.lineTo(s.x + s.w - 4, s.y - 9); ctx.stroke();
+    ctx.moveTo(rl, s.y - 16); ctx.lineTo(rr, s.y - 16); ctx.moveTo(rl, s.y - 9); ctx.lineTo(rr, s.y - 9); ctx.stroke();
     ctx.fillStyle = '#b8c1ce'; ctx.fillRect(s.x, s.y, s.w, 5); ctx.fillStyle = '#e8edf3'; ctx.fillRect(s.x, s.y, s.w, 1);
     ctx.fillStyle = '#f2c230'; for (let x = Math.ceil(s.x / 28) * 28; x < s.x + s.w - 6; x += 28) ctx.fillRect(Math.max(x, s.x), s.y + 6, 16, 3);
     ctx.fillStyle = 'rgba(15,22,36,.35)'; // швы блоков бетонирования
@@ -145,7 +147,7 @@
     for (let x = Math.ceil(s.x / 64) * 64 + 32; x < s.x + s.w - 8; x += 64) { // дренажные отверстия и потёки
       glow(ctx, x, s.y + 45, 2.5, '#1b2230'); ctx.fillStyle = 'rgba(20,30,48,.28)'; ctx.fillRect(x - 1.5, s.y + 47, 3, 14 + hash(Math.floor(x)) * 26);
     }
-    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(s.x, s.y, 2, H - s.y); ctx.fillRect(s.x + s.w - 2, s.y, 2, H - s.y); drawDecals(s, ctx, api);
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; if (!joinL) ctx.fillRect(s.x, s.y, 2, H - s.y); if (!joinR) ctx.fillRect(s.x + s.w - 2, s.y, 2, H - s.y); drawDecals(s, ctx, api);
     if (isArena) drawArenaFront(s, ctx, api);
   }
 
@@ -164,7 +166,7 @@
     const bx = p.x - 26; // столбики с цепью и табличка у края
     for (const x of [bx, bx + 16]) for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? '#1b1b1b' : '#f2c230'; ctx.fillRect(x - 2, p.y - 16 + i * 4, 4, 4); }
     ctx.strokeStyle = '#c62828'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(bx, p.y - 14); ctx.quadraticCurveTo(bx + 8, p.y - 8, bx + 16, p.y - 14); ctx.stroke();
-    ctx.fillStyle = '#eef1f6'; ctx.fillRect(bx - 7, p.y - 30, 32, 11); api.text('ВОДОСБРОС', bx + 9, p.y - 22, 5.5, '#b3261e');
+    ctx.fillStyle = '#eef1f6'; ctx.fillRect(bx - 14, p.y - 30, 46, 11); api.text('ВОДОСБРОС', bx + 9, p.y - 22, 5.5, '#b3261e');
   }
 
   function drawPlatform(p, ctx) { // стальной служебный мостик с решётчатым настилом
@@ -204,6 +206,7 @@
 
   function drawDecor(d, ctx, api) {
     const x = d.x, y = d.y, now = api.now;
+    if (d.kind !== 'flood') { for (const q of S.dxs) if (Math.abs(q - x) < 58) return; if (S.dxs.length < 16) S.dxs.push(x); } // рядом уже стоит другой предмет — этот не рисуем (порядок стабилен)
     if (d.kind === 'flood') { // прожектор на столбе: конус света и пятно на бетоне
       const on = Math.sin(now * 23 + d.v * 50) > -0.97; ctx.fillStyle = on ? 'rgba(255,244,200,.08)' : 'rgba(255,244,200,.03)';
       ctx.beginPath(); ctx.moveTo(x - 6, y - 84); ctx.lineTo(x + 8, y - 84); ctx.lineTo(x + 46, y); ctx.lineTo(x - 30, y); ctx.fill();
@@ -417,7 +420,9 @@
         return { x: ox + c.x - 25, y: gy + c.y - 21, w: 50, h: 42 + (e.bow > 0.6 ? 18 : 0) };
       },
       bodybox(e) { return { x: e.x, y: e.y, w: e.w, h: e.h }; }, // кузов и опорная база: касание ранит
-      onHit(e, api) { const c = cabPos(e); api.burst(e.x + e.w / 2 + c.x, e.y + e.h + c.y, '#ffffff', 10, 180); e.flash = 0.25; },
+      onHit(e, api, src) { // после двух отбитых печатей за залп инспектор опускает шторку — остальные отскакивают
+        const c = cabPos(e), cx = e.x + e.w / 2 + c.x, cy = e.y + e.h + c.y; if (src === 'projectile' && e.shut >= 2) { api.burst(cx, cy, '#9aa6b8', 8, 140); return false; }
+        if (src === 'projectile') e.shut = (e.shut || 0) + 1; api.burst(cx, cy, '#ffffff', 10, 180); e.flash = 0.25; },
       onDeath(e, api) { // акт подписан: салют, взрывы, остов остаётся на арене
         const ox = e.x + e.w / 2, gy = e.y + e.h, c = cabPos(e), tx = Math.min(-200, e.tip.x);
         for (const q of api.enemies) if (q !== e && !q.dead) { q.dead = true; api.burst(q.x + q.w / 2, q.y + q.h / 2, '#bfe3ff', 10, 160); }
@@ -430,15 +435,15 @@
   };
 
   // ---------- босс: поведение ----------
-  const TIP_Y = -196, FOOT = { x: -86, y: -54 }, MAST = { x: -60, y: -186 }; // оголовок стрелы, пята стрелы, вершина мачты
+  const TIP_Y = -186, FOOT = { x: -86, y: -54 }, MAST = { x: -60, y: -186 }; // оголовок стрелы, пята стрелы, вершина мачты
   const HINGE = { x: -52, y: -122 }, CAB_UP = { x: 12, y: -150 }, CAB_BOW = { x: -122, y: -62 };
   const A0 = Math.atan2(CAB_UP.y - HINGE.y, CAB_UP.x - HINGE.x), A1 = Math.atan2(CAB_BOW.y - HINGE.y, CAB_BOW.x - HINGE.x) - Math.PI * 2;
   const R0 = Math.hypot(CAB_UP.x - HINGE.x, CAB_UP.y - HINGE.y), R1 = Math.hypot(CAB_BOW.x - HINGE.x, CAB_BOW.y - HINGE.y);
-  const PAUSE = [1.5, 1.1, 0.9], HOLD = [1.05, 0.92, 0.85], GAP = [0.34, 0.28, 0.26];
+  const PAUSE = [2.1, 1.6, 1.3], HOLD = [1.05, 0.92, 0.85], GAP = [0.34, 0.28, 0.26];
 
   function cabPos(e) { // центр кабины: подъёмник поворачивает её через верх вперёд и вниз («поклон»)
-    const b = e.bow, k = b * b * (3 - 2 * b), a = A0 + (A1 - A0) * k, r = R0 + (R1 - R0) * k;
-    return { x: HINGE.x + Math.cos(a) * r, y: HINGE.y + Math.sin(a) * r };
+    const b = e.bow, k = b * b * (3 - 2 * b), a = A0 + (A1 - A0) * k, r = R0 + (R1 - R0) * k - Math.sin(k * Math.PI) * 34; // на середине пути подъёмник поджат
+    return { x: HINGE.x + Math.cos(a) * r, y: Math.max(CAB_UP.y, HINGE.y + Math.sin(a) * r) }; // не выше рабочего положения — не под полосой здоровья
   }
 
   function throwStamp(e, api, k) { // печать летит по дуге; рейкой её можно отбить обратно в кабину (−2)
@@ -452,21 +457,17 @@
         if (top !== null && Math.abs(top - (p.y + p.h)) < 14) addDecal({ x, y: top, txt: 'НЕ СОГЛАСОВАНО', w: 84, c: '#ff3b3b' });
       } });
   }
-
   function spawnWave(api, x, dir, stopX, gy) { // низкая волна вдоль бетона (12 в высоту) — перепрыгнуть
     api.shoot({ x, y: gy - 6, w: 20, h: 12, vx: dir * 240, vy: 0, gravity: 0, life: 4, hitsSolids: false, destructible: false, color: '#ffb347', draw: drawWave, pts: 0,
       update(p) { if ((dir > 0 && p.x + p.w > stopX) || (dir < 0 && p.x < stopX)) p.dead = true; } });
   }
-
   function slamTarget(e, api) { // куда бить ковшом (относительно центра экскаватора): под героя, но не под себя
     const P = api.player, ox = e.x + e.w / 2, hi = -150, lo = Math.min(hi, e.minX + 30 - ox);
     return api.clamp(P.x + P.w / 2 - ox, lo, hi);
   }
-
   function bucketHurt(e, api) {
     const ox = e.x + e.w / 2, gy = e.y + e.h, b = { x: ox + e.bk.x - 24, y: gy + e.bk.y - 34, w: 48, h: 34 }; if (api.overlap(api.player, b)) api.hurtPlayer(b.x + b.w / 2);
   }
-
   function impact(e, api) { // ковш врезался в гребень: тряска, пыль, трещина и две волны в стороны
     const gy = e.y + e.h, x = e.x + e.w / 2 + e.tx;
     e.bk.y = 0; e.bk.v = 0; e.hurtT = 0.08; api.shake(10); api.burst(x, gy - 4, '#aeb8c8', 18, 230, 700); api.burst(x, gy - 10, '#ffd76a', 10, 200, 600);
@@ -475,16 +476,13 @@
     if (e.phase === 3 && !e.second) { e.second = true; e.state = 'aim'; e.sT = 0.35; } // фаза 3: двойной удар
     else { e.second = false; e.state = 'bow'; e.sT = 1.6; e.say = { txt: 'УХ…', t: 0.8 }; }
   }
-
   function park(e, dt) { // стрела поднята, ковш покачивается на канатах
     const T = e.tip, B = e.bk, r = Math.min(1, dt * 3); T.x += (-150 - T.x) * r; T.y += (TIP_Y - 4 - T.y) * r;
     B.x += (T.x + Math.sin(e.t * 1.3) * 5 - B.x) * Math.min(1, dt * 4); B.y += (T.y + 66 - B.y) * Math.min(1, dt * 5);
   }
-
   function advance(e, dt, api) { // фаза 3: медленно шагает к герою, но оставляет ему место
     if (e.phase === 3 && e.x - (api.player.x + api.player.w) > 150 && e.x > e.minX + 330) { e.x -= 16 * dt; e.walk += dt; }
   }
-
   function summon(e, api) { // вызвать дронов ГАСН (не больше двух одновременно)
     let n = 0; for (const q of api.enemies) if (q.summoned && !q.dead) n++; const gy = e.y + e.h;
     for (let i = n; i < 2; i++) api.spawnEnemy('inspdrone', e.minX + 130 + i * 190, gy - 128, { minX: e.minX, maxX: e.maxX, air: true, groundY: gy, summoned: true, enter: true });
@@ -509,8 +507,7 @@
       case 'pause':
         park(e, dt); advance(e, dt, api);
         if (e.sT <= 0) {
-          if (e.next === 'stamps') { e.state = 'wind'; e.sT = 0.75; e.say = { txt: 'НЕ СОГЛАСОВАНО!', t: 0.9 }; }
-          else { e.state = 'aim'; e.sT = 0.4; }
+          e.shut = 0; if (e.next === 'stamps') { e.state = 'wind'; e.sT = 0.75; e.say = { txt: 'НЕ СОГЛАСОВАНО!', t: 0.9 }; } else { e.state = 'aim'; e.sT = 0.4; }
         }
         break;
       case 'wind': park(e, dt); advance(e, dt, api); if (e.sT <= 0) { e.state = 'throw'; e.k = 0; e.sT = 0; } break; // печать поднята над головой
@@ -632,11 +629,12 @@
     if (e.bow > 0.6 && !dead) { ctx.fillStyle = `rgba(255,230,120,${0.3 + 0.2 * Math.sin(t * 14)})`; ctx.fillRect(-31, -30, 62, 56); } // кабина опущена — подсвечена
     ctx.fillStyle = '#f2b705'; ctx.fillRect(-25, -20, 50, 40); ctx.fillStyle = '#c98f00'; ctx.fillRect(-25, 12, 50, 8); ctx.fillStyle = '#d39c00'; ctx.fillRect(-28, -24, 56, 5);
     ctx.fillStyle = dead ? '#6d8cab' : '#9fd3ff'; ctx.fillRect(-22, -15, 30, 24);
-    drawChief(ctx, e); ctx.fillStyle = 'rgba(255,255,255,.28)'; ctx.beginPath(); ctx.moveTo(-22, -15); ctx.lineTo(-13, -15); ctx.lineTo(-22, -1); ctx.fill();
+    drawChief(ctx, e); if (e.shut >= 2) { ctx.fillStyle = '#8d97a8'; ctx.fillRect(-22, -15, 30, 24); ctx.fillStyle = '#5d6678'; for (let y = -12; y < 9; y += 4) ctx.fillRect(-22, y, 30, 1.5); api.text('ЗАКРЫТО', -7, 1, 5.5, '#b3261e'); } // шторка
+    ctx.fillStyle = 'rgba(255,255,255,.28)'; ctx.beginPath(); ctx.moveTo(-22, -15); ctx.lineTo(-13, -15); ctx.lineTo(-22, -1); ctx.fill();
     ctx.strokeStyle = '#3a3f48'; ctx.lineWidth = 2; ctx.strokeRect(-22, -15, 30, 24); ctx.fillStyle = '#1b1b1b'; ctx.fillRect(12, -14, 9, 2); ctx.fillRect(12, -9, 9, 2);
     ctx.fillStyle = '#c62828'; ctx.fillRect(-21, -33, 42, 9); api.text('ИНСПЕКТОР', 0, -26, 6.5, '#fff');
     if (e.flash > 0 && Math.floor(e.flash * 30) % 2) { ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillRect(-26, -34, 52, 55); } // попадание
-    ctx.restore(); if (e.say) bubble(ctx, api, Math.min(c.x - 56, -60), Math.max(-190, c.y - 30), e.say.txt, dead ? '#2e7d32' : '#b3261e');
+    ctx.restore(); if (e.say) bubble(ctx, api, Math.min(c.x - 56, -60), Math.max(-176, c.y - 30), e.say.txt, dead ? '#2e7d32' : '#b3261e');
   }
 
   // ---------- механики темы: салют победы, брызги водосбросов, ярость ----------
