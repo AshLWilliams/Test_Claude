@@ -1,0 +1,8 @@
+name = "star-dodger"
+main = "index.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+GAME_URL = "https://ashlwilliams.github.io/Test_Claude/"
+GAME_SHORT_NAME = "stardodger"
+# Секрет BOT_TOKEN задаётся командой: npx wrangler secret put BOT_TOKEN
