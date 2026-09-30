@@ -29,6 +29,8 @@ const MAX_PIT = 112, MAX_STEP = 55, MAX_HAZARD_W = 64; // пределы, при
 const FALL_HURT = 260;   // падение с высоты больше этой (≈6 ростов героя) отнимает каску
 const CLIMB = 150;       // скорость лазания по лестнице
 const LENGTH_SCALE = 1.6; // участки стали длиннее: длина из темы умножается на это число
+const FH = 150;          // высота этажа в здании (gen.indoor): стена-переход с лестницей между этажами
+const DEEP = 240;        // насколько ниже кадра уходит земля на участках с подземельем (gen.underground)
 
 // ---------- темы ----------
 const THEMES = [];
@@ -37,7 +39,7 @@ function registerTheme(t) { THEMES.push(t); THEMES.sort((a, b) => a.index - b.in
 // параметры генератора по умолчанию; тема может переопределить их в gen
 const GEN = {
   length: 3800,                                                   // базовая длина участка до финиша (умножается на LENGTH_SCALE)
-  weights: { pit: 24, platforms: 20, step: 14, obstacle: 14, flat: 28, wall: 9, tower: 8 }, // частоты видов отрезков
+  weights: { pit: 24, platforms: 20, step: 14, obstacle: 14, flat: 28, wall: 9, tower: 8, under: 0 }, // частоты видов отрезков
   pitW: [70, 112],                                                // ширина провалов
   groundRange: [225, 305],                                        // высота земли
   upperChance: 0.7,                                               // вероятность второго яруса платформ
@@ -47,13 +49,17 @@ const GEN = {
   decorCount: [0, 2],
   friction: 1,                                                    // <1 — скользко (лёд)
   boss: null,                                                     // { type, arenaW } — вместо финиша арена с боссом
+  underground: null,                                              // 'metro' | 'mine' — часть провалов ведёт в подземный ход
+  indoor: false,                                                  // true — участок внутри здания: этажи, финиш на крыше
+  breakables: ['crate', 'barrel'],                                // какие разрушаемые предметы стоят на участке (см. BREAKABLES)
 };
 
 // ---------- состояние ----------
 let levelIdx = 0, startLevel = 0, practice = false, theme = null, G = GEN;
 let skyTop = '#000';
 let seed, solids, platforms, pits, decor, pickups, enemies, projectiles, checkpoints, particles, popups, ladders, helmets;
-let ghosts, secrets, hintsShown = new Set(); // ghosts — стены с тайником (рисуются целиком, сталкиваемся по кускам); secrets — ниши-тайники
+let ghosts, secrets, hintsShown = new Set();
+let tunnels = [], rooms = [], crowds = []; // подземные ходы, этажи здания, толпы рабочих на заднем плане // ghosts — стены с тайником (рисуются целиком, сталкиваемся по кускам); secrets — ниши-тайники
 let player, camX, camY = 0, levelEnd, finishX, finishY, respawn, arena = null;
 let score, lives, kills, time, levelTime, shake, banner = null, clearInfo = null;
 let mode = 'menu'; // menu | play | pause | clear | over | win
@@ -134,14 +140,19 @@ const api = {
   dx(e) { return player.x + player.w / 2 - (e.x + e.w / 2); }, // >0 — игрок справа
   near(e, rx = 240, ry = 120) { return Math.abs(api.dx(e)) < rx && Math.abs(player.y - e.y) < ry; },
   toScreen(x, y) { return { x: x - camX, y: y - camY }; },
+  get tunnels() { return tunnels; }, get rooms() { return rooms; },
 };
+const apiDeep = Object.create(api, { H: { value: H + DEEP } }); // для отрисовки земли на участках с подземельем
 
 // ---------- генерация участка ----------
 function generateLevel(s) {
   const R = mulberry32(s);
   const r = (a, b) => a + R() * (b - a), ri = (a, b) => Math.floor(r(a, b + 1)), pick = arr => arr[Math.floor(R() * arr.length)];
   solids = []; platforms = []; pits = []; decor = []; pickups = []; enemies = []; checkpoints = []; ladders = []; helmets = []; ghosts = []; secrets = [];
+  tunnels = []; rooms = []; crowds = [];
   arena = null;
+  const bottom = H + (G.underground ? DEEP : 200); // низ земли: под подземельем она уходит глубже кадра
+  let floorStart = 0, floorLen = ri(900, 1250);   // здание: где начался текущий этаж и какой он длины
   const spots = []; // ровные отрезки середины участка — отсюда выбирается место для геодезиста-халтурщика
   const LENGTH = Math.round(G.length * LENGTH_SCALE);
   const [gMin, gMax] = [clamp(G.groundRange[0], 200, 310), clamp(G.groundRange[1], 200, 310)];
@@ -154,33 +165,69 @@ function generateLevel(s) {
   const ground = (x0, w, y) => {
     if (prevGy !== null && y !== prevGy && Math.abs(y - prevGy) < 20) y = prevGy;
     prevGy = y; gy = y;
-    solids.push({ x: x0, y, w, h: H + 200 - y, kind: 'ground' });
+    solids.push({ x: x0, y, w, h: bottom - y, kind: 'ground' });
   };
   const progress = () => x / LENGTH; // сложность растёт к концу участка
   const decorKinds = theme.decor && theme.decor.length ? theme.decor : null;
 
   function decorate(x0, w, y) {
     if (!decorKinds) return;
-    const n = ri(G.decorCount[0], G.decorCount[1]);
+    const n = ri(G.decorCount[0], G.decorCount[1]) + (R() < 0.5 ? 1 : 0); // окружения стало больше
     for (let i = 0; i < n; i++) decor.push({ kind: pick(decorKinds), x: x0 + r(20, w - 20), y, v: R() });
   }
   function blueprints(x0, w, y) {
     const n = ri(0, 3), h = r(40, 95);
-    for (let i = 0; i < n; i++) pickups.push({ x: x0 + w / 2 + (i - (n - 1) / 2) * 34, y: Math.max(y < 120 ? -400 : 50, y - h), t: R() * 6 });
+    for (let i = 0; i < n; i++) pickups.push({ x: x0 + w / 2 + (i - (n - 1) / 2) * 34, y: Math.max(y < 120 ? -5000 : 50, y - h), t: R() * 6 });
   }
   function helmet(x0, y, chanceWhite) { // каска восстанавливает жизни: белая — две, оранжевая — одну; встречаются редко
     helmets.push({ x: x0, y: y - 26, kind: R() < chanceWhite ? 'white' : 'orange', t: R() * 6 });
   }
   const ladder = (lx, top, bottom, wall = false) => ladders.push({ x: lx, w: 22, top, bottom, wall, v: R() });
-  function crates(x0, y) { // бочка или ящик (иногда оба рядом) — ломаются рейкой, внутри бывает добыча; возвращает правый край
-    const n = R() < 0.25 ? 2 : 1, sort = R() < 0.55 ? 'barrel' : 'crate'; // пара — одинаковой высоты, чтобы поверху не спотыкаться
+  function crates(x0, y, xEnd = Infinity) { // разрушаемые предметы участка (1–3 одинаковых рядом): одни ломаются с удара, другие — с нескольких; возвращает правый край
+    const kinds = (G.breakables || ['crate']).filter(k => BREAKABLES[k]), sort = pick(kinds), b = BREAKABLES[sort];
+    const n = R() < 0.3 ? 2 : R() < 0.12 ? 3 : 1; // одинаковые — одной высоты, чтобы поверху не спотыкаться
+    if (x0 + n * (b.w + 2) > xEnd - 170) return x0; // после предмета нужен разбег до края отрезка (там может быть провал)
     for (let i = 0; i < n; i++) {
-      const w = sort === 'barrel' ? 24 : 30, h = sort === 'barrel' ? 30 : 28, l = R();
-      solids.push({ x: x0, y: y - h, w, h, kind: 'breakable', sort, hp: sort === 'barrel' ? 2 : 1, maxHp: sort === 'barrel' ? 2 : 1, v: R(), hit: 0,
-        loot: l < 0.4 ? 'blueprint' : l < 0.5 ? 'helmet' : null });
-      x0 += w + 2;
+      const l = R();
+      solids.push({ x: x0, y: y - b.h, w: b.w, h: b.h, kind: 'breakable', sort, hp: b.hp, maxHp: b.hp, v: R(), hit: 0,
+        loot: l < 0.35 ? 'blueprint' : l < 0.43 ? 'helmet' : null });
+      x0 += b.w + 2;
     }
     return x0;
+  }
+  function crowd(x0, w, y) { // бригада рабочих на заднем плане
+    if (w < 240 || R() > 0.5) return;
+    const n = ri(3, 7);
+    crowds.push({ x: x0 + r(20, Math.max(21, w - n * 20 - 20)), y, n, seed: Math.floor(R() * 1e6) });
+  }
+  function tunnel() { // подземный ход: в перекрытии над ним дыры, в конце — лестница наверх
+    const len = ri(1100, 1700), top = gy, slabH = 34, floor = Math.min(gy + 118, H + 60);
+    const t = { x1: x, x2: x + len, top, slabBot: top + slabH, floor, v: R() };
+    tunnels.push(t);
+    solids.push({ x, y: floor, w: len, h: bottom - floor, kind: 'ground', under: true, v: R() });
+    const holes = []; let hx = x + ri(170, 260);
+    while (hx < x + len - 420) { const w = ri(70, 100); holes.push([hx, w]); hx += w + ri(300, 520); }
+    const exitX = x + len - 60;
+    holes.push([exitX, 30]); // шахта выхода с лестницей
+    let sx = x;
+    for (const [h0, hw] of holes) {
+      if (h0 > sx) { solids.push({ x: sx, y: top, w: h0 - sx, h: slabH, kind: 'ground', slab: true, v: R() }); decorate(sx, h0 - sx, top); enemiesOn(sx, h0 - sx, top, -0.2); }
+      if (hw > 40 && R() < 0.4) ladder(h0 + hw / 2 - 11, top, floor, true); // под некоторыми дырами — лестница обратно наверх
+      sx = h0 + hw;
+    }
+    solids.push({ x: sx, y: top, w: x + len - sx, h: slabH, kind: 'ground', slab: true, v: R() });
+    ladder(exitX + 4, top, floor, true);
+    // внизу: враги, ящики, чертежи, иногда каска, бригада проходчиков
+    for (let ux = x + 60; ux < x + len - 260; ux += ri(300, 420)) {
+      const w = Math.min(300, x + len - 120 - ux);
+      if (w < 140) break;
+      const ex = R() < 0.5 ? crates(ux + r(10, 60), floor) + 20 : ux;
+      enemiesOn(ex, ux + w - ex, floor, 0.1, true);
+      blueprints(ux, w, floor); crowd(ux, w, floor);
+    }
+    if (R() < 0.45) helmet(x + len * r(0.3, 0.7), floor, 0.3);
+    x += len; prevGy = null;
+    ground(x, 220, gy); decorate(x, 220, gy); x += 220; // после выхода наверх — разбег перед следующим провалом
   }
   function secretNiche(wall, baseY) { // тайник в стене: вход закрыт кладкой с трещинами, внутри — золотые чертежи
     const nw = Math.min(wall.w - 50, ri(96, 124)), nh = 58, ny = baseY - nh;
@@ -204,14 +251,14 @@ function generateLevel(s) {
     for (const o of opts) { v -= o.weight || 1; if (v <= 0) return o; }
     return opts[opts.length - 1];
   }
-  function enemiesOn(x0, w, y, extra = 0) {
+  function enemiesOn(x0, w, y, extra = 0, groundOnly = false) {
     const chance = (0.42 + progress() * 0.35 + levelIdx * 0.02 + extra) * G.enemyDensity;
-    if (x0 < 500 || R() > chance) return;
-    const o = pickType(['ground', 'air']);
+    if (x0 < 500 || w < 60 || R() > chance) return;
+    const o = pickType(groundOnly ? ['ground'] : ['ground', 'air']);
     if (!o) return;
     const air = o.where === 'air';
     const ex = x0 + r(w * 0.4, w * 0.8);
-    spawnEnemy(o.type, ex, air ? y - 110 - r(0, 40) : y, { minX: x0 + 6, maxX: x0 + w - 6, air, groundY: y });
+    spawnEnemy(o.type, ex, air ? y - (G.indoor ? 88 + r(0, 12) : 110 + r(0, 40)) : y, { minX: x0 + 6, maxX: x0 + w - 6, air, groundY: y }); // в здании летают под потолком
   }
   function hazardOn(x0, w, y) { // статичная опасность посередине ровного отрезка — её надо перепрыгнуть
     if (x0 < 600 || w < 260 || R() > G.hazardChance) return false;
@@ -228,23 +275,33 @@ function generateLevel(s) {
   const wts = G.weights, wsum = Object.values(wts).reduce((a, b) => a + b, 0);
   while (x < LENGTH) {
     let t = R() * wsum;
-    let kind = ['pit', 'platforms', 'step', 'obstacle', 'flat', 'wall', 'tower'].find(k => (t -= wts[k] || 0) < 0) || 'flat';
+    let kind = ['pit', 'platforms', 'step', 'obstacle', 'flat', 'wall', 'tower', 'under'].find(k => (t -= wts[k] || 0) < 0) || 'flat';
     if ((kind === 'wall' || kind === 'tower') && x < 700) kind = 'flat'; // в начале участка — без высотных конструкций
+    if (kind === 'under' && (!G.underground || x < 900 || x > LENGTH - 1500 || tunnels.length >= 3)) kind = 'flat';
+    if (G.underground && !tunnels.length && progress() > 0.4 && x < LENGTH - 1500) kind = 'under'; // подземный ход есть всегда
     if (!secrets.length && progress() > 0.6) kind = 'wall'; // тайник есть на каждом участке
-    if (kind === 'pit') {
+    if (G.indoor) { // здание: этажи ровные, стены — только переходы на этаж выше
+      if (['step', 'tower', 'under', 'wall'].includes(kind)) kind = 'flat';
+      if (x - floorStart > floorLen && x < LENGTH - 700) kind = 'wall';
+    }
+    if (kind === 'under') tunnel();
+    else if (kind === 'pit') {
       const w = ri(pitMin, pitMax);
       pits.push({ x, w, y: gy, v: R() });
       x += w;
-      gy = clamp(gy + ri(-1, 1) * 28, Math.max(gMin, 235), gMax);
+      if (!G.indoor) gy = clamp(gy + ri(-1, 1) * 28, Math.max(gMin, 235), gMax);
       const len = ri(180, 330);
-      ground(x, len, gy); decorate(x, len, gy); blueprints(x, len, gy); enemiesOn(x, len, gy);
+      ground(x, len, gy); decorate(x, len, gy); blueprints(x, len, gy);
+      const ex = x > 600 && R() < 0.5 ? crates(x + r(len * 0.3, len * 0.45), gy, x + len) + 20 : x;
+      enemiesOn(ex, x + len - ex, gy); crowd(x, len, gy);
       x += len;
     } else if (kind === 'platforms') { // два яруса проходимых снизу платформ
       const len = ri(320, 470);
       ground(x, len, gy);
       const px = x + 50, pw = len - 100;
       platforms.push({ x: px, y: gy - 72, w: pw, h: 10, base: gy, tier: 1, v: R() });
-      if (R() < G.upperChance) {
+      if (R() < 0.35 && pw > 120) crates(px + r(20, pw - 70), gy - 72, px + pw + 170); // ящик на настиле
+      if (!G.indoor && R() < G.upperChance) {
         const p2 = { x: px + pw * 0.25, y: gy - 138, w: pw * 0.55, h: 10, base: gy - 72, tier: 2, v: R() };
         platforms.push(p2);
         if (R() < 0.1) helmet(p2.x + p2.w / 2, p2.y, 0.15); else blueprints(p2.x, p2.w, p2.y);
@@ -257,8 +314,8 @@ function generateLevel(s) {
       gy = clamp(gy + (R() < 0.5 ? -1 : 1) * ri(30, MAX_STEP), gMin, gMax);
       const len = ri(200, 320);
       ground(x, len, gy); decorate(x, len, gy); blueprints(x, len, gy);
-      const ex = x > 600 && R() < 0.25 ? crates(x + r(len * 0.25, len * 0.4), gy) + 20 : x;
-      enemiesOn(ex, x + len - ex, gy);
+      const ex = x > 600 && R() < 0.6 ? crates(x + r(len * 0.2, len * 0.35), gy, x + len) + 20 : x;
+      enemiesOn(ex, x + len - ex, gy); crowd(x, len, gy);
       spots.push({ x0: x, w: len, y: gy, p: progress() });
       x += len;
     } else if (kind === 'obstacle') { // препятствия: 1–2 стопки блоков, после них не меньше ~150 px разбега
@@ -273,7 +330,8 @@ function generateLevel(s) {
     } else if (kind === 'wall') { // стена выше прыжка: подняться по лестнице, пройти поверху и спрыгнуть
       const baseY = gy;
       ground(x, 140, baseY); decorate(x, 90, baseY); x += 140;
-      const wh = ri(130, 150), ww = ri(170, 260), top = baseY - wh;
+      const wh = G.indoor ? FH : ri(130, 150), ww = ri(170, 260), top = baseY - wh;
+      if (G.indoor) { rooms.push({ x1: floorStart, x2: x, y: baseY, top: baseY - FH }); floorStart = x; floorLen = ri(900, 1250); } // этаж закончился
       ladder(x - 24, top, baseY, true);
       const wall = { x, y: top, w: ww, h: H + 200 - top, kind: 'ground', wall: true, v: R() };
       if (x > 900 && (R() < 0.45 || (!secrets.length && progress() > 0.55))) secretNiche(wall, baseY); // на каждом участке — хотя бы один тайник
@@ -281,10 +339,13 @@ function generateLevel(s) {
       prevGy = null;
       blueprints(x, ww, top);
       if (R() < 0.3) helmet(x + ww / 2, top, 0.25);
-      else enemiesOn(x, ww, top, -0.15);
+      else { const ex = R() < 0.4 ? crates(x + 30, top, x + ww + 120) + 16 : x; enemiesOn(ex, x + ww - ex, top, -0.15); } // на стене — ящик
       x += ww;
-      ground(x, ri(200, 300), baseY); decorate(x, 150, baseY);
-      x = solids[solids.length - 1].x + solids[solids.length - 1].w;
+      if (G.indoor) { gy = top; prevGy = top; } // дальше — этаж выше
+      else {
+        ground(x, ri(200, 300), baseY); decorate(x, 150, baseY);
+        x = solids[solids.length - 1].x + solids[solids.length - 1].w;
+      }
     } else if (kind === 'tower') { // вышка в три яруса по лестницам — необязательный маршрут наверх, выше края экрана
       const len = ri(520, 640);
       ground(x, len, gy);
@@ -306,9 +367,9 @@ function generateLevel(s) {
       const len = ri(260, 420);
       ground(x, len, gy); decorate(x, len, gy); blueprints(x, len, gy);
       if (!hazardOn(x, len, gy)) {
-        const ex = x > 500 && R() < 0.35 ? crates(x + r(30, len * 0.22), gy) + 24 : x;
+        const ex = x > 500 && R() < 0.7 ? crates(x + r(30, len * 0.22), gy, x + len) + 24 : x;
         if (R() < 0.05) helmet(x + len * 0.65, gy, 0); // изредка каска лежит прямо на земле
-        enemiesOn(ex, x + len - ex, gy, 0.15);
+        enemiesOn(ex, x + len - ex, gy, 0.15); crowd(x, len, gy);
         spots.push({ x0: x, w: len, y: gy, p: progress() });
       }
       x += len;
@@ -317,6 +378,12 @@ function generateLevel(s) {
       checkpoints.push({ x: x - 60, y: groundAt(x - 60) ?? gy, on: false });
       lastCP = x;
     }
+  }
+  if (G.indoor) { // потолки этажей; над лестницей — проём, над последним этажом — открытая крыша
+    rooms.forEach((rm, i) => {
+      solids.push({ x: rm.x1, y: rm.y - FH - 12, w: rm.x2 - 30 - rm.x1, h: 12, kind: 'ceiling', v: R() });
+      if (i > 0) solids.push({ x: rm.x1 - 30, y: rm.y - FH - 12, w: 12, h: FH + 12 - 44, kind: 'ceiling', stub: true }); // простенок над лестницей снизу
+    });
   }
   // геодезист-халтурщик с GPS на вешке — один на участок, в середине пути; у каждого участка свой
   let mid = spots.filter(o => o.p > 0.25 && o.p < 0.85 && o.w > 220);
@@ -365,7 +432,7 @@ function shoot(p) {
 
 function groundAt(x) { // верх самой высокой твёрдой поверхности в точке x (или null — провал)
   let top = null;
-  for (const s of solids) if (x >= s.x && x <= s.x + s.w && (top === null || s.y < top)) top = s.y;
+  for (const s of solids) if (s.kind !== 'ceiling' && x >= s.x && x <= s.x + s.w && (top === null || s.y < top)) top = s.y; // потолок этажа — не опора
   return top;
 }
 
@@ -502,6 +569,8 @@ function loadLevel(i) {
   levelIdx = i; theme = THEMES[i];
   G = Object.assign({}, GEN, theme.gen || {});
   G.weights = Object.assign({}, GEN.weights, (theme.gen || {}).weights || {});
+  if (!(theme.gen || {}).breakables && THEME_BREAKABLES[theme.id]) G.breakables = THEME_BREAKABLES[theme.id];
+  resetAmbient();
   seed = (Math.random() * 2 ** 32) >>> 0;
   projectiles = []; particles = []; popups = [];
   generateLevel(seed);
@@ -570,14 +639,16 @@ function debris(x, y, colors, n = 12, speed = 260) { // обломки: вращ
   }
   if (particles.length > 600) particles.splice(0, particles.length - 600);
 }
-const BREAK_COLORS = { barrel: ['#3d6fa8', '#28507c', '#9fb4c8', '#c9a227'], crate: ['#b07a42', '#8a5a2b', '#d2a26b', '#5e3b1a'], crack: ['#8d8173', '#6e6357', '#b3a794', '#4d443a'] };
+const BREAK_COLORS = { crack: ['#8d8173', '#6e6357', '#b3a794', '#4d443a'] };
 function hitBreakable(s) { // удар рейкой по бочке, ящику или кладке с трещинами
   s.hp--; s.hit = 0.15;
   const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
-  if (s.hp > 0) { Sound.play(s.sort === 'barrel' ? 'clang' : 'crack'); debris(cx, cy, BREAK_COLORS[s.sort], 4, 140); shake = Math.max(shake, 2); return; }
+  const b = BREAKABLES[s.sort], mat = b ? b.mat : 'stone', colors = b ? b.colors : BREAK_COLORS.crack;
+  if (s.hp > 0) { Sound.play(s.sort === 'crack' ? 'crack' : MAT_SFX[mat][0]); debris(cx, cy, colors, 4, 140); shake = Math.max(shake, 2); if (s.hp === 1 && s.maxHp > 2) popup(cx, s.y - 8, 'ещё удар!', '#f1e6d6'); return; }
   s.dead = true; solids = solids.filter(o => o !== s);
-  debris(cx, cy, BREAK_COLORS[s.sort], s.sort === 'crack' ? 22 : 14, s.sort === 'crack' ? 300 : 260);
-  burst(cx, cy, s.sort === 'crack' ? '#cfc6b8' : '#e8d8c0', 10, 140, 200); // пыль
+  debris(cx, cy, colors, s.sort === 'crack' ? 22 : 10 + s.maxHp * 4, s.sort === 'crack' ? 300 : 240 + s.maxHp * 20);
+  burst(cx, cy, mat === 'soft' ? colors[0] : s.sort === 'crack' ? '#cfc6b8' : '#e8d8c0', mat === 'soft' ? 22 : 10, mat === 'soft' ? 90 : 140, mat === 'soft' ? -30 : 200); // пыль (мешки — облако)
+  if (mat === 'paper') for (let i = 0; i < 5; i++) particles.push({ x: cx, y: cy, vx: rand(-120, 120), vy: -rand(100, 240), life: rand(1.2, 2), max: 2, color: '#f4f1e6', grav: 260, size: 4, w: 7, h: 9, rot: rand(0, 6), vr: rand(-6, 6), chunk: true, paper: true, ph: rand(0, 6) });
   shake = Math.max(shake, s.sort === 'crack' ? 6 : 3);
   if (s.sort === 'crack') {
     Sound.play('rubble'); Sound.play('secret');
@@ -586,8 +657,8 @@ function hitBreakable(s) { // удар рейкой по бочке, ящику 
     burst(s.x + 40, s.y + s.h / 2, '#ffd24a', 18, 200, 100);
     return;
   }
-  Sound.play(s.sort === 'barrel' ? 'barrel' : 'break');
-  addScore(20, cx, s.y - 6);
+  Sound.play(MAT_SFX[mat][1]);
+  addScore(10 + s.maxHp * 10, cx, s.y - 6); // прочнее — дороже
   if (s.loot === 'blueprint') pickups.push({ x: cx, y: s.y - 12, t: 0 });
   else if (s.loot === 'helmet') helmets.push({ x: cx, y: s.y, kind: 'orange', t: 0, vx: rand(-40, 40), vy: -380 });
 }
@@ -735,8 +806,8 @@ function update(dt) {
     }
   }
 
-  // падение в провал
-  if (P.y > DEATH_Y) {
+  // падение в провал (в подземный ход — не смерть: там пол)
+  if (P.y > deathLimit(P)) {
     lives--; shake = 6; Sound.play('fall');
     if (lives <= 0) { endGame(false); return; }
     const rp = arena && arena.active ? { x: arena.x1 + 60, y: arena.y - 60 } : respawn;
@@ -777,7 +848,7 @@ function update(dt) {
     const key = s.sort === 'crack' ? 'crack' : 'crate';
     if (hintsShown.has(key) || (key === 'crate' && levelIdx > 0)) continue;
     hintsShown.add(key);
-    popup(s.x + s.w / 2, s.y - 24, key === 'crack' ? 'Трещина! Ударь рейкой' : 'Бочки и ящики ломаются рейкой', key === 'crack' ? '#ffd24a' : '#f1e6d6');
+    popup(s.x + s.w / 2, s.y - 24, key === 'crack' ? 'Трещина! Ударь рейкой' : 'Ящики, бочки и прочее ломаются рейкой', key === 'crack' ? '#ffd24a' : '#f1e6d6');
   }
 
   // чекпоинты
@@ -805,10 +876,18 @@ function update(dt) {
   const target = clamp(P.x - W * 0.35 + P.face * 40, lo, hi);
   camX += (target - camX) * Math.min(1, dt * 6);
   // по вертикали камера поднимается, когда герой высоко (вышки, стены), и не опускается ниже обычного кадра
-  const ty = Math.min(0, P.y + P.h / 2 - H * 0.52);
+  const ty0 = P.y + P.h / 2 - H * 0.52, tun = tunnels.find(t => P.x + P.w / 2 > t.x1 && P.x + P.w / 2 < t.x2 && P.y + P.h > t.top + 8);
+  const ty = tun ? clamp(ty0, 0, Math.max(0, tun.floor + 34 - H)) : Math.min(0, ty0); // в подземном ходе камера опускается
   camY += (ty - camY) * Math.min(1, dt * 5);
+  updateAmbient(dt);
 }
 
+function deathLimit(P) { // глубина, ниже которой герой считается упавшим
+  const cx = P.x + P.w / 2;
+  for (const t of tunnels) if (cx >= t.x1 - 10 && cx <= t.x2 + 10) return t.floor + 150;
+  for (const p of pits) if (cx >= p.x - 20 && cx <= p.x + p.w + 20) return Math.min(DEATH_Y, p.y + 170); // в здании шахта лифта — смерть сразу под этажом
+  return DEATH_Y;
+}
 function moveHelmet(k, dt) { // летящая каска: подпрыгивает на земле и замирает
   k.vy = Math.min(k.vy + 900 * dt, 700);
   const nx = k.x + (k.vx || 0) * dt, gw = groundAt(nx);
@@ -981,26 +1060,153 @@ function drawBlueprint(k) { // рулон чертежей (золотой — �
   ctx.restore();
 }
 
+// ---------- разрушаемые предметы: у каждого участка свой набор (gen.breakables) ----------
+// hp — сколько ударов рейкой выдерживает; mat — материал: от него звук удара, звук разрушения и обломки
+const BREAKABLES = {
+  crate:    { name: 'ящик', w: 30, h: 28, hp: 1, mat: 'wood', colors: ['#b07a42', '#8a5a2b', '#d2a26b', '#5e3b1a'] },
+  barrel:   { name: 'бочка', w: 24, h: 30, hp: 2, mat: 'metal', colors: ['#3d6fa8', '#28507c', '#9fb4c8', '#c9a227'] },
+  box:      { name: 'коробка', w: 26, h: 20, hp: 1, mat: 'paper', colors: ['#c8a06a', '#a47c48', '#e0c49a'] },
+  bricks:   { name: 'поддон кирпича', w: 34, h: 26, hp: 3, mat: 'stone', colors: ['#b5523b', '#8e3b2a', '#d0765c', '#8a6a40'] },
+  cement:   { name: 'мешки цемента', w: 32, h: 18, hp: 1, mat: 'soft', colors: ['#d8d2c4', '#b9b1a0', '#9e9686'] },
+  tubing:   { name: 'блок тюбинга', w: 34, h: 24, hp: 3, mat: 'stone', colors: ['#8d9096', '#6c7076', '#b0b4ba'] },
+  sack:     { name: 'мешок угля', w: 24, h: 18, hp: 1, mat: 'soft', colors: ['#2a2622', '#4a4238', '#161310'] },
+  props:    { name: 'клеть крепи', w: 30, h: 28, hp: 2, mat: 'wood', colors: ['#7a5836', '#5a3e22', '#9a7448'] },
+  boulder:  { name: 'валун', w: 30, h: 26, hp: 4, mat: 'stone', colors: ['#a0856a', '#7d6550', '#c4ab90'] },
+  cones:    { name: 'стопка конусов', w: 18, h: 26, hp: 1, mat: 'plastic', colors: ['#ff6d00', '#ffffff', '#d85a00'] },
+  bitumen:  { name: 'бочка битума', w: 24, h: 30, hp: 2, mat: 'metal', colors: ['#1e1e20', '#3a3a3e', '#0c0c0e', '#c9a227'] },
+  reel:     { name: 'кабельный барабан', w: 30, h: 30, hp: 3, mat: 'wood', colors: ['#b07a42', '#7a5230', '#1e1e1e'] },
+  glass:    { name: 'стеклопакеты', w: 30, h: 30, hp: 1, mat: 'glass', colors: ['#bfe6ff', '#8fcdf2', '#ffffff', '#7a6a50'] },
+  drywall:  { name: 'гипсокартон', w: 34, h: 16, hp: 1, mat: 'soft', colors: ['#e8e6e0', '#c8c4ba', '#f6f4ee'] },
+  ice:      { name: 'ледяная глыба', w: 28, h: 26, hp: 2, mat: 'ice', colors: ['#dff4ff', '#a8d8f0', '#ffffff'] },
+  firewood: { name: 'поленница', w: 32, h: 22, hp: 2, mat: 'wood', colors: ['#8a5a2b', '#c49a6c', '#5e3b1a'] },
+  cabinet:  { name: 'шкаф с документацией', w: 22, h: 32, hp: 3, mat: 'metal', colors: ['#8a9096', '#6a7076', '#b4bac0'] },
+  folders:  { name: 'коробка с папками', w: 26, h: 18, hp: 1, mat: 'paper', colors: ['#c8a06a', '#2f6fd0', '#e53935', '#f4f1e6'] },
+};
+const THEME_BREAKABLES = { // набор разрушаемых предметов участка, если тема не задала свой (gen.breakables)
+  city: ['crate', 'barrel', 'box', 'bricks'], pit: ['cement', 'barrel', 'crate', 'bricks'], metro: ['crate', 'tubing', 'box', 'barrel'],
+  mine: ['sack', 'props', 'crate', 'barrel'], quarry: ['boulder', 'crate', 'barrel', 'sack'], road: ['cones', 'bitumen', 'crate', 'box'],
+  bridge: ['reel', 'crate', 'barrel', 'box'], tower: ['glass', 'drywall', 'crate', 'reel'], tundra: ['ice', 'firewood', 'barrel', 'crate'],
+  dam: ['cabinet', 'folders', 'box', 'crate'],
+};
+const MAT_SFX = { // звук удара и звук разрушения
+  wood: ['crack', 'break'], metal: ['clang', 'barrel'], stone: ['crack', 'rubble'], paper: ['crack', 'paper'], soft: ['thump', 'bag'],
+  plastic: ['thump', 'pop'], glass: ['clink', 'glass'], ice: ['clink', 'glass'],
+};
+
+function drawBreakableBody(s, b) { // рисунок предмета в своих координатах (0,0 — левый верх)
+  const w = s.w, h = s.h, c = b.colors, dmg = s.maxHp - s.hp;
+  const R = (col, x, y, ww, hh) => { ctx.fillStyle = col; ctx.fillRect(x, y, ww, hh); };
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(2, h - 2, w, 3);
+  switch (s.sort) {
+    case 'barrel': case 'bitumen': {
+      const blue = s.sort === 'barrel' && s.v >= 0.5, main = s.sort === 'barrel' ? (blue ? '#b0402f' : c[0]) : c[0], dark = s.sort === 'barrel' ? (blue ? '#7c2a1e' : c[1]) : c[1];
+      R(main, 0, 2, w, h - 4); ctx.fillStyle = main; ctx.beginPath(); ctx.ellipse(w / 2, 3, w / 2, 3, 0, 0, 7); ctx.fill();
+      R(dark, 0, 8, w, 3); R(dark, 0, h - 10, w, 3); R(dark, 0, h - 3, w, 3);
+      R('rgba(255,255,255,.25)', 4, 4, 3, h - 8);
+      if (s.sort === 'barrel') { R('#f2c230', w / 2 - 5, 14, 10, 6); R('#222', w / 2 - 1, 15, 2, 4); }
+      else { R('#111', 2, -1, w - 4, 3); R('#f2c230', w / 2 - 6, 15, 12, 5); R('#111', w / 2 - 4, 16, 8, 1); R('#111', w / 2 - 4, 18, 5, 1); } // потёки битума и этикетка
+      break;
+    }
+    case 'crate': case 'props': {
+      if (s.sort === 'crate') {
+        R(c[0], 0, 0, w, h); R(c[1], 0, 0, w, 3); R(c[1], 0, h - 3, w, 3); R(c[1], 0, 0, 3, h); R(c[1], w - 3, 0, 3, h);
+        ctx.strokeStyle = c[1]; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(3, 3); ctx.lineTo(w - 3, h - 3); ctx.stroke();
+        ctx.strokeStyle = 'rgba(0,0,0,.2)'; ctx.lineWidth = 1; for (let y = 9; y < h - 3; y += 7) { ctx.beginPath(); ctx.moveTo(3, y); ctx.lineTo(w - 3, y); ctx.stroke(); }
+      } else { // клеть: брусья крест-накрест в четыре яруса
+        for (let k = 0; k < 4; k++) { const y = h - (k + 1) * 7; if (k % 2) { R(c[0], 0, y, w, 6); R(c[1], 0, y + 4, w, 2); } else { R(c[0], 1, y, 7, 6); R(c[0], w - 8, y, 7, 6); R(c[2], 2, y + 1, 5, 1); R(c[2], w - 7, y + 1, 5, 1); } }
+      }
+      break;
+    }
+    case 'box': case 'folders': {
+      R(c[0], 0, 0, w, h); R(c[1], 0, 0, w, 3); R('rgba(0,0,0,.15)', w / 2 - 1, 0, 2, h);
+      R('#e8dcc0', w / 2 - 6, 6, 12, 1.5);
+      if (s.sort === 'folders') { R(c[1], 3, -5, 5, 7); R(c[2], 9, -6, 5, 8); R(c[3], 15, -4, 6, 6); R('#4a4a4a', 5, h - 8, 10, 4); } // корешки папок торчат
+      else { R('#6a5030', 4, h - 7, 9, 1); R('#6a5030', 4, h - 5, 6, 1); ctx.fillStyle = '#6a5030'; ctx.beginPath(); ctx.moveTo(w - 9, h - 8); ctx.lineTo(w - 6, h - 11); ctx.lineTo(w - 3, h - 8); ctx.fill(); } // «верх»
+      break;
+    }
+    case 'bricks': {
+      R('#8a6a40', 0, h - 5, w, 5); R('#5e4526', 3, h - 4, 4, 4); R('#5e4526', w / 2 - 2, h - 4, 4, 4); R('#5e4526', w - 7, h - 4, 4, 4); // поддон
+      for (let y = 0, row = 0; y < h - 6; y += 5, row++) for (let x = row % 2 ? -5 : 0; x < w; x += 10) R(row % 2 ? c[0] : c[2], Math.max(0, x), y, Math.min(9, w - Math.max(0, x)), 4);
+      R('rgba(255,255,255,.35)', 0, 0, w, 1); ctx.strokeStyle = 'rgba(40,40,60,.5)'; ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, w - 1, h - 6); // плёнка и лента
+      break;
+    }
+    case 'cement': case 'sack': case 'drywall': {
+      if (s.sort === 'drywall') { for (let k = 0; k < 4; k++) { R(k % 2 ? c[1] : c[0], 0, k * 4, w, 4); } R('#b0aca2', 0, h - 1, w, 1); R('#7a8a9a', 3, 2, 10, 1); break; }
+      const n = s.sort === 'cement' ? 2 : 1;
+      for (let k = 0; k < n; k++) { const y = h - (k + 1) * (h / n); ctx.fillStyle = c[0]; ctx.beginPath(); ctx.ellipse(w / 2, y + h / n / 2, w / 2, h / n / 2, 0, 0, 7); ctx.fill(); ctx.fillStyle = c[1]; ctx.fillRect(3, y + h / n / 2, w - 6, 1.5); }
+      if (s.sort === 'cement') { R('#c62828', w / 2 - 5, h / 2 - 7, 10, 3); R('#1e5bb8', w / 2 - 5, h - 7, 10, 3); } else { R('#161310', w / 2 - 3, 0, 6, 3); ctx.fillStyle = '#111'; for (let k = 0; k < 4; k++) ctx.fillRect(3 + k * 5, 1 + (k % 2), 3, 2); }
+      break;
+    }
+    case 'tubing': {
+      ctx.fillStyle = c[0]; ctx.beginPath(); ctx.moveTo(0, h); ctx.lineTo(0, 6); ctx.quadraticCurveTo(w / 2, -4, w, 6); ctx.lineTo(w, h); ctx.fill();
+      R(c[1], 0, h - 4, w, 4); R(c[2], 3, 8, w - 6, 1.5);
+      ctx.fillStyle = '#3e4248'; for (const x of [7, w / 2, w - 7]) { ctx.beginPath(); ctx.arc(x, h / 2 + 3, 2.2, 0, 7); ctx.fill(); } // болтовые отверстия
+      R('#f2c230', 3, h - 10, 8, 2);
+      break;
+    }
+    case 'boulder': {
+      ctx.fillStyle = c[0]; ctx.beginPath(); ctx.moveTo(2, h); ctx.lineTo(0, h * 0.5); ctx.lineTo(6, 4); ctx.lineTo(w * 0.55, 0); ctx.lineTo(w - 3, 7); ctx.lineTo(w, h * 0.6); ctx.lineTo(w - 2, h); ctx.fill();
+      ctx.fillStyle = c[2]; ctx.beginPath(); ctx.moveTo(6, 5); ctx.lineTo(w * 0.55, 1); ctx.lineTo(w * 0.5, 8); ctx.lineTo(10, 11); ctx.fill();
+      ctx.fillStyle = c[1]; ctx.beginPath(); ctx.moveTo(w - 3, 8); ctx.lineTo(w, h * 0.6); ctx.lineTo(w - 2, h); ctx.lineTo(w * 0.62, h); ctx.fill();
+      break;
+    }
+    case 'cones': {
+      for (let k = 0; k < 3; k++) { const y = h - 8 - k * 5; ctx.fillStyle = c[0]; ctx.beginPath(); ctx.moveTo(1, y + 8); ctx.lineTo(w / 2 - 2, y - 10 + k); ctx.lineTo(w / 2 + 2, y - 10 + k); ctx.lineTo(w - 1, y + 8); ctx.fill(); }
+      R(c[1], 4, h - 16, w - 8, 3); R(c[1], 6, h - 23, w - 12, 2); R('#222', 0, h - 3, w, 3);
+      break;
+    }
+    case 'reel': {
+      R(c[1], 3, 3, w - 6, h - 6);
+      ctx.fillStyle = c[2]; for (let y = 6; y < h - 6; y += 3) ctx.fillRect(4, y, w - 8, 2); // намотанный кабель
+      ctx.fillStyle = c[0]; ctx.beginPath(); ctx.arc(w / 2, h / 2, h / 2, 0, 7); ctx.fill(); // щека барабана (смотрит на нас)
+      ctx.fillStyle = c[1]; ctx.beginPath(); ctx.arc(w / 2, h / 2, h / 2 - 3, 0, 7); ctx.fill();
+      ctx.strokeStyle = c[0]; ctx.lineWidth = 2; ctx.beginPath(); for (let a = 0; a < 6; a++) { ctx.moveTo(w / 2, h / 2); ctx.lineTo(w / 2 + Math.cos(a) * 12, h / 2 + Math.sin(a) * 12); } ctx.stroke();
+      ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(w / 2, h / 2, 3, 0, 7); ctx.fill();
+      break;
+    }
+    case 'glass': {
+      R(c[3], 0, h - 4, w, 4); R(c[3], 0, 0, 3, h); R(c[3], w - 3, 0, 3, h); // деревянная обрешётка
+      for (let k = 0; k < 3; k++) { R(k % 2 ? c[1] : c[0], 4 + k * 2, 2, w - 10 - k * 2, h - 8); }
+      R(c[2], 8, 5, 2, h - 14); R(c[2], 11, 5, 1, h - 18);
+      R('#e53935', 4, h / 2 - 2, w - 8, 4); R('#fff', w / 2 - 6, h / 2 - 1, 12, 1.5); // лента «ОСТОРОЖНО, СТЕКЛО»
+      break;
+    }
+    case 'ice': {
+      ctx.fillStyle = c[1]; ctx.beginPath(); ctx.moveTo(0, h); ctx.lineTo(1, 5); ctx.lineTo(8, 0); ctx.lineTo(w - 4, 2); ctx.lineTo(w, h); ctx.fill();
+      ctx.fillStyle = c[0]; ctx.beginPath(); ctx.moveTo(3, h - 3); ctx.lineTo(4, 7); ctx.lineTo(9, 3); ctx.lineTo(w * 0.6, 4); ctx.lineTo(w * 0.5, h - 3); ctx.fill();
+      R(c[2], 6, 6, 3, 10); R(c[2], 11, 5, 5, 2); R('rgba(255,255,255,.9)', 0, -2, w - 2, 3); // снежная шапка
+      break;
+    }
+    case 'firewood': {
+      for (let row = 0; row < 3; row++) for (let k = 0; k < 4 - (row === 2 ? 1 : 0); k++) {
+        const cx = 4 + k * 8 + (row === 2 ? 4 : 0), cy = h - 4 - row * 7;
+        ctx.fillStyle = c[0]; ctx.beginPath(); ctx.arc(cx, cy, 3.8, 0, 7); ctx.fill(); ctx.fillStyle = c[1]; ctx.beginPath(); ctx.arc(cx, cy, 2.4, 0, 7); ctx.fill();
+      }
+      break;
+    }
+    case 'cabinet': {
+      R(c[0], 0, 0, w, h); R(c[1], 0, h / 2 - 0.5, w, 1); R(c[1], 0, 0, w, 1); R(c[2], 1, 1, 2, h - 2);
+      R('#333', w / 2 - 3, h / 4, 6, 2); R('#333', w / 2 - 3, h * 3 / 4, 6, 2); R('#f4f1e6', w / 2 - 5, h / 4 + 3, 10, 3); R('#f4f1e6', w / 2 - 5, h * 3 / 4 + 3, 10, 3); // ручки и таблички
+      R('#f4f1e6', 2, -3, 8, 3); R('#e0dccf', 11, -2, 8, 2); // стопка бумаг сверху
+      break;
+    }
+  }
+  if (dmg > 0) { // следы ударов: трещины, вмятины, щепа
+    ctx.strokeStyle = b.mat === 'metal' ? 'rgba(0,0,0,.55)' : b.mat === 'ice' || b.mat === 'glass' ? 'rgba(255,255,255,.9)' : 'rgba(30,20,10,.75)'; ctx.lineWidth = 1.3; ctx.beginPath();
+    ctx.moveTo(w * 0.7, 3); ctx.lineTo(w * 0.55, h * 0.35); ctx.lineTo(w * 0.72, h * 0.55);
+    if (dmg > 1) { ctx.moveTo(w * 0.2, h * 0.3); ctx.lineTo(w * 0.38, h * 0.55); ctx.lineTo(w * 0.25, h * 0.85); }
+    if (dmg > 2) { ctx.moveTo(w * 0.45, h * 0.6); ctx.lineTo(w * 0.62, h * 0.9); ctx.moveTo(w * 0.1, h * 0.7); ctx.lineTo(w * 0.3, h * 0.65); }
+    ctx.stroke();
+  }
+}
+
 function drawBreakable(s) { // бочка, ящик или кладка с трещинами — всё ломается рейкой
   const now = performance.now() / 1000;
   ctx.save(); ctx.translate(s.x, s.y);
   if (s.hit > 0) ctx.translate(Math.sin(now * 90) * 1.5, 0);
   const dmg = s.maxHp - s.hp;
-  if (s.sort === 'barrel') { // металлическая бочка: обручи, крышка, вмятины после удара
-    const blue = s.v < 0.5, c = blue ? '#3d6fa8' : '#b0402f', d = blue ? '#28507c' : '#7c2a1e';
-    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(2, s.h - 2, s.w, 3);
-    ctx.fillStyle = c; ctx.fillRect(0, 2, s.w, s.h - 4); ctx.beginPath(); ctx.ellipse(s.w / 2, 3, s.w / 2, 3, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = d; ctx.fillRect(0, 8, s.w, 3); ctx.fillRect(0, s.h - 10, s.w, 3); ctx.fillRect(0, s.h - 3, s.w, 3);
-    ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(4, 4, 3, s.h - 8);
-    ctx.fillStyle = '#f2c230'; ctx.fillRect(s.w / 2 - 5, 14, 10, 6); ctx.fillStyle = '#222'; ctx.fillRect(s.w / 2 - 1, 15, 2, 4); // табличка «!»
-    if (dmg) { ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(s.w - 6, 6); ctx.lineTo(s.w - 10, 12); ctx.lineTo(s.w - 5, 17); ctx.stroke(); }
-  } else if (s.sort === 'crate') { // деревянный ящик с распоркой
-    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(2, s.h - 2, s.w, 3);
-    ctx.fillStyle = '#b07a42'; ctx.fillRect(0, 0, s.w, s.h);
-    ctx.fillStyle = '#8a5a2b'; ctx.fillRect(0, 0, s.w, 3); ctx.fillRect(0, s.h - 3, s.w, 3); ctx.fillRect(0, 0, 3, s.h); ctx.fillRect(s.w - 3, 0, 3, s.h);
-    ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(3, 3); ctx.lineTo(s.w - 3, s.h - 3); ctx.stroke();
-    ctx.strokeStyle = 'rgba(0,0,0,.2)'; ctx.lineWidth = 1; for (let y = 9; y < s.h - 3; y += 7) { ctx.beginPath(); ctx.moveTo(3, y); ctx.lineTo(s.w - 3, y); ctx.stroke(); }
-  } else { // кладка, закрывающая тайник: трещины, из которых пробивается золотой свет
+  if (s.sort !== 'crack') { drawBreakableBody(s, BREAKABLES[s.sort]); ctx.restore(); return; }
+  { // кладка, закрывающая тайник: трещины, из которых пробивается золотой свет
     ctx.fillStyle = '#8d8173'; ctx.fillRect(0, 0, s.w, s.h);
     ctx.strokeStyle = 'rgba(40,32,24,.45)'; ctx.lineWidth = 1;
     for (let y = 0; y < s.h; y += 9) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(s.w, y); ctx.stroke(); const o = (y / 9) % 2 ? 4 : 12; ctx.beginPath(); ctx.moveTo(o, y); ctx.lineTo(o, y + 9); ctx.stroke(); }
@@ -1039,6 +1245,157 @@ function drawStaff(len) { // нивелирная рейка: белая, шаш
   }
   ctx.fillStyle = '#8b8b8b'; ctx.fillRect(-12, -3, 3, 6); ctx.fillRect(len - 12, -3, 2, 6);
   ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1; ctx.strokeRect(-10, -3, len, 6);
+}
+
+// ---------- подземные ходы и этажи здания: задники по умолчанию (тема может нарисовать свои: drawTunnel, drawRoom, drawCeiling) ----------
+function drawTunnelBack(t) {
+  const x0 = t.x1, x1 = t.x2, y0 = t.top, y1 = t.floor, sb = t.slabBot, mine = G.underground === 'mine';
+  ctx.fillStyle = mine ? '#1a130d' : '#1f2227'; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  const vx0 = Math.max(x0, camX - 40), vx1 = Math.min(x1, camX + W + 40);
+  if (mine) { // порода и деревянная крепь: стойки и верхняки
+    for (let x = Math.floor(vx0 / 23) * 23; x < vx1; x += 23) { const h = hash(x * 3 + 7); ctx.fillStyle = h > 0.5 ? '#120d09' : '#2c2118'; ctx.fillRect(x, sb + 6 + h * (y1 - sb - 20), 6 + h * 8, 3 + h * 4); }
+    for (let x = Math.ceil((vx0 - 40) / 90) * 90 + 20; x < vx1; x += 90) {
+      if (x < x0 + 8 || x > x1 - 8) continue;
+      ctx.fillStyle = '#5a3e22'; ctx.fillRect(x - 22, sb, 5, y1 - sb); ctx.fillRect(x + 17, sb, 5, y1 - sb);
+      ctx.fillStyle = '#6e4c2a'; ctx.fillRect(x - 26, sb, 52, 6); ctx.fillStyle = '#3a2816'; ctx.fillRect(x - 26, sb + 5, 52, 1.5);
+    }
+  } else { // тоннель из тюбингов: кольца, кабельные лотки, лампы
+    ctx.fillStyle = '#2b2f36'; for (let x = Math.floor(vx0 / 28) * 28; x < vx1; x += 28) ctx.fillRect(x, sb, 2, y1 - sb);
+    ctx.fillStyle = '#3a3f47'; ctx.fillRect(x0, sb + 16, x1 - x0, 2); ctx.fillRect(x0, sb + 24, x1 - x0, 2);
+    ctx.fillStyle = '#1a1c20'; ctx.fillRect(x0, sb + 20, x1 - x0, 3);
+    ctx.fillStyle = '#c24f37'; ctx.fillRect(x0, sb + 30, x1 - x0, 1.5);
+  }
+  for (let x = Math.ceil((vx0 - 60) / 240) * 240 + 60; x < vx1 + 60; x += 240) { // лампы
+    if (x < x0 + 20 || x > x1 - 20) continue;
+    const g = ctx.createRadialGradient(x, sb + 14, 2, x, sb + 14, 70); g.addColorStop(0, 'rgba(255,214,140,.35)'); g.addColorStop(1, 'rgba(255,214,140,0)');
+    ctx.fillStyle = g; ctx.fillRect(x - 70, sb, 140, y1 - sb);
+    ctx.fillStyle = '#ffe2a0'; ctx.fillRect(x - 4, sb + 10, 8, 5); ctx.fillStyle = '#333'; ctx.fillRect(x - 1, sb, 2, 10);
+  }
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(x0, sb, x1 - x0, 8); // тень под перекрытием
+}
+function drawRoomBack(rm) { // этаж здания по умолчанию: стены и окна
+  ctx.fillStyle = 'rgba(40,40,56,.35)'; ctx.fillRect(rm.x1, rm.y - FH, rm.x2 - rm.x1, FH);
+}
+function drawCeilingDefault(s) {
+  ctx.fillStyle = '#6d7280'; ctx.fillRect(s.x, s.y, s.w, s.h); ctx.fillStyle = '#50545f'; ctx.fillRect(s.x, s.y + s.h - 3, s.w, 3);
+}
+
+// ---------- задний план: бригады рабочих, птицы, самолёты, крысы — у каждого участка своё ----------
+const AMBIENT = {
+  city:   { birds: 'pigeon', plane: true, look: { vests: ['#ff7a1a', '#c6ff00', '#ff7a1a'], helmets: ['#f2c230', '#ffffff', '#ff7a1a'], jacket: '#34405a' } },
+  pit:    { birds: 'crow', look: { vests: ['#ff7a1a', '#c6ff00'], helmets: ['#f2c230', '#ff7a1a', '#ffffff'], jacket: '#4a3a2a' } },
+  metro:  { rats: true, drips: true, look: { vests: ['#ff7a1a', '#ffb300'], helmets: ['#ff7a1a', '#ffffff'], jacket: '#2a3140' } },
+  mine:   { rats: true, bats: true, look: { vests: ['#6a4a2a', '#5a4030'], helmets: ['#9a9a94', '#b4a060'], jacket: '#1e232c', lamp: true, dirty: true } },
+  quarry: { birds: 'raven', plane: true, look: { vests: ['#ff9800', '#ffc107'], helmets: ['#ffffff', '#f2c230'], jacket: '#5d4037' } },
+  road:   { birds: 'sparrow', plane: true, look: { vests: ['#ff6d00', '#c6ff00'], helmets: ['#ff6d00', '#ffffff'], jacket: '#424242' } },
+  bridge: { birds: 'gull', look: { vests: ['#00e5ff', '#ff7a1a'], helmets: ['#ff9800', '#ffffff'], jacket: '#1a237e' } },
+  tower:  { birds: 'pigeon', heli: true, look: { vests: ['#ff7a1a', '#b388ff'], helmets: ['#e53935', '#ffffff', '#f2c230'], jacket: '#263238', harness: true } },
+  tundra: { birds: 'raven', look: { vests: ['#ff3d00', '#ff7a1a'], helmets: ['#ff7a1a', '#ffffff'], jacket: '#1b5e20', coat: true } },
+  dam:    { birds: 'gull', heli: true, look: { vests: ['#ff7a1a', null, null], helmets: ['#ffffff', '#ffffff', '#1e5bb8'], jacket: '#263238', suits: true } },
+};
+const ambOf = () => AMBIENT[theme && theme.id] || AMBIENT.city;
+let amb = null;
+function resetAmbient() { amb = { flocks: [], flockT: rand(1, 4), plane: null, planeT: rand(8, 18), heli: null, heliT: rand(12, 25), rats: [], ratT: rand(2, 5), bats: [], batT: rand(3, 6), drips: [], dripT: 1, lastCam: camX }; }
+
+function updateAmbient(dt) {
+  if (!amb) resetAmbient();
+  const A = ambOf(), dc = camX - amb.lastCam; amb.lastCam = camX;
+  if (A.birds && (amb.flockT -= dt) <= 0) {
+    amb.flockT = rand(6, 12);
+    const dir = Math.random() < 0.5 ? -1 : 1, n = 3 + Math.floor(rand(0, 6)), birds = [];
+    for (let i = 0; i < n; i++) birds.push({ dx: -dir * i * rand(10, 18), dy: (i % 2 ? 1 : -1) * Math.ceil(i / 2) * rand(4, 8), ph: rand(0, 6) });
+    amb.flocks.push({ x: dir > 0 ? -60 : W + 60, y: rand(28, 130), vx: dir * rand(45, 80), dir, birds, kind: A.birds });
+  }
+  for (const f of amb.flocks) { f.x += f.vx * dt - dc * 0.3; f.y += Math.sin(performance.now() / 700 + f.dir) * 4 * dt; }
+  amb.flocks = amb.flocks.filter(f => f.x > -250 && f.x < W + 250);
+  if (A.plane && !amb.plane && (amb.planeT -= dt) <= 0) { const d = Math.random() < 0.5 ? -1 : 1; amb.plane = { x: d > 0 ? -40 : W + 40, y: rand(22, 55), vx: d * rand(22, 34), trail: [] }; amb.planeT = rand(22, 38); }
+  if (amb.plane) { const p = amb.plane; p.x += p.vx * dt - dc * 0.05; p.trail.push({ x: p.x, y: p.y, t: 0 }); for (const q of p.trail) { q.t += dt; q.x -= dc * 0.05; } p.trail = p.trail.filter(q => q.t < 9); if (p.x < -300 || p.x > W + 300) amb.plane = null; }
+  if (A.heli && !amb.heli && (amb.heliT -= dt) <= 0) { const d = Math.random() < 0.5 ? -1 : 1; amb.heli = { x: d > 0 ? -50 : W + 50, y: rand(40, 90), vx: d * rand(30, 45) }; amb.heliT = rand(25, 40); }
+  if (amb.heli) { amb.heli.x += amb.heli.vx * dt - dc * 0.15; if (amb.heli.x < -100 || amb.heli.x > W + 100) amb.heli = null; }
+  if (A.rats && (amb.ratT -= dt) <= 0) { // крыса перебегает по земле где-то в кадре
+    amb.ratT = rand(4, 9);
+    const d = Math.random() < 0.5 ? -1 : 1, x = camX + rand(W * 0.2, W * 0.9), g = groundAt(x);
+    if (g !== null) amb.rats.push({ x, y: g, vx: d * rand(110, 160), t: rand(1.6, 2.6) });
+  }
+  for (const r of amb.rats) { r.x += r.vx * dt; r.t -= dt; const g = groundAt(r.x); if (g === null || Math.abs(g - r.y) > 4) r.t = 0; }
+  amb.rats = amb.rats.filter(r => r.t > 0);
+  if (A.bats && (amb.batT -= dt) <= 0) { amb.batT = rand(5, 10); const d = Math.random() < 0.5 ? -1 : 1; for (let i = 0; i < 1 + Math.floor(rand(0, 3)); i++) amb.bats.push({ x: d > 0 ? -20 - i * 25 : W + 20 + i * 25, y: rand(40, 120), vx: d * rand(80, 120), ph: rand(0, 6) }); }
+  for (const b of amb.bats) { b.x += b.vx * dt - dc * 0.5; b.ph += dt * 3; }
+  amb.bats = amb.bats.filter(b => b.x > -80 && b.x < W + 80);
+  if (A.drips && (amb.dripT -= dt) <= 0) { amb.dripT = rand(0.4, 1.1); const x = camX + rand(0, W), g = groundAt(x); if (g !== null) amb.drips.push({ x, y: Math.max(camY - 10, g - 300), vy: 0, g }); }
+  for (const d of amb.drips) { d.vy += 900 * dt; d.y += d.vy * dt; if (d.y >= d.g) { d.done = true; burst(d.x, d.g - 1, 'rgba(160,200,230,.8)', 3, 50, 400); } }
+  amb.drips = amb.drips.filter(d => !d.done);
+}
+
+function drawBird(kind, x, y, ph) { // птица — «галочка» с машущими крыльями
+  const k = Math.sin(ph) * 0.6, col = kind === 'gull' ? '#f4f6f8' : kind === 'pigeon' ? '#7d8592' : kind === 'sparrow' ? '#6d5540' : '#1c1c22', s = kind === 'sparrow' ? 0.7 : kind === 'gull' ? 1.2 : 1;
+  ctx.strokeStyle = col; ctx.lineWidth = 1.6 * s; ctx.beginPath();
+  ctx.moveTo(x - 6 * s, y - 3 * s * k); ctx.quadraticCurveTo(x - 3 * s, y - 4 * s * k - 1, x, y); ctx.quadraticCurveTo(x + 3 * s, y - 4 * s * k - 1, x + 6 * s, y - 3 * s * k); ctx.stroke();
+  ctx.fillStyle = col; ctx.fillRect(x - 1, y - 0.5, 2.5, 2);
+}
+function drawSkyAmbient(bgShift) { // в экранных координатах, поверх фона темы
+  if (!amb) return;
+  const now = performance.now() / 1000;
+  if (amb.plane) {
+    const p = amb.plane;
+    for (const q of p.trail) { ctx.fillStyle = `rgba(255,255,255,${0.35 * (1 - q.t / 9)})`; ctx.fillRect(q.x - 1, q.y + bgShift + 1, 3, 1.5 + q.t * 0.4); }
+    ctx.fillStyle = '#e8ecf0'; ctx.fillRect(p.x - 7, p.y + bgShift, 14, 2.5); ctx.fillRect(p.x - 2, p.y + bgShift - 2, 4, 7); ctx.fillRect(p.x - (p.vx > 0 ? 7 : -5), p.y + bgShift - 3, 2, 3);
+  }
+  if (amb.heli) {
+    const h = amb.heli, y = h.y + bgShift, d = Math.sign(h.vx);
+    ctx.fillStyle = '#3a4250'; ctx.beginPath(); ctx.ellipse(h.x, y, 9, 5, 0, 0, 7); ctx.fill(); ctx.fillRect(h.x - d * 20, y - 2, 13, 2.5); ctx.fillRect(h.x - d * 21, y - 5, 2, 6);
+    ctx.fillStyle = '#9fd3ff'; ctx.fillRect(h.x + d * 3, y - 3, 4 * d, 3);
+    ctx.fillStyle = 'rgba(40,40,50,.5)'; ctx.fillRect(h.x - 14 + Math.sin(now * 40) * 3, y - 7, 28, 1.5); ctx.fillRect(h.x - 5, y + 5, 11, 1.2);
+  }
+  for (const f of amb.flocks) for (const b of f.birds) drawBird(f.kind, f.x + b.dx, f.y + b.dy + bgShift, now * 11 + b.ph);
+  for (const b of amb.bats) { const y = b.y + Math.sin(b.ph * 2) * 10; ctx.fillStyle = '#0a0808'; ctx.beginPath(); ctx.moveTo(b.x - 7, y - 3 * Math.sin(b.ph * 6)); ctx.lineTo(b.x, y + 2); ctx.lineTo(b.x + 7, y - 3 * Math.sin(b.ph * 6)); ctx.lineTo(b.x, y - 1); ctx.fill(); }
+}
+function drawWorldAmbient() { // в координатах мира: крысы, капли
+  if (!amb) return;
+  for (const r of amb.rats) { const d = Math.sign(r.vx), b = Math.sin(r.t * 40) * 0.8; ctx.fillStyle = '#5a5550'; ctx.beginPath(); ctx.ellipse(r.x, r.y - 3 + b * 0.3, 6, 3, 0, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(r.x + d * 6, r.y - 4, 2.2, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#8a7a70'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(r.x - d * 5, r.y - 2); ctx.quadraticCurveTo(r.x - d * 11, r.y - 6 + b, r.x - d * 14, r.y - 2); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(170,210,240,.8)'; for (const d of amb.drips) ctx.fillRect(d.x - 0.8, d.y - 3, 1.6, 4);
+}
+
+function drawCrowd(c) { // бригада на заднем плане: мельче и темнее героя, каждый занят своим делом
+  const L = ambOf().look, now = performance.now() / 1000;
+  for (let i = 0; i < c.n; i++) {
+    const h = hash(c.seed + i * 17), h2 = hash(c.seed * 3 + i * 31), act = Math.floor(h * 7);
+    let x = c.x + i * 19 + h2 * 6;
+    if (act === 2) x += Math.sin(now * 0.7 + h2 * 6) * 22; // носит доску туда-сюда
+    const dir = act === 2 ? (Math.cos(now * 0.7 + h2 * 6) > 0 ? 1 : -1) : (h2 > 0.5 ? 1 : -1);
+    const near = Math.abs(player.x - x) < 80 && Math.abs(player.y + player.h - c.y) < 50;
+    ctx.save(); ctx.translate(x, c.y); ctx.scale(0.78 * dir, 0.78); ctx.globalAlpha = 0.92;
+    drawWorker(L, act, now + h * 10, i + c.seed, near);
+    ctx.restore();
+  }
+}
+function drawWorker(L, act, t, id, wave) {
+  const suit = L.suits && hash(id * 7) > 0.55, vest = suit ? null : L.vests[id % L.vests.length], helmet = L.helmets[id % L.helmets.length];
+  const walk = act === 2, sw = walk ? Math.sin(t * 8) * 0.6 : 0, sit = act === 4;
+  ctx.strokeStyle = suit ? '#1a1d24' : '#262c38'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  if (sit) { ctx.fillStyle = '#5a6068'; ctx.fillRect(-7, -12, 14, 12); ctx.beginPath(); ctx.moveTo(-2, -14); ctx.lineTo(8, -14); ctx.lineTo(9, -2); ctx.stroke(); } // ведро-сиденье
+  else for (const s of [sw, -sw]) { ctx.beginPath(); ctx.moveTo(0, -17); ctx.lineTo(Math.sin(s) * 11, -2); ctx.stroke(); }
+  const by = sit ? 12 : 0; // сидящий — ниже
+  ctx.fillStyle = L.coat ? L.jacket : suit ? '#2b2f3a' : L.jacket; ctx.fillRect(-7, -36 + by, 14, 20 + (L.coat ? 6 : 0));
+  if (vest) { ctx.fillStyle = vest; ctx.fillRect(-7, -35 + by, 14, 15); ctx.fillStyle = 'rgba(235,240,240,.8)'; ctx.fillRect(-7, -27 + by, 14, 2); }
+  if (suit) { ctx.fillStyle = '#fff'; ctx.fillRect(-2, -36 + by, 4, 9); ctx.fillStyle = '#c62828'; ctx.fillRect(-1, -35 + by, 2, 8); }
+  if (L.harness) { ctx.strokeStyle = '#f2c230'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-6, -35 + by); ctx.lineTo(5, -20 + by); ctx.stroke(); }
+  if (L.dirty) { ctx.fillStyle = 'rgba(15,15,15,.45)'; ctx.fillRect(-5, -32 + by, 4, 3); ctx.fillRect(2, -26 + by, 4, 3); }
+  ctx.fillStyle = L.dirty ? '#b98f60' : '#e8b88a'; ctx.beginPath(); ctx.arc(1, -42 + by, 6, 0, 7); ctx.fill();
+  if (L.coat) { ctx.fillStyle = '#6d4c41'; ctx.beginPath(); ctx.ellipse(1, -47 + by, 8, 4.5, 0, 0, 7); ctx.fill(); ctx.fillStyle = helmet; ctx.fillRect(-5, -52 + by, 12, 3); }
+  else { ctx.fillStyle = helmet; ctx.beginPath(); ctx.arc(1, -45 + by, 7, Math.PI, 0); ctx.fill(); ctx.fillRect(-6, -46 + by, 16, 2); }
+  if (L.lamp) { ctx.fillStyle = '#fff6b0'; ctx.fillRect(6, -48 + by, 3, 3); }
+  // руки и то, чем занят
+  ctx.strokeStyle = L.jacket; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(0, -32 + by);
+  if (wave) { ctx.lineTo(4, -44 + by); ctx.lineTo(6 + Math.sin(t * 12) * 3, -54 + by); ctx.stroke(); return; } // машет герою
+  if (act === 0) { ctx.lineTo(7, -26 + by + Math.sin(t * 3) * 3); ctx.stroke(); }                                    // разговаривает, жестикулирует
+  else if (act === 1) { const a = Math.sin(t * 7); ctx.lineTo(8, -30 - a * 8 + by); ctx.stroke(); ctx.fillStyle = '#5a5a5a'; ctx.fillRect(7, -38 - a * 8 + by, 3, 8); ctx.fillStyle = '#8a5a2b'; ctx.fillRect(8, -32 - a * 8 + by, 1.5, 7); } // молоток
+  else if (act === 2) { ctx.lineTo(4, -38 + by); ctx.stroke(); ctx.fillStyle = '#c49a6c'; ctx.fillRect(-22, -42 + by, 44, 3); }   // доска на плече
+  else if (act === 3) { const a = Math.sin(t * 3) * 0.3; ctx.lineTo(8, -22 + by); ctx.stroke(); ctx.save(); ctx.translate(8, -24 + by); ctx.rotate(0.5 + a); ctx.fillStyle = '#6d5040'; ctx.fillRect(-1, 0, 2, 22); ctx.fillStyle = '#707880'; ctx.fillRect(-4, 20, 8, 6); ctx.restore(); } // лопата
+  else if (act === 4) { ctx.lineTo(6, -40 + by + Math.max(0, Math.sin(t)) * 4); ctx.stroke(); ctx.fillStyle = '#e8e2d0'; ctx.fillRect(5, -44 + by + Math.max(0, Math.sin(t)) * 4, 4, 5); } // пьёт чай
+  else if (act === 5) { ctx.lineTo(8, -30 + by); ctx.stroke(); ctx.fillStyle = '#cfe6ff'; ctx.fillRect(6, -38 + by, 12, 9); ctx.fillStyle = '#2f6fd0'; ctx.fillRect(7, -37 + by, 10, 1); ctx.fillRect(7, -34 + by, 7, 1); } // прораб с чертежом
+  else { ctx.lineTo(5, -42 + by); ctx.stroke(); ctx.fillStyle = '#222'; ctx.fillRect(4, -46 + by, 3, 6); }             // говорит по телефону
 }
 
 // ---------- снаряжение героя: на каждом участке свой геодезический инструмент (theme.hero.weapon) ----------
@@ -1375,18 +1732,34 @@ function draw() {
   if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
   const bgShift = Math.round(-camY * 0.35); // при подъёме фон чуть опускается (параллакс по вертикали)
   if (bgShift > 0) { ctx.fillStyle = skyTop; ctx.fillRect(0, 0, W, bgShift + 2); } // открывшуюся полосу заливаем цветом верха неба
+  if (bgShift < 0) { ctx.fillStyle = '#0d0a08'; ctx.fillRect(0, H + bgShift - 4, W, 8 - bgShift); } // под землёй — низ кадра тёмный
   ctx.save(); ctx.translate(0, bgShift); theme.drawBackground(ctx, api); ctx.restore();
+  drawSkyAmbient(bgShift);
   ctx.save(); ctx.translate(-Math.round(camX), -Math.round(camY));
   const vis = o => o.x + (o.w || 160) > camX - 80 && o.x < camX + W + 80;
-  const T = theme;
-  for (const p of pits) if (vis(p)) { ctx.save(); T.drawPit(p, ctx, api); ctx.restore(); }
-  for (const p of platforms) if (vis(p)) { ctx.save(); T.drawPlatform(p, ctx, api); ctx.restore(); }
-  for (const d of decor) if (vis(d)) { ctx.save(); T.drawDecor(d, ctx, api); ctx.restore(); }
-  for (const s of ghosts) if (vis(s)) { ctx.save(); T.drawGround(s, ctx, api); ctx.restore(); } // стены с тайником — целиком
-  for (const s of solids) if (vis(s) && !s.hidden && s.kind !== 'breakable') { ctx.save(); (s.kind === 'obstacle' ? T.drawObstacle : T.drawGround)(s, ctx, api); ctx.restore(); }
+  const T = theme, A = G.underground ? apiDeep : api; // на участках с подземельем земля рисуется глубже кадра
+  const vis2 = o => o.x2 > camX - 80 && o.x1 < camX + W + 80;
+  for (const t of tunnels) if (vis2(t)) { ctx.save(); (T.drawTunnel || drawTunnelBack)(t, ctx, A); ctx.restore(); }
+  for (const rm of rooms) if (vis2(rm)) { ctx.save(); (T.drawRoom || drawRoomBack)(rm, ctx, A); ctx.restore(); }
+  for (const c of crowds) if (c.x + 120 > camX - 40 && c.x - 40 < camX + W + 40) drawCrowd(c);
+  for (const p of pits) if (vis(p)) { ctx.save(); T.drawPit(p, ctx, A); ctx.restore(); }
+  for (const p of platforms) if (vis(p)) { ctx.save(); T.drawPlatform(p, ctx, A); ctx.restore(); }
+  for (const d of decor) if (vis(d)) { ctx.save(); T.drawDecor(d, ctx, A); ctx.restore(); }
+  for (const s of ghosts) if (vis(s)) { ctx.save(); T.drawGround(s, ctx, A); ctx.restore(); } // стены с тайником — целиком
+  for (const s of solids) {
+    if (!vis(s) || s.hidden || s.kind === 'breakable') continue;
+    ctx.save();
+    if (s.kind === 'ceiling') (T.drawCeiling || drawCeilingDefault)(s, ctx, A);
+    else {
+      if (s.slab) { ctx.beginPath(); ctx.rect(s.x - 1, s.y - 80, s.w + 2, s.h + 80); ctx.clip(); } // перекрытие над подземным ходом — не глубже своей толщины
+      (s.kind === 'obstacle' ? T.drawObstacle : T.drawGround)(s, ctx, A);
+    }
+    ctx.restore();
+  }
+  drawWorldAmbient();
   for (const q of secrets) if (q.open && vis(q)) drawSecret(q);
   for (const s of solids) if (s.kind === 'breakable' && vis(s)) drawBreakable(s);
-  for (const l of ladders) if (vis(l)) { ctx.save(); (T.drawLadder || drawLadder)(l, ctx, api); ctx.restore(); }
+  for (const l of ladders) if (vis(l)) { ctx.save(); (T.drawLadder || drawLadder)(l, ctx, A); ctx.restore(); }
   for (const c of checkpoints) if (vis(c)) drawCheckpoint(c);
   if (finishX !== Infinity && finishX > camX - 300 && finishX < camX + W + 300) { ctx.save(); if (T.drawFinish) T.drawFinish(finishX, finishY, ctx, api); ctx.restore(); drawFinishFlag(); }
   for (const k of pickups) if (vis(k) && !(k.secret && !k.secret.open)) drawBlueprint(k);

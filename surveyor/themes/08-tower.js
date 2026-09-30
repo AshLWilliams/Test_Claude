@@ -917,7 +917,8 @@
     for (const d of [-52, -20, 20, 52]) if (y === null || surfaceAt(x + d, api) !== y) return; // вся балка и запас на отброс — над ровной опорой, не у края
     if (Math.abs(y - P.y - P.h) > 60) return; // балка падает на тот уровень, где герой (а не на ярус вышки над ним)
     // балка висит у верхнего края кадра: на вышке камера поднята — стропа тоже выше
-    st.warns.push({ x, y, t: WARN, p: null, top: Math.min(38, Math.max(y - 190, api.camY + 40)) });
+    const ceil = api.solids.find(q => q.kind === 'ceiling' && !q.stub && x >= q.x && x <= q.x + q.w && q.y < y && q.y > y - 200); // внутри этажа балка висит под потолком
+    st.warns.push({ x, y, t: WARN, p: null, top: ceil ? ceil.y + ceil.h + 40 : Math.min(38, Math.max(y - 190, api.camY + 40)), ceil: ceil ? ceil.y + ceil.h : null });
     st.fallT = api.rand(6, 9);
   }
 
@@ -926,7 +927,7 @@
     for (const w of st.warns) {
       if (w.p) continue;
       const k = api.clamp(1 - w.t / WARN, 0, 1), ang = 0.1 + 0.2 * k + Math.sin(now * 14) * 0.06 * k;
-      const lx = w.x - BEAM_W / 2 + 6, T = w.top - 38, ry = Math.min(api.camY - 8, T); // T — «ноль» стропы; сверху она уходит за край кадра
+      const lx = w.x - BEAM_W / 2 + 6, T = w.top - 38, ry = w.ceil ?? Math.min(api.camY - 8, T); // T — «ноль» стропы; сверху она уходит за край кадра
       ctx.strokeStyle = '#2a2332'; ctx.lineWidth = 1.5; line(ctx, lx, ry, lx, T + 36);
       ctx.save(); ctx.translate(lx, T + 38); ctx.rotate(ang); ibeam(ctx, -6, -3, BEAM_W, 10); ctx.restore();
       ctx.strokeStyle = '#2a2332'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(w.x + 16, ry); ctx.lineTo(w.x + 16, T); ctx.quadraticCurveTo(w.x + 22 + Math.sin(now * 5) * 3, T + 18, w.x + 18, T + 30); ctx.stroke(); // лопнувшая стропа
@@ -944,23 +945,52 @@
     }
   }
 
+  // ---------- внутри здания: этаж каркаса и потолок-перекрытие ----------
+  function drawRoom(rm, ctx, api) { // задняя плоскость этажа: колонны, ригель, связи, сетка; между ними — небо
+    const { camX, W, hash, now } = api, top = rm.top, y = rm.y;
+    const x0 = Math.max(rm.x1, camX - 40), x1 = Math.min(rm.x2, camX + W + 40);
+    ctx.fillStyle = 'rgba(40,24,48,.28)'; ctx.fillRect(rm.x1, top, rm.x2 - rm.x1, y - top); // тень внутри этажа
+    ctx.fillStyle = 'rgba(122,50,48,.55)'; ctx.fillRect(rm.x1, top + 56, rm.x2 - rm.x1, 5);        // ригель задней грани
+    for (let cx = Math.ceil(x0 / COL) * COL; cx < x1; cx += COL) {
+      ctx.fillStyle = 'rgba(122,50,48,.75)'; ctx.fillRect(cx - 4, top, 8, y - top);
+      ctx.fillStyle = 'rgba(168,77,66,.7)'; ctx.fillRect(cx - 4, top, 1.5, y - top);
+      const h = hash(cx * 5 + 3);
+      if (h > 0.62) { ctx.strokeStyle = 'rgba(90,35,34,.7)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, top + 61); ctx.lineTo(cx + COL, y); ctx.moveTo(cx + COL, top + 61); ctx.lineTo(cx, y); ctx.stroke(); } // связи
+      else if (h < 0.28) { ctx.strokeStyle = 'rgba(44,120,104,.45)'; ctx.lineWidth = 1; ctx.beginPath(); for (let k = 0; k < COL; k += 8) { ctx.moveTo(cx + k, top + 61); ctx.lineTo(cx + k + 30, y - 40); } ctx.stroke(); } // сетка
+      if (h > 0.4 && h < 0.5) { // переноска под потолком
+        const lx = cx + COL / 2, sw = Math.sin(now * 1.3 + h * 9) * 2;
+        ctx.strokeStyle = '#2a2332'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(lx, top); ctx.lineTo(lx + sw, top + 26); ctx.stroke();
+        const g = ctx.createRadialGradient(lx + sw, top + 30, 1, lx + sw, top + 30, 60); g.addColorStop(0, 'rgba(255,230,160,.45)'); g.addColorStop(1, 'rgba(255,230,160,0)');
+        ctx.fillStyle = g; ctx.fillRect(lx - 60, top, 120, y - top);
+        ctx.fillStyle = '#fff2b8'; ctx.fillRect(lx + sw - 3, top + 26, 6, 5);
+      }
+    }
+  }
+  function drawCeiling(s, ctx) { // перекрытие верхнего этажа снизу: профнастил, бетон, жёлтая кромка
+    if (s.stub) { ctx.fillStyle = '#7a3230'; ctx.fillRect(s.x, s.y, s.w, s.h); ctx.fillStyle = '#a84d42'; ctx.fillRect(s.x, s.y, 2, s.h); return; } // колонна у проёма
+    ctx.fillStyle = '#a89eb2'; ctx.fillRect(s.x - 0.5, s.y, s.w + 1, 5);
+    ctx.fillStyle = '#56627a'; ctx.fillRect(s.x - 0.5, s.y + 5, s.w + 1, s.h - 5);
+    ctx.fillStyle = '#7d8ca6'; for (let x = Math.ceil(s.x / 12) * 12; x < s.x + s.w - 5; x += 12) ctx.fillRect(x, s.y + 6, 6, s.h - 7);
+    ctx.fillStyle = '#f2c230'; ctx.fillRect(s.x + s.w - 4, s.y, 4, s.h); // кромка у проёма лестницы
+  }
+
   registerTheme({
     index: 8, id: 'tower', hero: { weapon: 'invar' },
     title: 'Небоскрёб', subtitle: 'Монтаж каркаса на высоте 200 метров',
     accent: '#b388ff', dust: '#cbbfd0',
-    gen: { length: 3900, groundRange: [220, 292], weights: { pit: 26, platforms: 22, step: 12, obstacle: 14, flat: 26 }, obstacleH: 28, obstacleW: 48 },
+    gen: { length: 3900, groundRange: [260, 292], indoor: true, weights: { pit: 18, platforms: 22, obstacle: 16, flat: 30 }, obstacleH: 28, obstacleW: 48 }, // внутри здания: этажи, финиш на крыше
     decor: ['stanchion', 'stanchion', 'windsock', 'welder', 'spot', 'sign', 'bottles'],
     enemies,
     enemyTable: [
       { type: 'pigeon', where: 'air', weight: 3 },
       { type: 'welderbot', where: 'ground', weight: 3, from: 0.1 },
-      { type: 'cradle', where: 'air', weight: 2, from: 0.2 },
       { type: 'welderbot', where: 'upper', weight: 1, from: 0.4 },
       { type: 'spider', where: 'upper', weight: 3, from: 0.08 },
-      { type: 'spider', where: 'ground', weight: 1, from: 0.45 },
+      { type: 'spider', where: 'ground', weight: 2, from: 0.2 }, // внутри здания верхних ярусов нет — пауки ходят по этажам
       { type: 'drone', where: 'air', weight: 2, from: 0.15 },
     ],
     init() { st.fallT = 6; st.warns.length = 0; st.landed.length = 0; },
+    drawRoom, drawCeiling,
     update, drawBackground, drawGround, drawPit, drawPlatform, drawObstacle, drawDecor, drawFinish, drawLadder, drawForeground, drawOverlay,
   });
 })();

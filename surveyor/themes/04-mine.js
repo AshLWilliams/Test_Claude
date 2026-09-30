@@ -890,7 +890,7 @@
     index: 4, id: 'mine', hero: { weapon: 'prism', dirty: true },
     title: 'Угольная шахта', subtitle: 'Глубоко под землёй — светит только фонарь на каске',
     accent: '#ffd54f', dust: '#7a6e62', headlamp: true,
-    gen: { groundRange: [232, 300], obstacleW: 50, obstacleH: 30, weights: { pit: 26, platforms: 18, step: 16, obstacle: 14, flat: 26 } },
+    gen: { groundRange: [232, 300], obstacleW: 50, obstacleH: 30, weights: { pit: 26, platforms: 18, step: 16, obstacle: 14, flat: 26, under: 12 }, underground: 'mine' }, // часть шурфов ведёт в нижний штрек
     decor: ['lamp', 'lamp', 'helmet', 'toolbox', 'phone', 'sign', 'lamp'],
     enemies,
     enemyTable: [
