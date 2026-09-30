@@ -841,7 +841,7 @@
     index: 6, id: 'road', hero: { weapon: 'prism360' },
     title: 'Дорожная стройка', subtitle: 'Новая трасса: асфальт, катки и горячий битум',
     accent: '#4fc3f7', dust: '#a9a49b',
-    gen: { hazardChance: 0.45, obstacleW: 40, obstacleH: 30, decorCount: [1, 2] },
+    gen: { hazardChance: 0.45, obstacleW: 40, obstacleH: 30, decorCount: [1, 2], foreman: true }, // разгневанный прораб
     decor: ['cone', 'cone', 'worksign', 'barrel', 'post', 'post', 'kmpost'],
     enemies,
     enemyTable: [

@@ -871,10 +871,10 @@
   });
 
   // ---------- механика участка: падающие балки ----------
-  function surfaceAt(x, api) { // верх ближайшей опоры сверху: платформа, блок или плита (null — пропасть)
-    let y = api.groundAt(x);
+  function surfaceAt(x, api, from) { // верх ближайшей опоры на уровне героя: платформа, блок или плита (null — пропасть)
+    let y = from == null ? api.groundAt(x) : api.groundBelow(x, from); // в здании этажи друг над другом — ищем свой
     if (y === null) return null;
-    for (const p of api.platforms) if (x >= p.x && x <= p.x + p.w && p.y < y) y = p.y;
+    for (const p of api.platforms) if (x >= p.x && x <= p.x + p.w && p.y < y && (from == null || p.y > from) && !p.crumble && !p.hatch) y = p.y;
     return y;
   }
 
@@ -913,11 +913,12 @@
     if ((st.fallT -= dt) > 0) return;
     st.fallT = 0.5; // неудачный момент — попробуем чуть позже
     if (P.x < 600 || api.progress > 0.93 || st.warns.length >= 2 || api.arena) return;
-    const x = P.x + P.w / 2 + P.vx * api.rand(0.9, 1.4) + api.rand(-20, 70), y = surfaceAt(x, api);
-    for (const d of [-52, -20, 20, 52]) if (y === null || surfaceAt(x + d, api) !== y) return; // вся балка и запас на отброс — над ровной опорой, не у края
+    const from = P.y + P.h - 60, x = P.x + P.w / 2 + P.vx * api.rand(0.9, 1.4) + api.rand(-20, 70), y = surfaceAt(x, api, from);
+    for (const d of [-52, -20, 20, 52]) if (y === null || surfaceAt(x + d, api, from) !== y) return; // вся балка и запас на отброс — над ровной опорой, не у края
     if (Math.abs(y - P.y - P.h) > 60) return; // балка падает на тот уровень, где герой (а не на ярус вышки над ним)
     // балка висит у верхнего края кадра: на вышке камера поднята — стропа тоже выше
-    const ceil = api.solids.find(q => q.kind === 'ceiling' && !q.stub && x >= q.x && x <= q.x + q.w && q.y < y && q.y > y - 200); // внутри этажа балка висит под потолком
+    let ceil = null; // перекрытие этажа выше: балка висит под ним
+    for (const q of api.solids) if (q.slab && x >= q.x && x <= q.x + q.w && q.y + q.h < y - 60 && q.y > y - 240 && (!ceil || q.y > ceil.y)) ceil = q;
     st.warns.push({ x, y, t: WARN, p: null, top: ceil ? ceil.y + ceil.h + 40 : Math.min(38, Math.max(y - 190, api.camY + 40)), ceil: ceil ? ceil.y + ceil.h : null });
     st.fallT = api.rand(6, 9);
   }

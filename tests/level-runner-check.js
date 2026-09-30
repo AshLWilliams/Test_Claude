@@ -117,7 +117,7 @@ function harness(files) {
               let t = 0;
               while (!e.dead && t < 15) {
                 const hb = def.hurtbox ? def.hurtbox(e, api) : e;
-                Object.assign(player, { x: hb.x - 40, y: Math.min(hb.y + hb.h, groundAt(hb.x - 30) ?? gy) - 40, vx: 0, vy: 0, face: 1, inv: 999 });
+                Object.assign(player, { x: hb.x - 40, y: Math.min(hb.y + hb.h, (typeof groundBelow === "function" ? groundBelow(hb.x - 30, hb.y + hb.h - 40) : groundAt(hb.x - 30)) ?? gy) - 40, vx: 0, vy: 0, face: 1, inv: 999 });
                 attackQueued = true;
                 for (let i = 0; i < 24; i++) { player.inv = 999; update(1 / 60); t += 1 / 60; }
                 projectiles = [];
