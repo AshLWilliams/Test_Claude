@@ -857,7 +857,7 @@
   registerTheme({
     index: 9, id: 'tundra',
     title: 'Газопровод в тундре', subtitle: 'Северная стройка: метель, мерзлота и медведи',
-    accent: '#80deea', dust: '#e3f0fa', headlamp: true,
+    accent: '#80deea', dust: '#e3f0fa', headlamp: true, snowy: true, // snowy — снег налипает на героя
     gen: { length: 3900, friction: 0.65, groundRange: [232, 298], obstacleH: 28, obstacleW: 44, weights: { pit: 24, platforms: 22, step: 12, obstacle: 14, flat: 28 } },
     decor: ['pole', 'pole', 'snowman', 'flag', 'flag', 'km', 'barrel'],
     enemies,
