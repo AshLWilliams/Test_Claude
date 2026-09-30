@@ -156,8 +156,12 @@ NODE_PATH=$(npm root -g) node tests/level-runner-check.js --out /tmp/lr-NN --see
   (по умолчанию — `THEME_BREAKABLES[id]`).
 - **Подземелье** (`gen.underground: 'metro' | 'mine'`, вес `weights.under`): тоннели `api.tunnels` ({x1, x2, top, slabBot, floor}); над ними —
   перекрытия `slab: true` с дырами. Задник — `drawTunnel(t, ctx, api)` темы или движка. Земля на таких участках рисуется глубже кадра (api.H больше).
-- **Здание** (`gen.indoor: true`): этажи `api.rooms` ({x1, x2, y, top}), потолки — `solids` с `kind: 'ceiling'` (не опора: groundAt их пропускает).
-  Тема может нарисовать `drawRoom(rm, ctx, api)` и `drawCeiling(s, ctx, api)`.
+- **Здание** (`gen.indoor: true`): этажи `api.rooms` ({x1, x2, y, top}) проходят через всё здание: верхние этажи — перекрытия (`slab: true`)
+  над нижними, связаны лестницами с люками (`platforms` с `hatch: true`). Шаткие мостки и леса — `platforms` с `crumble: true`.
+  Этажи стоят друг над другом, поэтому `api.groundAt(x)` вернёт верхний — для «опоры под героем» есть `api.groundBelow(x, y)` и `api.solidAt(x, y)`.
+  Тема может нарисовать `drawRoom(rm, ctx, api)`.
+- **Подземелье в несколько ярусов**: `api.tunnels` — все ярусы (поле `depth`), в тупиках нижних — завал (`sort: 'rubble'`) и клады (`TREASURES`).
+- **Прораб** (`gen.foreman: true`) — враг движка `angryForeman`; `api.hurtPlayer(x, 0.5)` отнимает пол-каски.
 - **Задний план**: бригады рабочих, птицы, самолёты, крысы — `AMBIENT[id]` в движке.
 - **Тайник** в стене: `ghosts` — стена рисуется целиком через `drawGround`, а сталкиваются с ней по кускам (`hidden: true`, `kind: 'hidden'`);
   вход закрыт кладкой с трещинами (`sort: 'crack'`). Внутри — золотые чертежи. Перебирая `api.solids`, учитывайте эти виды.

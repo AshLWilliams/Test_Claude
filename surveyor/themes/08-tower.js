@@ -252,7 +252,8 @@
   function drawGround(s, ctx, api) { // одинаковые детали собираем в один путь — меньше вызовов отрисовки
     if (s.wall) { drawCore(s, ctx, api); return; }
     const { H, hash, now } = api, x0 = s.x, x1 = s.x + s.w, y = s.y, top = y + SLAB;
-    const nl = api.groundAt(x0 - 3), nr = api.groundAt(x1 + 3);
+    const side = xx => api.groundBelow(xx, y - 4) ?? (api.solids.some(q => xx >= q.x && xx <= q.x + q.w && q.y < y && q.y + q.h > y) ? y : null); // сосед на своём этаже; стена ядра — не обрыв
+    const nl = side(x0 - 3), nr = side(x1 + 3);
     const openL = x0 > 0 && nl === null, openR = nr === null;
     const cols = [], floors = [];
     for (let cx = Math.ceil((x0 + 12) / COL) * COL; cx < x1 - 12; cx += COL) cols.push(cx);
@@ -301,7 +302,7 @@
   }
 
   function drawPit(p, ctx, api) { // открытый край перекрытия: внизу только облака и обрывки сетки
-    const yr = api.groundAt(p.x + p.w + 3);
+    const yr = api.groundBelow(p.x + p.w + 3, p.y - 4);
     netFlap(ctx, p.x, p.y + SLAB + 3, p.w * (0.28 + p.v * 0.14), 1, api.now, p.v);
     netFlap(ctx, p.x + p.w, (yr === null ? p.y : yr) + SLAB + 3, p.w * (0.22 + (1 - p.v) * 0.14), -1, api.now, p.v + 1);
   }
@@ -315,7 +316,7 @@
   }
 
   function footAt(x, y, api) { // на что опирается стойка в точке x под высотой y: ближайший нижний ярус или плита
-    let b = api.groundAt(x); if (b === null) b = api.H + 10;
+    let b = api.groundBelow(x, y + 1); if (b === null) b = api.H + 10;
     for (const q of api.platforms) if (q.y > y + 1 && q.y < b && x >= q.x && x <= q.x + q.w) b = q.y;
     return b;
   }
@@ -557,6 +558,8 @@
     }
     if (hi - lo < e.w + 24) return null;
     const jx = api.clamp(px, lo + e.w / 2, hi - e.w / 2);
+    const x0 = Math.min(ex, jx) - e.w / 2, x1 = Math.max(ex, jx) + e.w / 2, y0 = Math.min(ey, y) - 60, y1 = Math.max(ey, y) - 2;
+    if (api.solids.some(s => s.slab && s.x < x1 && s.x + s.w > x0 && s.y < y1 && s.y + s.h > y0)) return null; // сквозь перекрытие этажа не прыгает
     return { jx, jy: y, nMin: lo, nMax: hi, dur: 0.7 + Math.hypot(jx - ex, y - ey) / 700 };
   }
 
@@ -578,12 +581,15 @@
           e.y += (e.baseY + Math.sin(e.t * 2.3) * 7 - e.y) * Math.min(1, dt * 3);
           if (Math.abs(e.vx) > 8) e.dir = Math.sign(e.vx);
           e.cd -= dt;
-          if (e.cd <= 0 && Math.abs(dx) < 170 && Math.abs(dx) > 24 && P.y > e.y + 10) { e.state = 'aim'; e.aim = 0.85; }
+          const px = P.x + P.w / 2, ex = e.x + e.w / 2, feet = P.y + P.h;
+          const slabBetween = api.solids.some(s => s.slab && s.x < Math.max(px, ex) + 12 && s.x + s.w > Math.min(px, ex) - 12 && s.y > e.y + e.h - 2 && s.y < feet - 2); // герой этажом ниже — не достать
+          if (e.cd <= 0 && Math.abs(dx) < 170 && Math.abs(dx) > 24 && P.y > e.y + 10 && !slabBetween) { e.state = 'aim'; e.aim = 0.85; }
         } else if (e.state === 'aim') { // замах: взмывает, топорщится, «курлык!» — 0,85 с на реакцию
           e.aim -= dt; e.y -= 14 * dt; e.dir = Math.sign(dx) || e.dir;
           if (e.aim <= 0) {
             const sx = e.x + e.w / 2, sy = e.y + e.h / 2, tx = api.clamp(P.x + P.w / 2, sx - 150, sx + 150);
-            const surf = api.groundAt(tx), ty = Math.max(sy + 10, Math.min(P.y + 12, (surf === null ? P.y + P.h : surf) - 14));
+            const surf = api.groundBelow(tx, P.y + P.h - 8), under = api.groundBelow(tx, sy); // и не ниже первой опоры под самим голубем
+            const ty = Math.max(sy + 10, Math.min(P.y + 12, (surf === null ? P.y + P.h : surf) - 14, (under === null ? Infinity : under) - 14));
             const ex = api.clamp(tx + (tx - sx) * 0.7, e.homeX + e.w / 2 - 240, e.homeX + e.w / 2 + 240), ey = sy - 6;
             Object.assign(e, { state: 'dive', s: 0, sx, sy, ex, ey, qx: 2 * tx - 0.5 * (sx + ex), qy: 2 * ty - 0.5 * (sy + ey), dur: api.clamp(Math.hypot(tx - sx, ty - sy) / 220, 0.55, 1) });
           }
@@ -871,10 +877,10 @@
   });
 
   // ---------- механика участка: падающие балки ----------
-  function surfaceAt(x, api) { // верх ближайшей опоры сверху: платформа, блок или плита (null — пропасть)
-    let y = api.groundAt(x);
+  function surfaceAt(x, api, from) { // верх ближайшей опоры на уровне героя: платформа, блок или плита (null — пропасть)
+    let y = from == null ? api.groundAt(x) : api.groundBelow(x, from); // в здании этажи друг над другом — ищем свой
     if (y === null) return null;
-    for (const p of api.platforms) if (x >= p.x && x <= p.x + p.w && p.y < y) y = p.y;
+    for (const p of api.platforms) if (x >= p.x && x <= p.x + p.w && p.y < y && (from == null || p.y > from) && !p.crumble && !p.hatch) y = p.y;
     return y;
   }
 
@@ -913,11 +919,14 @@
     if ((st.fallT -= dt) > 0) return;
     st.fallT = 0.5; // неудачный момент — попробуем чуть позже
     if (P.x < 600 || api.progress > 0.93 || st.warns.length >= 2 || api.arena) return;
-    const x = P.x + P.w / 2 + P.vx * api.rand(0.9, 1.4) + api.rand(-20, 70), y = surfaceAt(x, api);
-    for (const d of [-52, -20, 20, 52]) if (y === null || surfaceAt(x + d, api) !== y) return; // вся балка и запас на отброс — над ровной опорой, не у края
+    const from = P.y + P.h - 60, x = P.x + P.w / 2 + P.vx * api.rand(0.9, 1.4) + api.rand(-20, 70), y = surfaceAt(x, api, from);
+    for (const d of [-52, -20, 20, 52]) if (y === null || surfaceAt(x + d, api, from) !== y) return; // вся балка и запас на отброс — над ровной опорой, не у края
     if (Math.abs(y - P.y - P.h) > 60) return; // балка падает на тот уровень, где герой (а не на ярус вышки над ним)
     // балка висит у верхнего края кадра: на вышке камера поднята — стропа тоже выше
-    const ceil = api.solids.find(q => q.kind === 'ceiling' && !q.stub && x >= q.x && x <= q.x + q.w && q.y < y && q.y > y - 200); // внутри этажа балка висит под потолком
+    let ceil = null; // перекрытие этажа выше: балка висит под ним
+    for (const q of api.solids) if (q.slab && x >= q.x && x <= q.x + q.w && q.y + q.h < y - 60 && q.y > y - 240 && (!ceil || q.y > ceil.y)) ceil = q;
+    const slabAbove = xx => api.solids.some(q => q.slab && xx >= q.x && xx <= q.x + q.w && q.y + q.h < y - 60 && q.y > y - 240);
+    if (ceil ? x - BEAM_W / 2 < ceil.x || x + BEAM_W / 2 > ceil.x + ceil.w : slabAbove(x - BEAM_W / 2) || slabAbove(x + BEAM_W / 2)) return; // балка целиком под одним куском перекрытия — иначе прошла бы сквозь бетон
     st.warns.push({ x, y, t: WARN, p: null, top: ceil ? ceil.y + ceil.h + 40 : Math.min(38, Math.max(y - 190, api.camY + 40)), ceil: ceil ? ceil.y + ceil.h : null });
     st.fallT = api.rand(6, 9);
   }
