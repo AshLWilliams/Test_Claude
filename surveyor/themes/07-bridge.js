@@ -39,6 +39,10 @@
       for (const p of platforms) if (inRun(p)) { p.y += d; p.base += d; }
       for (const e of enemies) if (inRun(e)) { e.y += d; e.groundY += d; }
       for (const p of pits) if (Math.abs(p.x - x1) < 0.5) p.y += d;
+      for (const l of api.ladders || []) { // лестницы вышки едут вместе с ярусами, у стены — только нижний конец
+        const c = l.x + l.w / 2; if (c < x0 || c >= x1) continue;
+        if (!l.wall) { l.top += d; l.bottom += d; } else if (l.bottom === y0) l.bottom += d;
+      }
     }
     const top = api.groundAt(P.x + P.w / 2);
     if (top !== null && P.y + P.h > top) P.y = top - P.h; // стартовый отрезок мог подняться — ставим героя на него
@@ -266,7 +270,51 @@
   }
 
   // ---------- настил, разрывы, фермы, препятствия ----------
+  function drawPier(s, ctx, api) { // стена: русловая опора-«бык» выше настила — бетонное тело, оголовок, ледорез у воды
+    const { now, text } = api, y = s.y, L = s.x - 0.5, Wd = s.w + 1, x1 = s.x + s.w, top = y + 16, h = WATER + 2 - top;
+    ctx.fillStyle = 'rgba(12,22,44,.4)'; ctx.fillRect(L, WATER, Wd, api.H - WATER + 10);       // отражение в воде
+    ctx.fillStyle = '#7d7a84'; ctx.fillRect(L, top, Wd, h);                                    // тело опоры
+    ctx.fillStyle = '#98939b'; ctx.fillRect(L, top, Math.min(28, Wd), h);                     // грань в лучах восхода
+    ctx.fillStyle = '#5d5a66'; ctx.fillRect(x1 - 16, top, 16.5, h);                           // теневая грань
+    ctx.fillStyle = 'rgba(40,40,56,.3)'; ctx.beginPath();                                      // захватки опалубки и отверстия от стяжек
+    for (let yy = top + 30; yy < WATER - 30; yy += 30) {
+      ctx.rect(L, yy, Wd, 1.5);
+      for (let xx = s.x + 18; xx < x1 - 12; xx += 34) ctx.rect(xx, yy - 15, 2.2, 2.2);
+    }
+    ctx.fill();
+    ctx.fillStyle = 'rgba(70,60,50,.25)';                                                       // потёки от оголовка
+    for (let xx = s.x + 40; xx < x1 - 20; xx += 57) ctx.fillRect(xx + (s.v * 20) % 9, top, 3, 18 + ((xx * 7) % 23));
+    ctx.fillStyle = '#4b5561'; ctx.fillRect(L, WATER - 30, Wd, 32);                           // гранитный ледорезный пояс
+    ctx.fillStyle = '#65717d'; ctx.fillRect(L, WATER - 30, Wd, 2); ctx.fillRect(L, WATER - 16, Wd, 1.2);
+    ctx.fillStyle = 'rgba(230,245,255,.6)'; oval(ctx, s.x + s.w / 2, WATER + 1, s.w / 2 + 6 + Math.sin(now * 3 + s.x) * 2, 2.4); // бурун у опоры
+    // опорные площадки: соседние пролёты лежат на консолях опоры
+    for (const [ex, d] of [[s.x, -1], [x1, 1]]) {
+      const ny = api.groundAt(ex + d * 3);
+      if (ny === null || ny < y + 20) continue;
+      ctx.fillStyle = '#6a6770'; ctx.fillRect(d < 0 ? ex - 7 : ex, ny + DECK, 7, 8);
+      ctx.fillStyle = '#23262c'; ctx.fillRect(d < 0 ? ex - 6 : ex + 1, ny + DECK - 3, 5, 3);
+    }
+    ctx.fillStyle = '#f4f1e8'; ctx.fillRect(s.x + s.w / 2 - 20, top + 34, 40, 14);             // номер опоры по трафарету
+    text('ОП-' + (s.span || 1), s.x + s.w / 2, top + 44.5, 9, '#2a2d34');
+    ctx.fillStyle = '#d6392b'; for (let k = 0; k < 3; k++) ctx.fillRect(x1 - 30, top + 60 + k * 16, 8, 8); // судоходная разметка
+    ctx.fillStyle = '#f4f4f4'; for (let k = 0; k < 3; k++) ctx.fillRect(x1 - 30, top + 68 + k * 16, 8, 8);
+    ctx.fillStyle = '#5b5862'; ctx.fillRect(s.x - 3, y + 4, s.w + 6, 12);                      // оголовок (ригель) с капельником
+    ctx.fillStyle = '#86828b'; ctx.fillRect(s.x - 3, y + 4, s.w + 6, 2);
+    ctx.fillStyle = '#3e3c45'; ctx.fillRect(s.x - 3, y + 14.5, s.w + 6, 1.5);
+    ctx.fillStyle = '#bab3a5'; ctx.fillRect(s.x - 3, y, s.w + 6, 5);                          // верхняя площадка — по ней ходят
+    ctx.fillStyle = '#e6decd'; ctx.fillRect(s.x - 3, y, s.w + 6, 1.5);
+    ctx.fillStyle = '#44525f'; ctx.beginPath();                                                // перила по дальнему краю
+    for (let x = s.x + 30; x < x1 - 3; x += 26) ctx.rect(x, y - 13, 2, 13);
+    ctx.rect(s.x + 30, y - 14, s.w - 33, 2); ctx.rect(s.x + 30, y - 8, s.w - 33, 1.2);
+    ctx.fill();
+    const on = Math.sin(now * 2.6 + s.x) > 0;                                                  // сигнальный огонь на углу
+    ctx.fillStyle = '#44525f'; ctx.fillRect(x1 - 9, y - 18, 3, 18);
+    ctx.fillStyle = on ? '#ffcf33' : '#6a5a1d'; circle(ctx, x1 - 7.5, y - 20, 3);
+    if (on) { ctx.fillStyle = 'rgba(255,210,80,.25)'; circle(ctx, x1 - 7.5, y - 20, 8); }
+  }
+
   function drawGround(s, ctx, api) { // пролёт: бетонная плита, окаймляющая балка, главная балка; под ним тень и опоры
+    if (s.wall) { drawPier(s, ctx, api); return; }
     const { H, W, camX, now } = api, y = s.y, L = s.x - 0.5, Wd = s.w + 1, bot = y + DECK;
     const x0 = Math.max(s.x, camX - 30), x1 = Math.min(s.x + s.w, camX + W + 30); // мелкие детали — только в кадре
     ctx.fillStyle = 'rgba(12,22,44,.45)'; ctx.fillRect(s.x, bot, s.w, H - bot + 10);  // тень пролёта, сквозь неё видна река
@@ -331,11 +379,30 @@
     for (let i = 0; i < 6; i++) { ctx.fillStyle = i % 2 ? '#f4f4f4' : '#d8322a'; ctx.fillRect(bx - 2 + i * 4.7, p.y - 22, 4.7, 5); }
   }
 
-  function drawPlatform(p, ctx) { // стальная ферма-переход: треугольная решётка, настил-решётка, перила и стойки
+  function footAt(x, y, api) { // на что опирается стойка в точке x под высотой y: ближайший нижний ярус или настил
+    let b = api.groundAt(x); if (b === null) b = WATER;
+    for (const q of api.platforms) if (q.y > y + 1 && q.y < b && x >= q.x && x <= q.x + q.w) b = q.y;
+    return b;
+  }
+
+  function drawPlatform(p, ctx, api) { // стальная ферма-переход: треугольная решётка, настил-решётка, перила и стойки
     const x = p.x, y = p.y, w = p.w, D = 20, n = Math.max(2, Math.round(w / 26)), pw = w / n;
+    const posts = w > 240 || p.tower ? [x + 10, x + w / 2 - 2, x + w - 14] : [x + 10, x + w - 14];
+    const feet = posts.map(sx => footAt(sx + 2, y, api));
+    if (p.tower) { // вышка — временная монтажная опора: башенки из уголков с крестовыми связями
+      ctx.strokeStyle = '#1d5f6b'; ctx.lineWidth = 1.6; ctx.beginPath();
+      for (let i = 0; i < posts.length - 1; i++) {
+        const a = posts[i] + 2, b = posts[i + 1] + 2, lo = Math.min(feet[i], feet[i + 1]);
+        for (let yy = y + D; yy < lo - 20; yy += 36) {
+          const y2 = Math.min(yy + 36, lo); ctx.moveTo(a, yy); ctx.lineTo(b, y2); ctx.moveTo(b, yy); ctx.lineTo(a, y2);
+          ctx.moveTo(a, y2); ctx.lineTo(b, y2);
+        }
+      }
+      ctx.stroke();
+    }
     ctx.fillStyle = '#1d5f6b';                                                         // стойки до опоры
-    const posts = w > 240 ? [x + 10, x + w / 2 - 2, x + w - 14] : [x + 10, x + w - 14];
-    for (const sx of posts) { ctx.fillRect(sx, y + D, 4, p.base - y - D); ctx.fillRect(sx - 3, p.base - 3, 10, 3); }
+    posts.forEach((sx, i) => { ctx.fillRect(sx, y + D, p.tower ? 5 : 4, feet[i] - y - D); ctx.fillRect(sx - 3, feet[i] - 3, 10, 3); });
+    if (p.tower) { ctx.fillStyle = '#44bccb'; posts.forEach((sx, i) => ctx.fillRect(sx, y + D, 1.5, feet[i] - y - D)); }
     ctx.strokeStyle = '#2a8f9c'; ctx.lineWidth = 2.5; ctx.beginPath();                 // решётка Уоррена
     for (let i = 0; i < n; i++) { const a = x + i * pw; ctx.moveTo(a, y + 5); ctx.lineTo(a + pw / 2, y + D); ctx.lineTo(a + pw, y + 5); }
     ctx.stroke();
@@ -346,6 +413,21 @@
     ctx.fillStyle = '#b3f1f7'; ctx.fillRect(x - 4, y, w + 8, 1.3);
     ctx.fillStyle = '#2a8f9c'; ctx.fillRect(x - 4, y - 14, w + 8, 2);                  // перила
     for (let i = 0; i <= n; i++) ctx.fillRect(x - 3 + i * (w + 4) / n, y - 14, 1.6, 14);
+  }
+
+  function drawLadder(l, ctx) { // стремянка в цвет ферм; на опоре — с ограждением-«корзиной» из дуг
+    const t = l.top - 12, h = l.bottom - t, r = l.x + l.w;
+    ctx.fillStyle = 'rgba(10,20,40,.28)'; ctx.fillRect(l.x + 3, l.top, l.w - 2, l.bottom - l.top);
+    ctx.fillStyle = '#1f6f7b'; ctx.fillRect(l.x, t, 3, h); ctx.fillRect(r - 3, t, 3, h);
+    ctx.fillStyle = '#b3f1f7'; ctx.fillRect(l.x, t, 1, h);
+    ctx.fillStyle = '#44bccb'; ctx.beginPath(); for (let y = l.top + 6; y < l.bottom; y += 12) ctx.rect(l.x + 2, y, l.w - 4, 2.5); ctx.fill();
+    if (l.wall && h > 90) {
+      ctx.strokeStyle = 'rgba(42,143,156,.85)'; ctx.lineWidth = 1.5; ctx.beginPath();
+      for (let y = l.top + 4; y < l.bottom - 56; y += 26) { ctx.moveTo(l.x - 1, y); ctx.quadraticCurveTo(l.x + l.w / 2, y + 7, r + 1, y); }
+      ctx.moveTo(l.x - 1, l.top + 4); ctx.lineTo(l.x - 1, l.bottom - 60); ctx.moveTo(r + 1, l.top + 4); ctx.lineTo(r + 1, l.bottom - 60);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#ffcf33'; ctx.fillRect(l.x - 1, l.top - 14, 5, 3); ctx.fillRect(r - 4, l.top - 14, 5, 3); // поручни сверху
   }
 
   function drum(ctx, x, y, w, h) { // кабельный барабан в три четверти: щёки-диски и намотанный чёрный кабель
@@ -464,6 +546,12 @@
     if (!p.wet && p.y + p.h > WATER && api.groundAt(p.x + p.w / 2) === null) { p.wet = true; api.burst(p.x + p.w / 2, WATER, '#e6f8ff', 6, 110, 700); }
   }
   const lerp = (a, b, u) => a + (b - a) * u;
+  const onScreen = (e, api) => e.y + e.h > api.camY + 40 && e.y < api.camY + api.H - 10 && e.x + e.w > api.camX && e.x < api.camX + api.W; // враг виден — стрелять можно
+  function drawRivet(p, ctx) { // раскалённая заклёпка с огненным хвостом
+    ctx.fillStyle = 'rgba(255,140,40,.4)'; ctx.fillRect(-16, -2.5, 16, 5);
+    ctx.fillStyle = '#ff7a1f'; ctx.fillRect(-4, -2.5, 6, 5); ctx.fillStyle = '#ffe2a0'; oval(ctx, 3, 0, 3.5, 3.5);
+  }
+  const rivetUpd = p => { p.rot = Math.atan2(p.vy, p.vx); };
 
   function placeRigger(e) { // маятник: подвес (ax, ay), длина троса len, угол cth; хитбокс — по телу вдоль троса
     const th = e.th * Math.sin(e.ph), r = e.len + 19;
@@ -544,7 +632,8 @@
       w: 22, h: 38, hp: 2, pts: 250, flip: false, knockback: false, hitColor: '#ffe066', deathColor: '#ffd23f',
       init(e, api) {
         const span = e.maxX - e.minX, cx = e.x + e.w / 2;
-        const land = api.groundAt(e.minX - 12) === null ? 40 : 0; // сразу за разрывом — место, чтобы приземлиться не под трос
+        const gl = api.groundAt(e.minX - 12);                  // сразу за разрывом или над лестницей — место, чтобы выйти не под трос
+        const land = gl === null || gl > e.groundY + 20 ? 44 : 0;
         e.amp = api.clamp((span - land) / 2 - 24, 26, 90);
         const lo = e.minX + land + e.amp + 14, hi = e.maxX - e.amp - 14;
         e.ax = lo > hi ? (e.minX + land + e.maxX) / 2 : api.clamp(cx, lo, hi);
@@ -571,7 +660,7 @@
         ctx.beginPath(); ctx.arc(ax, ay, e.len + 38, Math.PI / 2 - e.th, Math.PI / 2 + e.th); ctx.stroke(); ctx.setLineDash([]);
         const gy = e.groundY - oy, k = api.clamp(1 - (e.groundY - oy + e.h) / 120, 0.3, 1);      // тень на настиле
         ctx.fillStyle = `rgba(20,20,30,${(0.28 * k).toFixed(3)})`; oval(ctx, 0, gy - 1, 14 * k + 4, 3);
-        ctx.strokeStyle = '#1e2329'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(ax, -oy); ctx.lineTo(ax, ay - 12); ctx.stroke(); // трос крана сверху
+        ctx.strokeStyle = '#1e2329'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(ax, Math.min(api.camY - 8, e.ay - 12) - oy); ctx.lineTo(ax, ay - 12); ctx.stroke(); // трос крана сверху
         ctx.fillStyle = '#f2c230'; ctx.fillRect(ax - 7, ay - 16, 14, 11);                       // крюковая обойма
         ctx.fillStyle = '#1e2329'; for (let i = 0; i < 3; i++) poly(ctx, [ax - 7 + i * 5, ay - 5, ax - 3 + i * 5, ay - 16, ax - 1 + i * 5, ay - 16, ax - 5 + i * 5, ay - 5]);
         ctx.strokeStyle = '#1e2329'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(ax, ay - 1, 3.5, -0.5, Math.PI); ctx.stroke();
@@ -659,6 +748,119 @@
       },
       onDeath(e, api) { api.burst(e.x + e.w / 2, e.y + e.h / 2, '#ecc27e', 8, 160); },
     },
+
+    riveter: { // клепальщик: у жаровни на ферме, 1 с ведёт лазерным прицелом и выстреливает раскалённой заклёпкой (её можно отбить)
+      w: 24, h: 38, hp: 2, pts: 260, hitColor: '#ffb347', deathColor: '#3b5ba8',
+      init(e) { e.state = 'walk'; e.st = 0; e.cd = 1.2 + Math.random(); },
+      update(e, dt, api) {
+        const P = api.player, dx = api.dx(e), tx = P.x + P.w / 2, ty = P.y + P.h * 0.4;
+        if (e.state === 'walk') {
+          if (Math.abs(dx) < 380) e.dir = Math.sign(dx) || e.dir; else api.patrol(e, 16, dt);
+          e.cd -= dt;
+          if (e.cd <= 0 && onScreen(e, api) && Math.abs(dx) > 30 && Math.abs(dx) < 340 && Math.abs(ty - e.y) < 280) { e.state = 'aim'; e.st = 1.05; e.tx = tx; e.ty = ty; }
+          return;
+        }
+        e.st -= dt;
+        if (e.state === 'aim') {
+          if (e.st > 0.35) { e.dir = Math.sign(dx) || e.dir; e.tx = tx; e.ty = ty; } // ведёт цель; последние 0,35 с прицел замер и мигает
+          if (e.st > 0) return;
+          const ox = e.x + e.w / 2 + e.dir * 19, oy = e.y + e.h - 24, vx = e.tx - ox, vy = e.ty - oy, d = Math.hypot(vx, vy) || 1;
+          api.shoot({ x: ox, y: oy, w: 10, h: 6, vx: vx / d * 330, vy: vy / d * 330, gravity: 0, life: 1.7, reflectable: true, source: e, pts: 15, color: '#ff9a3c', draw: drawRivet, update: rivetUpd });
+          api.burst(ox, oy, '#ffd27a', 5, 90, 200);
+          e.state = 'cool'; e.st = 0.6;
+        } else if (e.st <= 0) { e.state = 'walk'; e.cd = api.rand(2.2, 3.2); }
+      },
+      draw(e, ctx, api) {
+        const aim = e.state === 'aim', t = e.t, lock = aim && e.st <= 0.35;
+        if (aim && e.tx != null) { // лазерный прицел — в мировых осях (снимаем отражение движка)
+          ctx.save(); ctx.scale(e.dir || 1, 1);
+          const ox = (e.dir || 1) * 19, oy = -24, px = e.tx - (e.x + e.w / 2), py = e.ty - (e.y + e.h);
+          ctx.strokeStyle = lock ? (Math.floor(t * 18) % 2 ? '#ff2d20' : '#ffd0c8') : 'rgba(255,60,50,.55)';
+          ctx.lineWidth = lock ? 1.6 : 1; if (!lock) ctx.setLineDash([6, 5]);
+          ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(px, py); ctx.stroke(); ctx.setLineDash([]);
+          ctx.beginPath(); ctx.arc(px, py, lock ? 6 : 9, 0, TAU); ctx.moveTo(px - 12, py); ctx.lineTo(px - 4, py); ctx.moveTo(px + 4, py); ctx.lineTo(px + 12, py); ctx.stroke();
+          ctx.restore();
+        }
+        const fl = 0.5 + 0.5 * Math.sin(t * 13) * Math.sin(t * 7);                           // жаровня с заклёпками за спиной
+        ctx.strokeStyle = '#2b2f36'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-20, 0); ctx.lineTo(-15, -12); ctx.moveTo(-8, 0); ctx.lineTo(-13, -12); ctx.stroke();
+        ctx.fillStyle = `rgba(255,140,40,${(0.18 + 0.15 * fl).toFixed(3)})`; circle(ctx, -14, -16, 9);
+        ctx.fillStyle = '#3a3d44'; poly(ctx, [-22, -16, -6, -16, -9, -11, -19, -11]);
+        ctx.fillStyle = fl > 0.5 ? '#ffb347' : '#ff7a1f'; for (let k = 0; k < 4; k++) circle(ctx, -18.5 + k * 3, -16.5, 1.6);
+        ctx.fillStyle = '#ffd27a'; for (let k = 0; k < 2; k++) { const ph = (t * 0.9 + k * 0.5) % 1; ctx.fillRect(-15 + k * 3 + Math.sin(t * 5 + k) * 2, -19 - ph * 16, 1.2, 1.2); }
+        const walk = e.state === 'walk' && Math.abs(api.dx(e)) >= 380, sw = walk ? Math.sin(t * 8) * 4 : 0;
+        ctx.strokeStyle = '#26324f'; ctx.lineWidth = 4.5; ctx.lineCap = 'round';          // ноги
+        ctx.beginPath(); ctx.moveTo(-2, -16); ctx.lineTo(-3 + sw, -2); ctx.moveTo(2, -16); ctx.lineTo(3 - sw, -2); ctx.stroke();
+        ctx.fillStyle = '#3a2718'; ctx.fillRect(-6 + sw, -3, 7, 3); ctx.fillRect(-1 - sw, -3, 7, 3);
+        ctx.fillStyle = '#3b5ba8'; ctx.fillRect(-7, -33, 14, 18);                             // синяя роба
+        ctx.fillStyle = '#7a5231'; poly(ctx, [-2, -29, 8, -29, 9, -12, -1, -12]);             // кожаный фартук
+        ctx.fillStyle = '#5c3b22'; ctx.fillRect(-2, -29, 10, 1.5);
+        ctx.fillStyle = '#f1c27d'; circle(ctx, 1, -38, 5.5);                                  // голова
+        ctx.fillStyle = '#1b1f24'; ctx.fillRect(1, -40.5, 6, 3); ctx.fillStyle = aim ? '#ff4a3a' : '#7fd3e6'; ctx.fillRect(3, -40, 3, 2); // очки
+        ctx.fillStyle = '#e8e8e8'; ctx.beginPath(); ctx.arc(0.5, -41, 6.5, Math.PI, 0); ctx.fill(); ctx.fillRect(-6, -42, 15, 2); // белая каска
+        ctx.save(); ctx.translate(4, -25); if (!aim) ctx.rotate(0.35 + Math.sin(t * 2) * 0.05);   // пневмомолоток
+        ctx.fillStyle = '#6b7380'; ctx.fillRect(0, -3.5, 14, 7); ctx.fillStyle = '#9aa3ae'; ctx.fillRect(0, -3.5, 14, 1.5);
+        ctx.fillStyle = '#2b2f36'; ctx.fillRect(2, 3, 4, 6); ctx.fillRect(13, -2, 4, 4);
+        if (aim) { ctx.fillStyle = `rgba(255,120,40,${(0.4 + 0.5 * Math.abs(Math.sin(t * 20))).toFixed(3)})`; circle(ctx, 17, 0, 3 + (lock ? 2 : 0)); }
+        ctx.restore();
+        ctx.strokeStyle = '#3b5ba8'; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(-1, -30); ctx.lineTo(5, -24); ctx.stroke(); // рука
+        ctx.strokeStyle = '#2d2f36'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(4, -19); ctx.quadraticCurveTo(-4, -8, -9, -12); ctx.stroke(); // шланг к компрессору
+      },
+      onDeath(e, api) { api.burst(e.x + e.w / 2, e.y + e.h - 14, '#ff9a3c', 10, 150, 500); },
+    },
+
+    fencer: { // монтажник со щитом ограждения: спереди рейка звенит о щит; 0,9 с упирается — и таранит, потом выдыхается
+      w: 26, h: 40, hp: 2, pts: 280, heavy: true, hitColor: '#f4f4f4', deathColor: '#d6392b',
+      init(e) { e.state = 'walk'; e.st = 0; },
+      update(e, dt, api) {
+        const P = api.player, dx = api.dx(e), same = Math.abs(P.y + P.h - e.y - e.h) < 40;
+        if (e.state === 'walk') {
+          if (Math.abs(dx) < 260 && same) e.dir = Math.sign(dx) || e.dir; // держит щит к герою
+          api.patrol(e, Math.abs(dx) < 260 && same ? 14 : 34, dt);
+          e.cd -= dt;
+          if (e.cd <= 0 && same && Math.abs(dx) < 230 && Math.abs(dx) > 26) { e.state = 'brace'; e.st = 0.9; e.dir = Math.sign(dx) || e.dir; }
+          return;
+        }
+        e.st -= dt;
+        if (e.state === 'brace') { if (e.st <= 0) { e.state = 'rush'; e.st = 1.3; } }
+        else if (e.state === 'rush') { // бежит, пока не упрётся в край своего пролёта
+          const x0 = e.x; e.x = api.clamp(e.x + e.dir * 190 * dt, e.minX, e.maxX - e.w);
+          if (Math.random() < dt * 20) api.burst(e.x + e.w / 2 - e.dir * 10, e.y + e.h, '#cfc6b4', 1, 60, 300);
+          if (e.st <= 0 || Math.abs(e.x - x0) < 0.01) { e.state = 'tired'; e.st = 1.7; api.shake(2); }
+        } else if (e.state === 'tired') { if (e.st <= 0) { e.state = 'walk'; e.cd = api.rand(1.4, 2.4); } }
+      },
+      onHit(e, api, source) { // щит держит удары спереди; сзади, сверху или пока отдыхает — больно
+        if (source === 'stomp' || e.state === 'tired') return;
+        if (Math.sign(api.dx(e)) === e.dir) { api.burst(e.x + e.w / 2 + e.dir * 14, e.y + 16, '#fff6d0', 6, 140); return false; }
+      },
+      draw(e, ctx, api) {
+        const t = e.t, st = e.state, rush = st === 'rush', tired = st === 'tired', brace = st === 'brace';
+        const sw = rush ? Math.sin(t * 22) * 7 : st === 'walk' ? Math.sin(t * 9) * 3 : 0;
+        const lean = rush ? 0.22 : brace ? -0.08 + Math.sin(t * 40) * 0.03 : tired ? 0.35 : 0;
+        if (brace) { ctx.fillStyle = 'rgba(207,198,180,.6)'; for (let k = 0; k < 3; k++) oval(ctx, -8 - k * 5 - ((t * 30) % 6), -2, 3 + k, 1.6); }
+        ctx.strokeStyle = '#2f3a2a'; ctx.lineWidth = 5; ctx.lineCap = 'round';              // ноги
+        ctx.beginPath(); ctx.moveTo(-1, -17); ctx.lineTo(-3 + sw, -2); ctx.moveTo(1, -17); ctx.lineTo(3 - sw, -2); ctx.stroke();
+        ctx.fillStyle = '#3a2718'; ctx.fillRect(-7 + sw, -3.5, 8, 3.5); ctx.fillRect(-1 - sw, -3.5, 8, 3.5);
+        ctx.save(); ctx.translate(0, -17); ctx.rotate(lean);
+        ctx.fillStyle = '#4f7a3a'; ctx.fillRect(-7, -19, 13, 19);                              // зелёная куртка
+        ctx.fillStyle = '#c6ff3a'; ctx.fillRect(-7, -12, 13, 2.5); ctx.fillRect(-7, -6, 13, 2.5); // светоотражающие полосы
+        ctx.fillStyle = '#f1c27d'; circle(ctx, 1, -24, 5.5);
+        ctx.fillStyle = '#222'; ctx.fillRect(3, -26, 2, 2);
+        ctx.fillStyle = '#ff8a1a'; ctx.beginPath(); ctx.arc(0.5, -27, 6.5, Math.PI, 0); ctx.fill(); ctx.fillRect(-6, -28, 15, 2); // оранжевая каска
+        ctx.strokeStyle = '#4f7a3a'; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(9, -11); ctx.stroke(); // руки к щиту
+        if (tired) { ctx.fillStyle = '#9fd8ff'; oval(ctx, -6, -30 - ((t * 20) % 8), 1.4, 2); api.text('уф', -12, -34, 8, '#f4f1e8'); }
+        ctx.restore();
+        ctx.save(); ctx.translate(12, 0); ctx.rotate(tired ? 0.45 : rush ? 0.12 : 0);             // щит: секция ограждения, в конце тарана опущена
+        ctx.fillStyle = '#2b2f36'; ctx.fillRect(-1, -40, 3, 38); ctx.fillRect(6, -40, 3, 38);
+        ctx.save(); ctx.beginPath(); ctx.rect(1, -39, 6, 34); ctx.clip();
+        ctx.fillStyle = '#f4f4f4'; ctx.fillRect(1, -39, 6, 34);
+        ctx.fillStyle = '#d6392b'; for (let y = -46; y < -4; y += 10) poly(ctx, [1, y + 6, 7, y, 7, y + 5, 1, y + 11]);
+        ctx.restore();
+        ctx.fillStyle = '#cfd6dc'; ctx.fillRect(-2, -3, 12, 3);
+        ctx.restore();
+        if (brace) { const on = Math.floor(t * 10) % 2; ctx.fillStyle = on ? '#ff3b30' : '#ffd23a'; poly(ctx, [2, -60, -5, -48, 9, -48]); api.text('!', 2, -49.5, 9, '#1d1d1f'); }
+      },
+      onDeath(e, api) { api.burst(e.x + e.w / 2 + e.dir * 12, e.y + 20, '#f4f4f4', 8, 160); },
+    },
   };
 
   // ---------- механика участка: порывы ветра и всплески ----------
@@ -682,7 +884,7 @@
     else if (w.phase === 'warn' && w.t <= 0) { w.phase = 'gust'; w.t = WIND_LEN; }
     else if (w.phase === 'gust' && w.t <= 0) { w.phase = 'calm'; w.t = api.rand(4, 7); } // с предупреждением и порывом — цикл 7–10 с
     w.k += ((w.phase === 'gust' ? 1 : w.phase === 'warn' ? 0.4 : 0) - w.k) * Math.min(1, dt * 5);
-    if (w.phase === 'gust' && P.onGround) windPush(P, w.dir * WIND_V * Math.min(1, (WIND_LEN - w.t) * 4, w.t * 4) * dt, api);
+    if (w.phase === 'gust' && P.onGround && !P.climb) windPush(P, w.dir * WIND_V * Math.min(1, (WIND_LEN - w.t) * 4, w.t * 4) * dt, api);
     // падение в разрыв: всплеск и расходящиеся круги (герой просто пролетает сквозь воду — дальше движок)
     const feet = P.y + P.h;
     if (!st.wet && feet > WATER && api.groundAt(P.x + P.w / 2) === null) {
@@ -746,13 +948,15 @@
       { type: 'beaver', where: 'ground', weight: 3 },
       { type: 'gull', where: 'air', weight: 3 },
       { type: 'rigger', where: 'air', weight: 2, from: 0.12 },
+      { type: 'fencer', where: 'ground', weight: 2, from: 0.2 },
       { type: 'beaver', where: 'upper', weight: 1 },
+      { type: 'riveter', where: 'upper', weight: 3, from: 0.08 },
     ],
     init(api) {
       Object.assign(st.wind, { phase: 'calm', t: api.rand(5, 7), k: 0 });
       st.splashes.length = 0; st.wet = false;
       fixTinySteps(api);
     },
-    update, drawBackground, drawGround, drawPit, drawPlatform, drawObstacle, drawDecor, drawFinish, drawForeground, drawOverlay,
+    update, drawBackground, drawGround, drawPit, drawPlatform, drawObstacle, drawDecor, drawFinish, drawLadder, drawForeground, drawOverlay,
   });
 })();

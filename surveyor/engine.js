@@ -490,7 +490,7 @@ function update(dt) {
   moveY(P, P.vy * dt);
   if (P.onGround && wasAir && P.vy === 0) {
     burst(P.x + P.w / 2, P.y + P.h, theme.dust || '#b9a58a', 5, 70, 300);
-    if (P.y - P.peakY > FALL_HURT) fallHurt(P.y - P.peakY); // урон от падения с большой высоты
+    if (P.y - P.peakY > FALL_HURT && P.inv <= 0) fallHurt(P.y - P.peakY); // урон от падения с большой высоты (не после отброса от удара — это уже урон)
   }
   if (P.onGround) P.peakY = P.y; else P.peakY = Math.min(P.peakY, P.y);
   }
