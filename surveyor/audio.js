@@ -6,7 +6,8 @@ const Sound = (() => {
   let muted = false;
   try { muted = localStorage.getItem(MUTE_KEY) === '1'; } catch (e) {}
   let ac = null, master = null, noiseBuf = null, unlocked = false;
-  const MUSIC_VOL = 0.45;
+  const MUSIC_VOL = 0.25;  // музыка — фоном, тише эффектов
+  const SFX_VOL = 0.9;     // общий уровень эффектов
 
   // ---------- саундтрек: участки 1–5 и меню — трек 1, участки 6–10 — трек 2 ----------
   const tracks = ['music/track1.mp3', 'music/track2.mp3'].map(src => {
@@ -35,7 +36,9 @@ const Sound = (() => {
     unlocked = true;
     try {
       ac = new (window.AudioContext || window.webkitAudioContext)();
-      master = ac.createGain(); master.gain.value = 0.5; master.connect(ac.destination);
+      // эффекты громкие, поэтому идут через компрессор — при наложении не хрипят
+      const comp = ac.createDynamicsCompressor(); comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4; comp.connect(ac.destination);
+      master = ac.createGain(); master.gain.value = SFX_VOL; master.connect(comp);
       noiseBuf = ac.createBuffer(1, ac.sampleRate * 0.6, ac.sampleRate);
       const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     } catch (e) { ac = null; }
