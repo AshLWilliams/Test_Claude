@@ -115,7 +115,8 @@ const api = {
   text: (...a) => text(...a), drawStaff: len => drawStaff(len),
   hurtPlayer: fromX => hurtPlayer(fromX),
   burst: (...a) => burst(...a), popup: (...a) => popup(...a), addScore: (...a) => addScore(...a),
-  shake(n) { shake = Math.max(shake, n); },
+  shake(n) { shake = Math.max(shake, n); if (n >= 4) Sound.play('thud'); }, // сильная тряска — глухой удар (ковш, обвал, балка)
+  sfx: name => Sound.play(name), // звуковой эффект: jump, swing, hit, kill, clang, hurt, smash, explosion, reflect, …
   spawnEnemy: (...a) => spawnEnemy(...a),
   shoot: p => shoot(p),
   damageEnemy: (e, n, source) => damageEnemy(e, n, source, 0),
@@ -318,6 +319,7 @@ function levelComplete() {
   clearInfo = { timeBonus, lifeBonus, finishBonus, level: levelIdx, time: levelTime };
   if (levelIdx + 2 > unlocked) { unlocked = Math.min(THEMES.length, levelIdx + 2); try { localStorage.setItem(UNLOCK_KEY, unlocked); } catch (e) {} }
   burst(player.x, player.y, '#ffd76a', 40, 260);
+  if (levelIdx < THEMES.length - 1) Sound.play('clear');
   if (levelIdx >= THEMES.length - 1) endGame(true);
   else { mode = 'clear'; overAt = performance.now(); }
 }
@@ -326,6 +328,7 @@ function nextLevel() { loadLevel(levelIdx + 1); mode = 'play'; }
 
 function endGame(won) {
   mode = won ? 'win' : 'over'; overAt = performance.now();
+  Sound.play(won ? 'win' : 'over');
   final = { score: Math.floor(score), duration: time, level: levelIdx + 1 };
   if (final.score > best && !practice) { best = final.score; try { localStorage.setItem(STORAGE_KEY, best); } catch (e) {} }
   if (practice) return;
@@ -371,7 +374,7 @@ function moveY(o, dy) {
 
 function hurtPlayer(fromX) {
   if (player.inv > 0 || mode !== 'play') return;
-  lives--; player.inv = 1.4; shake = 8;
+  lives--; player.inv = 1.4; shake = 8; Sound.play('hurt');
   player.vx = (player.x + player.w / 2 < fromX ? -1 : 1) * 260; player.vy = -380;
   burst(player.x + player.w / 2, player.y + 20, '#ff5d5d', 16);
   if (lives <= 0) endGame(false);
@@ -399,7 +402,7 @@ function update(dt) {
   jumpBuf -= dt; P.drop -= dt;
   if (jumpBuf > 0 && P.coyote > 0) {
     if (input.down && P.onGround && platforms.some(p => Math.abs(P.y + P.h - p.y) < 2 && P.x + P.w > p.x && P.x < p.x + p.w)) { P.drop = 0.25; P.y += 2; }
-    else { P.vy = -JUMP_V; burst(P.x + P.w / 2, P.y + P.h, theme.dust || '#b9a58a', 6, 80, 300); }
+    else { P.vy = -JUMP_V; Sound.play('jump'); burst(P.x + P.w / 2, P.y + P.h, theme.dust || '#b9a58a', 6, 80, 300); }
     jumpBuf = 0; P.coyote = 0;
   }
   if (!input.jumpHeld && P.vy < -250) P.vy = -250; // короткое нажатие — низкий прыжок
@@ -418,7 +421,7 @@ function update(dt) {
 
   // удар рейкой: широкая дуга перед геодезистом
   P.attackCd -= dt;
-  if (attackQueued && P.attackCd <= 0) { P.attackT = 0.26; P.attackCd = 0.36; P.hitSet = new Set(); }
+  if (attackQueued && P.attackCd <= 0) { P.attackT = 0.26; P.attackCd = 0.36; P.hitSet = new Set(); Sound.play('swing'); }
   attackQueued = false;
   if (P.attackT > 0) {
     P.attackT -= dt;
@@ -432,14 +435,14 @@ function update(dt) {
       for (const p of projectiles) {
         if (p.dead || p.reflected || !overlap(hb, p)) continue;
         if (p.reflectable) reflect(p);
-        else if (p.destructible) { p.dead = true; addScore(p.pts, p.x, p.y); burst(p.x + p.w / 2, p.y + p.h / 2, p.color, 8); }
+        else if (p.destructible) { p.dead = true; Sound.play('smash'); addScore(p.pts, p.x, p.y); burst(p.x + p.w / 2, p.y + p.h / 2, p.color, 8); }
       }
     }
   }
 
   // падение в провал
   if (P.y > DEATH_Y) {
-    lives--; shake = 6;
+    lives--; shake = 6; Sound.play('fall');
     if (lives <= 0) { endGame(false); return; }
     const rp = arena && arena.active ? { x: arena.x1 + 60, y: arena.y - 60 } : respawn;
     Object.assign(P, { x: rp.x, y: rp.y, vx: 0, vy: 0, inv: 1.5 });
@@ -453,19 +456,19 @@ function update(dt) {
   // подбор чертежей
   for (const k of pickups) {
     k.t += dt;
-    if (!k.got && Math.abs(k.x - (P.x + P.w / 2)) < 20 && Math.abs(k.y - (P.y + P.h / 2)) < 30) { k.got = true; addScore(50, k.x, k.y - 10); burst(k.x, k.y, '#7ec8ff', 10, 140, 200); }
+    if (!k.got && Math.abs(k.x - (P.x + P.w / 2)) < 20 && Math.abs(k.y - (P.y + P.h / 2)) < 30) { k.got = true; Sound.play('pickup'); addScore(50, k.x, k.y - 10); burst(k.x, k.y, '#7ec8ff', 10, 140, 200); }
   }
   pickups = pickups.filter(k => !k.got);
 
   // чекпоинты
   for (const c of checkpoints) {
-    if (!c.on && P.x + P.w > c.x - 10 && P.x < c.x + 20) { c.on = true; respawn = { x: c.x, y: c.y - 60 }; addScore(100, c.x, c.y - 90); burst(c.x, c.y - 70, '#6cff8a', 16); }
+    if (!c.on && P.x + P.w > c.x - 10 && P.x < c.x + 20) { c.on = true; Sound.play('checkpoint'); respawn = { x: c.x, y: c.y - 60 }; addScore(100, c.x, c.y - 90); burst(c.x, c.y - 70, '#6cff8a', 16); }
   }
 
   // арена босса: закрывается, когда игрок вошёл; открывается победой
   if (arena) {
     if (!arena.active && P.x > arena.x1 + 30) {
-      arena.active = true;
+      arena.active = true; Sound.play('boss');
       const bd = arena.boss.def;
       banner = { top: 'БОСС', title: bd.bossName || 'Босс', sub: bd.bossSub || '', t: 3 };
     }
@@ -482,12 +485,14 @@ function update(dt) {
 function damageEnemy(e, n, source, knock) {
   const def = e.def;
   if (e.dead || def.invulnerable) return;
-  if (def.onHit && def.onHit(e, api, source) === false) return; // тема может отказать в уроне (броня, неуязвимая фаза)
+  if (def.onHit && def.onHit(e, api, source) === false) { Sound.play('clang'); return; } // тема может отказать в уроне (броня, неуязвимая фаза)
   e.hp -= n; e.hit = 0.12;
+  if (e.hp > 0) Sound.play(e.isBoss ? 'bossHit' : 'hit');
   burst(e.x + e.w / 2, e.y + e.h / 2, def.hitColor || '#e8d3b0', 8, 160);
   if (knock && def.knockback !== false && !e.isBoss) e.x = clamp(e.x + Math.sign(knock) * (def.heavy ? 10 : 20), Math.min(e.minX, e.x), Math.max(e.maxX - e.w, e.x));
   if (e.hp <= 0) {
     e.dead = true; kills++;
+    Sound.play(e.isBoss ? 'explosion' : 'kill');
     addScore(def.pts || 100, e.x + e.w / 2, e.y);
     burst(e.x + e.w / 2, e.y + e.h / 2, def.deathColor || '#ffffff', e.isBoss ? 60 : 14, e.isBoss ? 320 : 220);
     shake = Math.max(shake, e.isBoss ? 14 : def.heavy ? 7 : 3);
@@ -516,7 +521,7 @@ function updateEnemies(dt) {
 
 function reflect(p) { // отбитый рейкой снаряд летит прямо во врага, который его бросил (или вперёд)
   const P = player;
-  p.reflected = true; p.gravity = 0; p.life = 3;
+  p.reflected = true; p.gravity = 0; p.life = 3; Sound.play('reflect');
   const src = p.source && !p.source.dead ? p.source : null;
   const sp = 480;
   if (src) {
@@ -646,6 +651,18 @@ function drawProjectile(p) {
 }
 
 // ---------- интерфейс ----------
+const SOUND_BTN = () => ({ x: IS_TOUCH ? W - 52 : W - 22, y: 15, r: 12 });
+function drawSoundButton() { // динамик: перечёркнут, если звук выключен
+  const b = SOUND_BTN(), m = Sound.muted;
+  ctx.save(); ctx.translate(b.x, b.y);
+  ctx.fillStyle = m ? 'rgba(255,255,255,.45)' : 'rgba(255,255,255,.85)';
+  ctx.beginPath(); ctx.moveTo(-8, -3); ctx.lineTo(-4, -3); ctx.lineTo(1, -8); ctx.lineTo(1, 8); ctx.lineTo(-4, 3); ctx.lineTo(-8, 3); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+  if (m) { ctx.strokeStyle = '#ff6b5b'; ctx.beginPath(); ctx.moveTo(4, -5); ctx.lineTo(10, 5); ctx.moveTo(10, -5); ctx.lineTo(4, 5); ctx.stroke(); }
+  else { ctx.beginPath(); ctx.arc(2, 0, 5, -0.9, 0.9); ctx.stroke(); ctx.beginPath(); ctx.arc(2, 0, 9, -0.9, 0.9); ctx.stroke(); }
+  ctx.restore();
+}
+
 function drawHUD() {
   ctx.fillStyle = 'rgba(20,14,10,.55)'; ctx.fillRect(0, 0, W, 30);
   text('Очки: ' + Math.floor(score), 12, 20, 15, '#fff', 'left');
@@ -653,7 +670,8 @@ function drawHUD() {
     ctx.fillStyle = i < lives ? '#f7f7f7' : 'rgba(255,255,255,.2)';
     ctx.beginPath(); ctx.arc(128 + i * 22, 20, 7, Math.PI, 0); ctx.fill(); ctx.fillRect(120 + i * 22, 19, 16, 2);
   }
-  const right = IS_TOUCH ? W - 46 : W - 12; // на телефоне справа кнопка паузы
+  const right = IS_TOUCH ? W - 74 : W - 44; // справа кнопки звука (и паузы на телефоне)
+  drawSoundButton();
   text(`Уч. ${levelIdx + 1}/${THEMES.length}`, 186, 20, 12, theme.accent || '#ffb02e', 'left');
   // прогресс до финиша (или до арены босса)
   const px = 250, pw = clamp(right - 60 - px, 100, 300), goal = arena ? arena.x1 : finishX, prog = clamp(player.x / goal, 0, 1);
@@ -840,7 +858,8 @@ function startOrToggle() {
   else if (mode === 'clear') nextLevel();
   else { mode = 'menu'; menuLevel = startLevel; nameForm.hidden = true; } // после финала — в меню: можно выбрать участок
 }
-function selectLevel(d) { const maxSel = Math.max(unlocked, forcedLevel + 1); menuLevel = clamp(menuLevel + d, 0, Math.min(maxSel, THEMES.length) - 1); }
+function selectLevel(d) { Sound.play('select');
+ const maxSel = Math.max(unlocked, forcedLevel + 1); menuLevel = clamp(menuLevel + d, 0, Math.min(maxSel, THEMES.length) - 1); }
 function pressJump() { if (mode === 'play') jumpBuf = JUMP_BUFFER; else startOrToggle(); }
 function pressAttack() { if (mode === 'play') attackQueued = true; }
 
@@ -854,6 +873,7 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   if (JUMP_KEYS.includes(e.code)) { kb.jump = true; syncInput(); pressJump(); }
   else if (e.code === 'KeyJ' || e.code === 'KeyX' || e.code === 'KeyF') pressAttack();
+  else if (e.code === 'KeyM') Sound.toggleMute();
   else if (e.code === 'KeyP' || e.code === 'Escape') { if (mode === 'play' || mode === 'pause') startOrToggle(); }
   else if (e.code === 'Enter' && mode !== 'play') startOrToggle();
 });
@@ -892,6 +912,8 @@ function syncInput() {
 canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
   const p = toGame(e);
+  const sb = SOUND_BTN();
+  if (Math.hypot(p.x - sb.x, p.y - sb.y) < sb.r * 1.8) { Sound.unlock(); Sound.toggleMute(); return; } // кнопка звука работает в любом режиме
   if (mode === 'menu') { // стрелки выбора участка
     const a = menuArrows();
     if (Math.max(unlocked, forcedLevel + 1) > 1) for (const k of ['left', 'right']) if (Math.hypot(p.x - a[k].x, p.y - a[k].y) < a[k].r * 2) { selectLevel(k === 'left' ? -1 : 1); return; }
@@ -954,8 +976,11 @@ function frame(now) {
   let dt = Math.min(0.05, (now - last) / 1000); last = now;
   while (dt > 0) { const step = Math.min(dt, 1 / 60); update(step); dt -= step; } // мелкие шаги — стабильная физика
   draw();
+  Sound.music(levelIdx, mode !== 'pause'); // музыка участка; на паузе молчит
   requestAnimationFrame(frame);
 }
+for (const ev of ['pointerdown', 'keydown', 'touchstart']) addEventListener(ev, () => Sound.unlock(), { capture: true, passive: true }); // звук разрешается первым нажатием
+
 function startGame() {
   if (!THEMES.length) throw new Error('Не загружено ни одной темы');
   layout();

@@ -19,10 +19,10 @@ let themes = args.length ? args.map(a => path.resolve(a)) : fs.readdirSync(path.
 fs.mkdirSync(OUT, { recursive: true });
 
 function harness(files) {
-  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><base href="file://${ROOT}/">
 <link rel="stylesheet" href="file://${ROOT}/style.css"></head><body><main><h1>test</h1><div id="stage"><canvas id="game"></canvas>
 <form id="nameForm" hidden><input id="nameInput"><button>ok</button></form></div><p class="hint">h</p></main>
-<script src="file://${ROOT}/engine.js"></script>${files.map(f => `<script src="file://${f}"></script>`).join('')}
+<script src="file://${ROOT}/audio.js"></script><script src="file://${ROOT}/engine.js"></script>${files.map(f => `<script src="file://${f}"></script>`).join('')}
 <script>startGame();</script></body></html>`;
   const file = path.join(OUT, `harness-${process.pid}.html`);
   fs.writeFileSync(file, html);
