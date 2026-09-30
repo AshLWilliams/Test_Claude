@@ -66,7 +66,10 @@ function harness(files) {
             const groundAhead = solids.some(s => ahead >= s.x && ahead <= s.x + s.w && s.y >= feet - 2 && s.y < feet + 70);
             const wallAhead = solids.some(s => ahead + 10 >= s.x && ahead - 22 <= s.x + s.w && s.y < feet - 4 && s.y + s.h > P.y);
             const hazardAhead = false;
-            if (P.onGround && (!groundAhead || wallAhead || hazardAhead)) { jumpBuf = 0.12; kb.jump = true; syncInput(); }
+            const wl = ladders.find(l => l.wall && P.x + P.w > l.x + 3 && P.x < l.x + l.w - 3 && P.y + P.h > l.top - 2 && P.y + P.h <= l.bottom + 2);
+            if (P.climb || (wl && P.y + P.h > wl.top + 2)) { kb.up = true; kb.right = !!P.climb && P.y + P.h <= P.climb.top + 1; kb.jump = false; syncInput(); } // стена: вверх по лестнице
+            else { if (kb.up || !kb.right) { kb.up = false; kb.right = true; syncInput(); }
+              if (P.onGround && (!groundAhead || wallAhead || hazardAhead)) { jumpBuf = 0.12; kb.jump = true; syncInput(); } }
             if (P.vy > 0) { kb.jump = false; syncInput(); }
             enemies = enemies.filter(e => e.isBoss); projectiles = [];
             player.inv = Math.max(player.inv, 0.5); // урон от механик темы не считаем — только падения

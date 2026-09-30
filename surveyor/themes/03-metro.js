@@ -5,6 +5,7 @@
   // ---------- общее ----------
   const WALL_TOP = 96;                // где стена тоннеля переходит в свод
   const VPY = 190;                    // высота точки схода: стыки колец на своде расходятся от неё к зрителю
+  const SKY = -150;                   // до куда свод рисуется вверх: камера на вышке сдвигает фон вниз до ~120
   const RING = 56, P_WALL = 0.3;      // ширина кольца-тюбинга на стене и скорость параллакса стены
   const BLOCK = 6, SW = BLOCK * RING; // колец в блоке стены; блок — тоннель, тоннель со сбойкой или участок станции
   const edges = new WeakMap();        // у каких краёв отрезка земли виден торец (сосед ниже или провал)
@@ -41,6 +42,7 @@
       for (const q of platforms) if (on(q)) { q.y -= d; q.base -= d; }
       for (const e of enemies) if (on(e) && !e.isBoss) { e.y -= d; e.groundY -= d; if (e.baseY != null) e.baseY -= d; }
       for (const q of pits) if (Math.abs(q.x - x1) < 0.5) q.y -= d;
+      for (const l of api.ladders) if (on(l)) { if (!l.wall) l.top -= d; if (l.bottom === y0 || !l.wall) l.bottom -= d; } // лестницы — за своим полом
     }
     const top = api.groundAt(P.x + P.w / 2);
     if (top !== null && P.y + P.h > top) P.y = top - P.h; // стартовый отрезок мог подняться
@@ -129,7 +131,7 @@
 
   function drawBackground(ctx, api) {
     const { W, H, camX, hash, now } = api;
-    const off = camX * P_WALL, vx = W / 2, k = VPY / (VPY - WALL_TOP);
+    const off = camX * P_WALL, vx = W / 2, k = (VPY - SKY) / (VPY - WALL_TOP);
     const i0 = Math.floor(off / RING) - 1, i1 = Math.ceil((off + W) / RING) + 1;
     const tunnel = i => blockType(Math.floor(i / BLOCK)) !== 'station';
     ctx.fillStyle = '#2a3039'; ctx.fillRect(0, WALL_TOP, W, 110);  // стена светлее у ламп, темнее к лотку
@@ -140,12 +142,12 @@
     for (let i = i0; i < i1; i++) {
       const xa = i * RING - off, xb = xa + RING + 0.5;
       ctx.fillStyle = tunnel(i) ? (i & 1 ? '#1a1e25' : '#15181e') : (i & 1 ? '#2b241f' : '#251f1a');
-      ctx.beginPath(); ctx.moveTo(xa, WALL_TOP); ctx.lineTo(xb, WALL_TOP); ctx.lineTo(vx + (xb - vx) * k, 0); ctx.lineTo(vx + (xa - vx) * k, 0); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(xa, WALL_TOP); ctx.lineTo(xb, WALL_TOP); ctx.lineTo(vx + (xb - vx) * k, SKY); ctx.lineTo(vx + (xa - vx) * k, SKY); ctx.fill();
     }
     ctx.strokeStyle = '#090a0d'; ctx.lineWidth = 2; ctx.beginPath();
-    for (let i = i0; i < i1; i++) { const xa = i * RING - off; ctx.moveTo(xa, WALL_TOP); ctx.lineTo(vx + (xa - vx) * k, 0); }
+    for (let i = i0; i < i1; i++) { const xa = i * RING - off; ctx.moveTo(xa, WALL_TOP); ctx.lineTo(vx + (xa - vx) * k, SKY); }
     ctx.stroke();
-    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(0, 72, W, 1.5); ctx.fillRect(0, 44, W, 2); // продольные швы свода
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(0, 72, W, 1.5); ctx.fillRect(0, 44, W, 2); ctx.fillRect(0, 2, W, 2.5); ctx.fillRect(0, -60, W, 3); // продольные швы свода
     ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(0, WALL_TOP - 5, W, 5);
 
     // стена: тюбинги — кольца со ступенчатыми швами сегментов и болтовыми карманами
@@ -239,7 +241,7 @@
     }
     ctx.stroke();
     ctx.fillStyle = '#0c0d10';
-    for (let n = a; n <= bN; n++) { const x = n * D - o2; ctx.fillRect(x - 1, 0, 2, 38); ctx.fillStyle = '#3a3f46'; ctx.fillRect(x - 2.5, 36, 5, 26); ctx.fillStyle = '#0c0d10'; }
+    for (let n = a; n <= bN; n++) { const x = n * D - o2; ctx.fillRect(x - 1, SKY, 2, 38 - SKY); ctx.fillStyle = '#3a3f46'; ctx.fillRect(x - 2.5, 36, 5, 26); ctx.fillStyle = '#0c0d10'; }
   }
 
   // ---------- земля, провалы, платформы, препятствия ----------
@@ -253,7 +255,36 @@
     return e;
   }
 
+  function drawWall(s, ctx, api) { // стена: штабель тюбингов на бетонном массиве, поверху — рифлёный настил
+    const { H, camY, now } = api, x = s.x, y = s.y, w = s.w, x1 = x + w, bot = Math.min(H + 10, camY + H + 10);
+    ctx.fillStyle = '#3c424a'; ctx.fillRect(x - 0.5, y, w + 1, bot - y);
+    ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, bot - y); ctx.clip();
+    for (let r = 0, yy = y + 12; yy < bot; r++, yy += 24) { // ряды тюбингов: выпуклая спинка, рёбра, болтовые отверстия
+      if (yy + 24 < camY) continue;
+      for (let sx = x - (r % 2) * 32 + 2; sx < x1; sx += 64) {
+        ctx.fillStyle = r % 3 === 1 ? '#6d737c' : '#646a73'; ctx.beginPath(); // спинка чуть выгнута — это кусок кольца
+        ctx.moveTo(sx, yy + 22); ctx.lineTo(sx, yy + 5); ctx.quadraticCurveTo(sx + 30, yy - 2, sx + 60, yy + 5); ctx.lineTo(sx + 60, yy + 22); ctx.fill();
+        ctx.fillStyle = '#8b929b'; ctx.fillRect(sx + 6, yy + 3, 48, 1.5);
+        ctx.fillStyle = '#4b5159'; ctx.fillRect(sx + 19, yy + 6, 2, 16); ctx.fillRect(sx + 39, yy + 6, 2, 16); ctx.fillRect(sx, yy + 20, 60, 2);
+        ctx.fillStyle = '#23272c'; ctx.fillRect(sx + 8, yy + 11, 5, 4); ctx.fillRect(sx + 27, yy + 11, 5, 4); ctx.fillRect(sx + 47, yy + 11, 5, 4);
+      }
+    }
+    ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(x, y + 10, 10, bot - y); ctx.fillRect(x1 - 6, y + 10, 6, bot - y); // торцы в тени
+    ctx.restore();
+    ctx.fillStyle = '#2a2f36'; ctx.fillRect(x - 3, y, w + 6, 10);                                       // настил
+    ctx.fillStyle = '#56606b'; for (let gx = x; gx < x1; gx += 7) ctx.fillRect(gx, y + 3, 4, 1.5);      // рифление
+    ctx.fillStyle = '#a3afbb'; ctx.fillRect(x - 3, y, w + 6, 1.5);
+    for (let k = 0; k < 6; k++) { ctx.fillStyle = k % 2 ? '#1b1b1b' : '#f0c419'; ctx.fillRect(x - 3 + k * 5, y + 5, 5, 5); ctx.fillRect(x1 - 27 + k * 5, y + 5, 5, 5); } // разметка краёв
+    ctx.fillStyle = '#1d2a3a'; ctx.fillRect(x + w / 2 - 26, y + 40, 52, 13);                          // бирка штабеля
+    api.text('ТЮБИНГ', x + w / 2, y + 50, 8, '#d9e2ea');
+    const on = Math.sin(now * 5 + x) > 0; // сигнальный фонарь на краю: сверху — обрыв
+    if (on) glow(ctx, RED, x1 - 8, y - 12, 18, 18, 1.6);
+    ctx.fillStyle = '#50565e'; ctx.fillRect(x1 - 9, y - 8, 2, 8);
+    ctx.fillStyle = on ? '#ff4a3a' : '#5a1512'; ctx.fillRect(x1 - 11, y - 14, 6, 6);
+  }
+
   function drawGround(s, ctx, api) { // путь: рельсы на шпалах, бетонная путевая плита, лоток тоннеля
+    if (s.wall) { drawWall(s, ctx, api); return; }
     const { H, camX } = api, x0 = s.x - 0.5, w = s.w + 1, y = s.y, x1 = s.x + s.w;
     ctx.fillStyle = '#2a2e35'; ctx.fillRect(x0, y, w, H - y + 10);
     ctx.fillStyle = '#3b3934'; ctx.fillRect(x0, y, w, 13);                          // балласт между шпалами
@@ -309,9 +340,53 @@
     ctx.fillStyle = on ? '#ff4a3a' : '#5a1512'; ctx.fillRect(bx + 8, y - 28, 6, 6);
   }
 
-  function drawPlatform(p, ctx) { // служебный мостик: решётчатый настил на кронштейнах, жёлтые перила
+  // опоры вышки: каждая стойка лесов стоит на ближайшем настиле под ней или на пути (считаем один раз)
+  const legs = new WeakMap();
+  function towerLegs(p, api) {
+    let L = legs.get(p);
+    if (!L) {
+      const n = p.w > 160 ? 2 : 1;
+      L = [];
+      for (let i = 0; i <= n; i++) {
+        const lx = p.x + 8 + i * (p.w - 16) / n;
+        let b = api.groundAt(lx) ?? p.base;
+        for (const q of api.platforms) if (q !== p && q.y > p.y && q.y < b && lx >= q.x && lx <= q.x + q.w) b = q.y;
+        L.push([lx, b]);
+      }
+      legs.set(p, L);
+    }
+    return L;
+  }
+  function drawScaffold(p, ctx, api) { // вышка: синие трубчатые леса с раскосами, на верхнем ярусе — прожектор
+    const L = towerLegs(p, api), y = p.y;
+    ctx.strokeStyle = '#34507a'; ctx.lineWidth = 2; ctx.beginPath(); // раскосы и ригели между стойками
+    for (let i = 0; i < L.length - 1; i++) {
+      const [xa, ba] = L[i], [xb, bb] = L[i + 1], b = Math.min(ba, bb);
+      for (let yy = y + 8; yy < b - 8; yy += 56) {
+        const y2 = Math.min(b, yy + 56);
+        ctx.moveTo(xa, yy); ctx.lineTo(xb, yy); ctx.moveTo(xa, yy); ctx.lineTo(xb, y2); ctx.moveTo(xb, yy); ctx.lineTo(xa, y2);
+      }
+    }
+    ctx.stroke();
+    for (const [lx, b] of L) { // стойки-трубы с хомутами и башмаками
+      ctx.fillStyle = '#4f6f9e'; ctx.fillRect(lx - 2.5, y + 6, 5, b - y - 6);
+      ctx.fillStyle = '#86a6d2'; ctx.fillRect(lx - 2.5, y + 6, 1.5, b - y - 6);
+      ctx.fillStyle = '#2b3440'; for (let yy = y + 8; yy < b - 8; yy += 56) ctx.fillRect(lx - 4, yy - 2, 8, 4);
+      ctx.fillStyle = '#2b3440'; ctx.fillRect(lx - 6, b - 3, 12, 3);
+    }
+    if (p.tier === 3) { // прожектор на верхнем ярусе и табличка
+      const lx = p.x + p.w - 14;
+      glow(ctx, LAMP, lx + 8, y - 34, 70, 44, 1.2);
+      ctx.fillStyle = '#50565e'; ctx.fillRect(lx - 1, y - 30, 2, 30);
+      ctx.fillStyle = '#23272d'; ctx.fillRect(lx - 4, y - 38, 12, 8); ctx.fillStyle = '#fff3cf'; ctx.fillRect(lx + 6, y - 37, 3, 6);
+    }
+    if (p.tier >= 2) { ctx.fillStyle = '#f0c419'; ctx.fillRect(p.x + 10, y + 12, 34, 12); api.text('ВЫСОТА', p.x + 27, y + 21, 6.5, '#1b1b1b'); }
+  }
+
+  function drawPlatform(p, ctx, api) { // служебный мостик: решётчатый настил на кронштейнах, жёлтые перила
     const x = p.x, y = p.y, w = p.w, n = Math.max(2, Math.round(w / 70));
-    for (let i = 0; i <= n; i++) {
+    if (p.tower) drawScaffold(p, ctx, api);
+    else for (let i = 0; i <= n; i++) {
       const bx = x + 6 + i * (w - 12) / n;
       ctx.fillStyle = '#23282f'; ctx.fillRect(bx - 1.5, y + 6, 3, p.base - y - 6);   // стойка
       ctx.strokeStyle = '#5b6570'; ctx.lineWidth = 3; ctx.beginPath();               // кронштейн-подкос
@@ -325,6 +400,17 @@
     for (let px = x - 3; px < x + w + 4; px += Math.max(24, (w + 6) / Math.round((w + 6) / 30))) ctx.fillRect(px, y - 16, 2.5, 16);
     ctx.fillRect(x - 4, y - 17, w + 8, 2.5); ctx.fillRect(x - 4, y - 9, w + 8, 1.5);
     ctx.fillStyle = '#1b1b1b'; for (let px = x; px < x + w; px += 16) ctx.fillRect(px, y - 17, 6, 2.5); // чёрно-жёлтая разметка перил
+  }
+
+  function drawLadder(l, ctx) { // стремянка из оцинкованной стали с дугами ограждения; у стены — жёлто-чёрные поручни
+    const x = l.x, w = l.w, top = l.top, bot = l.bottom;
+    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x + 3, top, w - 2, bot - top);
+    ctx.fillStyle = '#7f8993'; ctx.fillRect(x, top - 14, 3, bot - top + 14); ctx.fillRect(x + w - 3, top - 14, 3, bot - top + 14);
+    ctx.fillStyle = '#c3cbd3'; for (let y = top + 6; y < bot; y += 12) ctx.fillRect(x + 2, y, w - 4, 2.5);
+    ctx.strokeStyle = 'rgba(160,172,184,.55)'; ctx.lineWidth = 1.5; ctx.beginPath(); // дуги ограждения
+    for (let y = top + 24; y < bot - 40; y += 36) { ctx.moveTo(x - 4, y + 3); ctx.quadraticCurveTo(x + w / 2, y - 5, x + w + 4, y + 3); }
+    ctx.stroke();
+    for (let k = 0; k < 3; k++) { ctx.fillStyle = k % 2 ? '#1b1b1b' : '#f0c419'; ctx.fillRect(x - 1, top - 14 + k * 4, 4, 4); ctx.fillRect(x + w - 3, top - 14 + k * 4, 4, 4); }
   }
 
   function drawDrum(ctx, x, y, w, h) { // кабельный барабан: деревянные щёки и намотанный кабель
@@ -474,6 +560,18 @@
   }
 
   const WIND = 0.8; // замах проходчика, с
+  const AIM = 1.1, LOCK = 0.35; // клепальщик: сколько ведёт героя лазером и сколько держит точку перед выстрелом
+  const LIFT = 0.9;             // укладчик: подъём тюбинга перед броском, с
+  function drawRivet(p, ctx) { // раскалённая заклёпка с хвостом
+    const a = Math.atan2(p.vy, p.vx);
+    ctx.rotate(a - p.rot);
+    ctx.fillStyle = 'rgba(255,140,40,.35)'; ctx.fillRect(-16, -2, 14, 4);
+    ctx.fillStyle = '#ff9a2a'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff0b0'; ctx.fillRect(-1, -1.5, 3, 3);
+    ctx.strokeStyle = '#6b2a0a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, 4, 0, 7); ctx.stroke();
+  }
+  // укладчик в замахе/броске: тюбинг бьёт на 40 вперёд
+  const SLAB = e => (e.state === 'slam' ? { x: e.dir > 0 ? e.x : e.x - 40, y: e.y, w: e.w + 40, h: e.h } : e);
   const enemies = {
     trolley: { // мотодрезина: носится по своему пути; перед разворотом тормозит (искры) и звонит в колокол
       w: 54, h: 34, hp: 2, pts: 200, heavy: true, hitColor: '#ffd76a', deathColor: '#f2b705',
@@ -654,6 +752,128 @@
         } else if (!wind && !slam && Math.sin(e.t * 40) > 0.3) { ctx.fillStyle = 'rgba(210,198,175,.7)'; ctx.fillRect(hx - 4, -3, 3, 3); ctx.fillRect(hx + 2, -4, 2, 2); }
       },
     },
+    riveter: { // клепальщик на лесах: ведёт героя красным лазером 1,1 с, держит точку 0,35 с и стреляет заклёпкой (её можно отбить)
+      w: 24, h: 40, hp: 2, pts: 300, hitColor: '#ffb347', deathColor: '#3f6fb0',
+      init(e) { e.state = 'walk'; e.st = 0; e.ax = e.x; e.ay = e.y; e.pause = 0; },
+      update(e, dt, api) {
+        const P = api.player, dx = api.dx(e), gx = e.x + e.w / 2 + e.dir * 17, gy = e.y + 17;
+        const tx = P.x + P.w / 2, ty = P.y + P.h * 0.45, dist = Math.hypot(tx - gx, ty - gy);
+        const inView = e.y + e.h > api.camY + 30 && e.y < api.camY + api.H - 20 && e.x > api.camX && e.x + e.w < api.camX + api.W; // из-за края кадра не стреляет
+        e.st -= dt;
+        if (e.state === 'walk') { // ходит по ярусу с остановками, оглядывается на героя
+          e.pause -= dt;
+          if (e.pause <= 0) api.patrol(e, 24, dt); else if (Math.abs(dx) > 6) e.dir = Math.sign(dx);
+          if (e.pause < -2.5) e.pause = api.rand(0.6, 1.2);
+          e.cd -= dt;
+          if (e.cd <= 0 && inView && dist < 400 && Math.abs(dx) > 30) { e.state = 'aim'; e.st = AIM + LOCK; e.ax = tx; e.ay = ty; }
+        } else if (e.state === 'aim') {
+          if (Math.abs(dx) > 4) e.dir = Math.sign(dx);
+          if (e.st > LOCK) { const k = Math.min(1, dt * 7); e.ax += (tx - e.ax) * k; e.ay += (ty - e.ay) * k; } // ведёт с запаздыванием, затем точка замирает
+          if (e.st <= 0) {
+            const vx = e.ax - gx, vy = e.ay - gy, d = Math.hypot(vx, vy) || 1, sp = 340;
+            api.shoot({ x: gx, y: gy, w: 9, h: 9, vx: vx / d * sp, vy: vy / d * sp, gravity: 0, life: 2, reflectable: true, color: '#ff9a2a', draw: drawRivet, source: e, pts: 20 });
+            api.sfx('clang'); if (seen(api, e.x)) api.burst(gx, gy, '#ffcf5a', 5, 120, 300);
+            e.state = 'recoil'; e.st = 0.4;
+          }
+        } else if (e.st <= 0) { e.state = 'walk'; e.cd = api.rand(1.8, 2.6); e.pause = 0.8; }
+      },
+      draw(e, ctx) {
+        const aim = e.state === 'aim', rec = e.state === 'recoil', walk = e.state === 'walk' && e.pause <= 0;
+        const sw = walk ? Math.sin(e.t * 9) * 3 : 0, kick = rec ? Math.max(0, e.st - 0.2) * 20 : 0;
+        if (aim) { // лазерный прицел: тонкий луч до точки, в последние 0,35 с — мигает и толще
+          const cx = e.x + e.w / 2, lock = e.st <= LOCK, lx = (e.ax - cx) * e.dir, ly = e.ay - (e.y + e.h);
+          const al = lock ? (Math.sin(e.t * 50) > 0 ? 0.95 : 0.4) : 0.3 + 0.25 * (1 - (e.st - LOCK) / AIM);
+          ctx.strokeStyle = `rgba(255,40,40,${al})`; ctx.lineWidth = lock ? 2 : 1; ctx.beginPath(); ctx.moveTo(17, -23); ctx.lineTo(lx, ly); ctx.stroke();
+          ctx.fillStyle = `rgba(255,60,50,${al})`; ctx.beginPath(); ctx.arc(lx, ly, lock ? 4 : 2.5, 0, 7); ctx.fill();
+          if (lock) { ctx.strokeStyle = 'rgba(255,90,80,.8)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(lx, ly, 8, 0, 7); ctx.stroke(); }
+        }
+        ctx.strokeStyle = '#141414'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(8, -22); ctx.quadraticCurveTo(-4, -12, -14, -2); ctx.stroke(); // шланг
+        ctx.fillStyle = '#2a2622'; ctx.fillRect(-7 + sw, -4, 7, 4); ctx.fillRect(1 - sw, -4, 7, 4);        // ботинки
+        ctx.fillStyle = '#2f4f86'; ctx.fillRect(-6 + sw * 0.6, -18, 5, 14); ctx.fillRect(1 - sw * 0.6, -18, 5, 14); // синий комбинезон
+        ctx.fillRect(-8, -33, 16, 16);
+        ctx.fillStyle = '#ff7a1a'; ctx.fillRect(-8, -33, 3, 16); ctx.fillRect(5, -33, 3, 16); ctx.fillRect(-8, -21, 16, 2.5); // страховочная привязь
+        ctx.fillStyle = '#c9ced4'; ctx.fillRect(-10, -27, 3, 3);                                          // карабин
+        ctx.fillStyle = '#e0ac7c'; ctx.beginPath(); ctx.arc(1, -37, 5, 0, 7); ctx.fill();
+        ctx.fillStyle = aim ? '#ff3b30' : '#2a2a2a'; ctx.fillRect(3, -39, 4, 2);                        // очки (в прицеле — красный отсвет)
+        ctx.fillStyle = '#f7f7f7'; ctx.beginPath(); ctx.arc(1, -41, 6.5, Math.PI, 0); ctx.fill(); ctx.fillRect(-6, -42, 14, 2); // белая каска
+        ctx.save(); ctx.translate(-kick, 0);                                                              // клепальный пистолет
+        ctx.fillStyle = '#4a4f55'; ctx.fillRect(2, -26, 16, 6); ctx.fillRect(4, -21, 4, 7);
+        ctx.fillStyle = '#6d747c'; ctx.fillRect(2, -26, 16, 1.5);
+        ctx.fillStyle = aim ? '#ff3b30' : '#8a2020'; ctx.fillRect(9, -29, 3, 3);                         // лазерный целик
+        ctx.fillStyle = rec ? '#ffd27a' : '#2b2f35'; ctx.fillRect(17, -25, 3, 4);                         // дуло
+        ctx.restore();
+        ctx.strokeStyle = '#2f4f86'; ctx.lineWidth = 3.5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(5 - kick, -22); ctx.stroke();
+        if (rec && e.st > 0.25) { ctx.fillStyle = 'rgba(220,220,220,.6)'; ctx.beginPath(); ctx.arc(22, -24, 4 + (0.4 - e.st) * 20, 0, 7); ctx.fill(); } // дымок
+      },
+    },
+    erector: { // укладчик тюбингов: спереди прикрыт сегментом кольца (рейку не берёт); вблизи поднимает его 0,9 с и бросает перед собой — тогда открыт
+      w: 30, h: 42, hp: 2, pts: 250, heavy: true, hitColor: '#c9ced4', deathColor: '#8b929b',
+      bodybox: SLAB,
+      init(e) { e.state = 'walk'; e.st = 0; e.dustT = 0; },
+      update(e, dt, api) {
+        const P = api.player, dx = api.dx(e), same = Math.abs(P.y + P.h - e.groundY) < 40;
+        e.st -= dt;
+        if (e.state === 'walk') {
+          api.patrol(e, 36, dt);
+          e.cd -= dt;
+          // герой за спиной: оглядывается не сразу — 0,9 с, чтобы успеть ударить сзади
+          if (same && Math.sign(dx) === -e.dir && Math.abs(dx) < 190) { e.turnT = (e.turnT || 0) + dt; if (e.turnT > 0.9) { e.dir = -e.dir; e.turnT = 0; } } else e.turnT = 0;
+          const room = e.dir > 0 ? e.maxX - e.x - e.w : e.x - e.minX; // тюбинг должен лечь на пол, а не повиснуть над провалом
+          if (e.cd <= 0 && same && Math.sign(dx) === e.dir && Math.abs(dx) < 105 && room > 26) { e.state = 'lift'; e.st = LIFT; }
+        } else if (e.state === 'lift') {
+          e.dustT -= dt;
+          if (e.dustT <= 0 && seen(api, e.x)) { e.dustT = 0.12; api.burst(e.x + e.w / 2, e.y + e.h - 2, '#9a948a', 2, 50, 400); }
+          if (e.st <= 0) { e.state = 'slam'; e.st = 0.22; }
+        } else if (e.state === 'slam') {
+          if (e.st <= 0) {
+            e.state = 'stuck'; e.st = 1.5;
+            const bx = e.x + e.w / 2 + e.dir * 36;
+            if (seen(api, e.x)) { api.burst(bx, e.groundY - 2, '#cbbd9f', 12, 170, 600); api.shake(4); }
+          }
+        } else if (e.state === 'stuck' && e.st <= 0) { e.state = 'walk'; e.cd = api.rand(1.2, 1.8); }
+      },
+      onHit(e, api, source) { // щит — только спереди и только пока тюбинг у него в руках
+        if (source !== 'staff' || e.state === 'stuck' || e.state === 'slam' || (api.dx(e) > 0 ? 1 : -1) !== e.dir) return true;
+        api.burst(e.x + e.w / 2 + e.dir * 16, e.y + 18, '#fff2b0', 6, 170, 500);
+        api.popup(e.x + e.w / 2, e.y - 12, 'дзынь!', '#cfd8dc');
+        api.player.vx = e.dir * 170;
+        return false;
+      },
+      draw(e, ctx) {
+        const s = e.state, walk = s === 'walk', lift = s === 'lift', slam = s === 'slam', stuck = s === 'stuck';
+        const sw = walk ? Math.sin(e.t * 8) * 3 : 0, k = lift ? Math.min(1, (1 - e.st / LIFT) * 1.4) : 0, sh = lift ? Math.sin(e.t * 60) * 1.2 * k : 0;
+        if (lift) { // пятно, куда упадёт тюбинг
+          ctx.fillStyle = `rgba(255,80,50,${0.25 + 0.3 * k * (0.6 + 0.4 * Math.sin(e.t * 20))})`;
+          ctx.beginPath(); ctx.ellipse(38, -1, 22, 3.5, 0, 0, 7); ctx.fill();
+        }
+        ctx.translate(sh, 0);
+        ctx.fillStyle = '#2a2622'; ctx.fillRect(-9 + sw, -4, 8, 4); ctx.fillRect(1 - sw, -4, 8, 4);
+        ctx.fillStyle = '#6b6f3a'; ctx.fillRect(-8 + sw * 0.6, -19, 6, 15); ctx.fillRect(2 - sw * 0.6, -19, 6, 15); // роба цвета хаки
+        ctx.fillRect(-11, -36, 22, 18);
+        ctx.fillStyle = '#e8eef0'; ctx.fillRect(-11, -28, 22, 2.5);
+        ctx.fillStyle = '#e0ac7c'; ctx.beginPath(); ctx.arc(1, -40, 5.5, 0, 7); ctx.fill();
+        ctx.fillStyle = '#2a2a2a'; ctx.fillRect(3, -42, 3, 2);
+        ctx.fillStyle = '#f2c230'; ctx.beginPath(); ctx.arc(1, -44, 7, Math.PI, 0); ctx.fill(); ctx.fillRect(-6, -45, 16, 2);
+        if (lift) { const on = Math.sin(e.t * 24) > 0; ctx.fillStyle = on ? '#ff3b30' : '#6d1a14'; ctx.fillRect(-2, -54, 5, 4); } // маячок на каске — сейчас бросит
+        // тюбинг: в ходьбе — щит перед собой, в замахе — над головой, после броска — лежит на земле впереди
+        ctx.save();
+        if (stuck) { ctx.translate(54, 0); ctx.rotate(-Math.PI / 2); } // лежит плашмя впереди
+        else if (slam) { ctx.translate(26, 0); ctx.rotate(0.9); }                            // падает вперёд
+        else { ctx.translate(12 - k * 10, -8 - k * 38); ctx.rotate(-k * 1.3); }             // щит → над головой
+        ctx.fillStyle = '#7b818a'; ctx.beginPath(); // выпуклый сегмент кольца: внутренняя дуга, толщина 10, высота 40
+        ctx.moveTo(0, 4); ctx.quadraticCurveTo(9, -16, 0, -36); ctx.lineTo(10, -36); ctx.quadraticCurveTo(19, -16, 10, 4); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#a3aab3'; ctx.beginPath(); ctx.moveTo(10, -35); ctx.quadraticCurveTo(18.5, -16, 10, 3); ctx.lineTo(12, 3); ctx.quadraticCurveTo(15, -16, 12, -35); ctx.fill();
+        ctx.fillStyle = '#4b5159'; ctx.fillRect(1, -22, 12, 2); ctx.fillRect(1, -9, 12, 2); // рёбра жёсткости
+        ctx.fillStyle = '#23272c'; ctx.fillRect(4, -30, 3, 4); ctx.fillRect(6, -16, 3, 4); ctx.fillRect(4, -3, 3, 4);
+        ctx.fillStyle = '#f0c419'; ctx.fillRect(2, -36, 8, 2); // маркировка
+        ctx.restore();
+        ctx.strokeStyle = '#6b6f3a'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath(); // руки держат тюбинг (или тянутся к нему)
+        if (stuck) { ctx.moveTo(4, -31); ctx.lineTo(18, -14 + Math.sin(e.t * 10) * 2); }
+        else { ctx.moveTo(4, -31); ctx.lineTo(14 - k * 8, -24 - k * 28); }
+        ctx.stroke();
+        if (stuck) { ctx.fillStyle = '#9fd3ff'; const ph = (e.t * 1.5) % 1; ctx.fillRect(-6 + ph * 3, -46 + ph * 10, 1.5, 2.5); } // пот — открыт для удара
+      },
+    },
     rail: { // оголённый контактный рельс под напряжением: искрит, перепрыгнуть
       w: 58, h: 14, hp: 1, pts: 0, invulnerable: true, stompable: false, knockback: false, flip: false,
       init(e) { e.zapT = 0.4; },
@@ -693,8 +913,10 @@
       { type: 'trolley', where: 'ground', weight: 2, from: 0.1 },
       { type: 'driller', where: 'ground', weight: 2, from: 0.2 },
       { type: 'driller', where: 'upper', weight: 1 },
+      { type: 'riveter', where: 'upper', weight: 3 },
+      { type: 'erector', where: 'ground', weight: 2, from: 0.15 },
       { type: 'rail', where: 'hazard', weight: 1 },
     ],
-    drawBackground, drawGround, drawPit, drawPlatform, drawObstacle, drawDecor, drawFinish,
+    drawBackground, drawGround, drawPit, drawPlatform, drawObstacle, drawDecor, drawFinish, drawLadder,
   });
 })();

@@ -5,6 +5,8 @@
   // ---------- общее ----------
   const TAU = Math.PI * 2;
   const CEIL = 46;                  // нижний край кровли выработки (ниже полосы HUD)
+  const SKY = -150;                 // фон рисуется вверх до сюда: при подъёме камеры движок сдвигает его вниз (до ~120)
+  const ceilY = api => CEIL + 0.65 * api.camY; // где кровля фона сейчас — в координатах мира (фон сдвинут на −camY·0,35)
   const WARN = 1.2;                 // сколько секунд сыплется порода перед обвалом
   const st = { caveT: 7, warns: [], rubble: [], lights: [] }; // обвалы, завалы после них, источники света кадра
   // Большие градиенты на телефоне дороги (каждый — заливка на весь экран), поэтому стена, грунт и шурфы —
@@ -62,7 +64,7 @@
   function drawBackground(ctx, api) {
     const { W, H, camX, hash, now } = api;
     st.lights.length = 0; // источники света собираются заново каждый кадр: фон, декор, финиш
-    ctx.fillStyle = '#1b1612'; ctx.fillRect(0, 0, W, H);          // стена выработки: к середине чуть светлее
+    ctx.fillStyle = '#1b1612'; ctx.fillRect(0, SKY, W, H - SKY);   // стена выработки: к середине чуть светлее
     ctx.fillStyle = '#231c17'; ctx.fillRect(0, 96, W, 150);
     drawSeams(ctx, api); // дальний план: пласты породы и угля
 
@@ -79,14 +81,21 @@
       }
       ctx.fillStyle = '#2a1c11'; ctx.fillRect(x - 6, top + 14, 7, 290 - top); ctx.fillRect(x + w - 1, top + 14, 7, 290 - top); ctx.fillRect(x - 10, top + 8, w + 20, 8);
       ctx.fillStyle = '#ffcf6b'; circle(ctx, c, 188, 1.6);
-      addLight(c, 188, 40, 0.6 * flick(api, i + 3));
+      addLight(c, 188 + Math.round(-api.camY * 0.35), 40, 0.6 * flick(api, i + 3)); // фон сдвинут движком на −camY·0.35
     }
 
     // кровля: порода и затяжки над верхняками
     off = camX * 0.45;
-    ctx.fillStyle = '#0b0908'; ctx.beginPath(); ctx.moveTo(-10, 0);
+    ctx.fillStyle = '#0b0908'; ctx.beginPath(); ctx.moveTo(-10, SKY); // порода кровли уходит вверх за край кадра (камера на вышке)
     for (let u = Math.floor(off / 30) * 30 - 30; u < off + W + 30; u += 30) ctx.lineTo(u - off, CEIL - 6 + hash(u + 7) * 10);
-    ctx.lineTo(W + 30, 0); ctx.fill();
+    ctx.lineTo(W + 30, SKY); ctx.fill();
+    if (api.camY < -10) { // над кровлей — слоистая порода восстающего (видна лишь с вышки)
+      for (const [y0, col] of [[-120, '#15110e'], [-66, '#0e0d10'], [-16, '#17120e']]) {
+        ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(-10, y0 + 30);
+        for (let u = Math.floor(off / 40) * 40 - 40; u < off + W + 40; u += 40) ctx.lineTo(u - off, y0 + hash(u + y0) * 12);
+        ctx.lineTo(W + 40, y0 + 30); ctx.fill();
+      }
+    }
     ctx.fillStyle = '#2b1d12'; ctx.fillRect(0, CEIL - 4, W, 7);
     ctx.fillStyle = '#170f08'; for (let u = Math.floor(off / 9) * 9; u < off + W; u += 9) ctx.fillRect(u - off, CEIL - 4, 1, 7);
 
@@ -120,7 +129,7 @@
         ctx.fillStyle = '#23252a'; ctx.beginPath(); ctx.arc(lx, ly - 2, 6, Math.PI, 0); ctx.fill();
         ctx.fillStyle = a === 1 ? '#fff1c2' : a > 0 ? '#9a8a60' : '#3a3630'; circle(ctx, lx, ly + 1, 3.5);
         ctx.strokeStyle = '#3a3c40'; ctx.beginPath(); ctx.moveTo(lx - 4, ly - 1); ctx.lineTo(lx - 2, ly + 5); ctx.moveTo(lx + 4, ly - 1); ctx.lineTo(lx + 2, ly + 5); ctx.moveTo(lx - 4, ly + 2); ctx.lineTo(lx + 4, ly + 2); ctx.stroke();
-        if (live) addLight(lx, ly + 3, 92, a);
+        if (live) addLight(lx, ly + 3 + Math.round(-api.camY * 0.35), 92, a);
       }
       if (v < 0.35) { // капель с верхняка
         const ph = (now * (0.55 + v) + v * 5) % 1;
@@ -141,7 +150,53 @@
   }
 
   // ---------- земля, провалы, платформы, препятствия ----------
+  function lampPost(ctx, api, px, gy, dir, k) { // столбик с кронштейном и светильником (px — столбик, gy — пол); настоящий источник света
+    const a = flick(api, k), x = px + dir * 13, y = gy - 32;
+    ctx.fillStyle = '#3f2a17'; ctx.fillRect(px - 2, gy - 46, 4, 46); ctx.fillStyle = '#654529'; ctx.fillRect(px - 2, gy - 46, 1.5, 46);
+    ctx.fillStyle = '#2a2c30'; ctx.fillRect(Math.min(px, x) - 1, gy - 46, 16, 3);
+    ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, y - 11); ctx.lineTo(x, y - 5); ctx.stroke();
+    ctx.fillStyle = '#23252a'; ctx.beginPath(); ctx.arc(x, y - 2, 6, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = a === 1 ? '#fff4c8' : '#9a8a60'; circle(ctx, x, y + 1, 3.5);
+    addLight(x - Math.round(api.camX), y + 3 - Math.round(api.camY), 100, a);
+  }
+
+  function drawWall(s, ctx, api) { // целик — уступ породы, забранный крепью: стойки, дощатые затяжки, угольный пласт в окне; поверху настил
+    const { H, hash, camY } = api, x = s.x, y = s.y, w = s.w, x1 = x + w, bot = camY + H + 10;
+    ctx.fillStyle = '#1a120b'; ctx.fillRect(x - 0.5, y, w + 1, bot - y);
+    const n = Math.max(2, Math.round((w - 20) / 70)), bay = (w - 20) / n;
+    for (let yy = y + 18, r = 0; yy < bot; yy += 13, r++) { // затяжки: доски между стойками, в окне посередине — пласт
+      if (yy + 13 < camY) continue;
+      const win = r >= 2 && r <= 4;
+      for (let i = 0; i < n; i++) {
+        const bx = x + 10 + i * bay;
+        if (win && i === (n >> 1)) { // окно без затяжек: видна порода с углём
+          ctx.fillStyle = r === 3 ? '#0f0f14' : '#3a3029'; ctx.fillRect(bx, yy, bay, 13);
+          if (r === 3) { ctx.fillStyle = '#9bb4d6'; ctx.fillRect(bx + 8 + hash(Math.floor(x)) * 20, yy + 5, 1.6, 1.6); ctx.fillRect(bx + bay - 16, yy + 8, 1.6, 1.6); }
+          continue;
+        }
+        const h = hash(Math.floor(bx) * 7 + r);
+        ctx.fillStyle = h > 0.5 ? '#5a3d22' : '#4e3520'; ctx.fillRect(bx + 1, yy + 1, bay - 2, 11);
+        ctx.fillStyle = '#7a5634'; ctx.fillRect(bx + 1, yy + 1, bay - 2, 1.5);
+        ctx.fillStyle = '#35230f'; ctx.fillRect(bx + 4 + h * (bay - 30), yy + 6, 14, 1); // волокна
+      }
+    }
+    for (let i = 0; i <= n; i++) { // стойки
+      const px = x + 10 + i * bay - 5;
+      ctx.fillStyle = '#3f2a17'; ctx.fillRect(px, y + 10, 10, bot - y - 10);
+      ctx.fillStyle = '#6d4c2c'; ctx.fillRect(px, y + 10, 3, bot - y - 10);
+      ctx.fillStyle = '#b9bec4'; for (let yy = y + 24; yy < bot; yy += 26) ctx.fillRect(px + 4, yy, 2, 2); // скобы
+    }
+    ctx.fillStyle = '#3b2716'; ctx.fillRect(x, y + 8, w, 10); ctx.fillStyle = '#5a3d22'; ctx.fillRect(x, y + 8, w, 2); // верхняк
+    logEnd(ctx, x + 5, y + 13, 5.5); logEnd(ctx, x1 - 5, y + 13, 5.5);
+    ctx.fillStyle = '#6b4a2b'; ctx.fillRect(x - 2, y, w + 4, 8);                                        // настил
+    ctx.fillStyle = '#a57c4c'; ctx.fillRect(x - 2, y, w + 4, 2);
+    ctx.fillStyle = '#3f2a17'; for (let k = x + 16; k < x1; k += 30) ctx.fillRect(k, y, 1.5, 8);
+    for (const r of st.rubble) if (r.x > x + 8 && r.x < x1 - 8 && Math.abs(r.y - y) <= 1) { ctx.fillStyle = '#4e443c'; ctx.beginPath(); ctx.moveTo(r.x - 14, y); ctx.lineTo(r.x - 4, y - 6); ctx.lineTo(r.x + 13, y); ctx.fill(); }
+    lampPost(ctx, api, x1 - 20, y, -1, Math.floor(x)); // светильник у дальнего края
+  }
+
   function drawGround(s, ctx, api) { // порода с угольной мелочью, по верху — узкоколейка
+    if (s.wall) { drawWall(s, ctx, api); return; }
     const { H, hash } = api;
     ctx.fillStyle = '#231d19'; ctx.fillRect(s.x - 0.5, s.y, s.w + 1, H - s.y + 10); // +1 — без щелей на стыках
     ctx.fillStyle = '#342c25'; ctx.fillRect(s.x - 0.5, s.y + 8, s.w + 1, 16);
@@ -179,10 +234,55 @@
     for (let i = 0; i < 5; i++) { ctx.fillStyle = i % 2 ? '#111' : '#f2c230'; ctx.fillRect(bx - 1 + i * 4.4, p.y - 20, 4.4, 4); }
   }
 
-  function drawPlatform(p, ctx) { // дощатый полок: нижний — на стойках, верхний — подвешен к кровле на цепях
-    if (p.tier === 2) {
+  // опоры вышки: каждая стойка стоит на ближайшем настиле под ней или на почве (считаем один раз)
+  const legs = new WeakMap();
+  function towerLegs(p, api) {
+    let L = legs.get(p);
+    if (!L) {
+      L = [];
+      for (let i = 0; i <= 2; i++) {
+        const lx = p.x + 8 + i * (p.w - 16) / 2;
+        let b = api.groundAt(lx) ?? p.base;
+        for (const q of api.platforms) if (q !== p && q.y > p.y && q.y < b && lx >= q.x && lx <= q.x + q.w) b = q.y;
+        L.push([lx, b]);
+      }
+      legs.set(p, L);
+    }
+    return L;
+  }
+  function drawTimberTower(p, ctx, api) { // вышка в восстающем: бревенчатые стойки, дощатые раскосы, на каждом ярусе — светильник
+    const L = towerLegs(p, api), y = p.y;
+    for (let i = 0; i < L.length - 1; i++) { // раскосы-доски и схватки между стойками
+      const [xa, ba] = L[i], [xb, bb] = L[i + 1], b = Math.min(ba, bb);
+      for (let yy = y + 10; yy < b - 10; yy += 60) {
+        const y2 = Math.min(b - 2, yy + 60);
+        ctx.strokeStyle = '#3b2716'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(xa, yy); ctx.lineTo(xb, y2); ctx.stroke();
+        ctx.strokeStyle = '#5a3d22'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(xa, yy - 1.5); ctx.lineTo(xb, y2 - 1.5); ctx.stroke();
+        ctx.fillStyle = '#4a3220'; ctx.fillRect(xa, yy - 2, xb - xa, 4);
+      }
+    }
+    for (const [lx, b] of L) { // круглые стойки с подкладкой
+      ctx.fillStyle = '#3f2a17'; ctx.fillRect(lx - 4, y + 8, 8, b - y - 8);
+      ctx.fillStyle = '#654529'; ctx.fillRect(lx - 4, y + 8, 2.5, b - y - 8);
+      ctx.fillStyle = '#2a1b0f'; ctx.fillRect(lx - 7, y + 7, 14, 4); ctx.fillRect(lx - 7, b - 3, 14, 3);
+    }
+    // светильники над настилами — в стороне от лестниц (ярус 1: лестницы у краёв, ярус 2: слева, ярус 3: посередине)
+    if (p.tier === 1) lampPost(ctx, api, p.x + p.w * 0.5 - 10, y, -1, Math.floor(p.x) + 1);
+    else if (p.tier === 2) lampPost(ctx, api, p.x + p.w - 14, y, -1, Math.floor(p.x) + 2);
+    else lampPost(ctx, api, p.x + 14, y, 1, Math.floor(p.x) + 3);
+    if (p.tier === 3) { // табличка на верхнем ярусе
+      const sx = p.x + 62;
+      ctx.fillStyle = '#b3261e'; ctx.fillRect(sx - 27, y + 12, 54, 13); ctx.fillStyle = '#f5d63d'; ctx.fillRect(sx - 26, y + 13, 52, 11);
+      api.text('ВОССТАЮЩИЙ', sx, y + 21.5, 6, '#111');
+    }
+  }
+
+  function drawPlatform(p, ctx, api) { // дощатый полок: нижний — на стойках, верхний — подвешен к кровле на цепях
+    if (p.tower) drawTimberTower(p, ctx, api);
+    else if (p.tier === 2) {
+      const top = Math.min(ceilY(api) + 4, p.y - 20); // цепи — до кровли фона, где бы ни была камера
       ctx.strokeStyle = '#6d737a'; ctx.lineWidth = 2; ctx.setLineDash([3, 2]);
-      ctx.beginPath(); for (const cx of [p.x + 6, p.x + p.w - 6]) { ctx.moveTo(cx, CEIL + 4); ctx.lineTo(cx, p.y); } ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); for (const cx of [p.x + 6, p.x + p.w - 6]) { ctx.moveTo(cx, top); ctx.lineTo(cx, p.y); } ctx.stroke(); ctx.setLineDash([]);
       ctx.fillStyle = '#44494f'; for (const cx of [p.x + 6, p.x + p.w - 6]) ctx.fillRect(cx - 3, p.y - 3, 6, 4);
     } else {
       const n = Math.max(2, Math.round(p.w / 64));
@@ -201,6 +301,14 @@
     ctx.fillStyle = '#3f2a17'; for (let x = p.x + 16; x < p.x + p.w; x += 30) ctx.fillRect(x, p.y, 1.5, 8);
     ctx.fillStyle = '#b9bec4'; for (let x = p.x + 12; x < p.x + p.w; x += 30) { ctx.fillRect(x, p.y + 3, 1.5, 1.5); ctx.fillRect(x + 8, p.y + 3, 1.5, 1.5); }
     logEnd(ctx, p.x - 6, p.y + 4, 4); logEnd(ctx, p.x + p.w + 6, p.y + 4, 4);
+  }
+
+  function drawLadder(l, ctx) { // деревянная лестница, как в шурфах: брусья-тетивы и перекладины, торчит над краем
+    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(l.x + 3, l.top, l.w - 2, l.bottom - l.top);
+    ctx.fillStyle = '#7a5836'; ctx.fillRect(l.x, l.top - 14, 3.5, l.bottom - l.top + 14); ctx.fillRect(l.x + l.w - 3.5, l.top - 14, 3.5, l.bottom - l.top + 14);
+    ctx.fillStyle = '#a57c4c'; ctx.fillRect(l.x, l.top - 14, 1.2, l.bottom - l.top + 14);
+    ctx.fillStyle = '#6a4a2c'; for (let y = l.top + 6; y < l.bottom; y += 12) ctx.fillRect(l.x + 3, y, l.w - 6, 2.5);
+    ctx.fillStyle = '#f2c230'; ctx.fillRect(l.x - 1, l.top - 16, 5, 3); ctx.fillRect(l.x + l.w - 4, l.top - 16, 5, 3); // отражатели на концах
   }
 
   function drawObstacle(s, ctx, api) { // гружёная вагонетка (стоит на месте) или клеть из брусьев — «костёр»
@@ -247,7 +355,7 @@
       ctx.fillStyle = '#23252a'; ctx.beginPath(); ctx.arc(x + 11, y - 45, 6.5, Math.PI, 0); ctx.fill();
       ctx.fillStyle = a === 1 ? '#fff4c8' : '#9a8a60'; circle(ctx, x + 11, y - 42, 4);
       ctx.strokeStyle = '#3a3c40'; ctx.beginPath(); ctx.moveTo(x + 7, y - 44); ctx.lineTo(x + 9, y - 37); ctx.moveTo(x + 15, y - 44); ctx.lineTo(x + 13, y - 37); ctx.stroke();
-      addLight(x + 11 - Math.round(api.camX), y - 40, 118, a);
+      addLight(x + 11 - Math.round(api.camX), y - 40 - Math.round(api.camY), 118, a);
     } else if (d.kind === 'helmet') { // каска на гвозде, вбитом в стойку
       ctx.fillStyle = '#3f2a17'; ctx.fillRect(x - 4, y - 50, 8, 50); ctx.fillStyle = '#654529'; ctx.fillRect(x - 4, y - 50, 2, 50);
       ctx.fillStyle = '#a0a6ad'; ctx.fillRect(x + 3, y - 38, 5, 1.5);
@@ -305,7 +413,7 @@
     const on = Math.sin(now * 5) > 0;                                                                       // сигнальный фонарь стволового
     ctx.fillStyle = on ? '#6cff8a' : '#1d6b35'; circle(ctx, x + cw + 14, gy - 86, 4);
     const sc = x + cw / 2 - Math.round(api.camX);
-    addLight(sc, gy - 64, 210, 1, true); addLight(sc, 70, 150, 0.8, true);
+    const cy = Math.round(api.camY); addLight(sc, gy - 64 - cy, 210, 1, true); addLight(sc, 70 - cy, 150, 0.8, true);
   }
 
   // ---------- враги ----------
@@ -321,6 +429,27 @@
       ctx.fillStyle = '#1a0c06'; ctx.fillRect(ex + 0.5, -23, 1.8, 2.5);
     }
   }
+
+  // жаба: куда прыгнуть — на тот же настил/почву к герою или на соседний ярус, где он стоит (не дальше 210 и 130 по высоте)
+  const CROUCH = 0.9, HOP = 0.7;
+  function toadTarget(e, api) {
+    const P = api.player, feet = P.y + P.h, hx = P.x + P.w / 2;
+    if (!P.onGround || P.climb) return null;
+    let surf = null;
+    if (Math.abs(feet - e.groundY) < 3 && hx > e.minX - 30 && hx < e.maxX + 30) surf = { y: e.groundY, x0: e.minX, x1: e.maxX };
+    else for (const q of api.platforms) {
+      if (Math.abs(q.y - feet) > 3 || Math.abs(q.y - e.groundY) > 130 || hx < q.x || hx > q.x + q.w) continue;
+      if (Math.max(q.x - (e.x + e.w), e.x - (q.x + q.w)) > 150) continue; // настил слишком далеко по горизонтали
+      surf = { y: q.y, x0: q.x, x1: q.x + q.w };
+    }
+    if (!surf) return null;
+    const c = e.x + e.w / 2, tx = api.clamp(api.clamp(hx, c - 210, c + 210), surf.x0 + e.w / 2 + 2, surf.x1 - e.w / 2 - 2);
+    if (surf.x1 - surf.x0 < e.w + 4 || (Math.abs(tx - c) < 20 && surf.y === e.groundY)) return null;
+    return { x: tx, y: surf.y, x0: surf.x0, x1: surf.x1 };
+  }
+  // крот: под землёй виден бугор (он и ранит), рейка его не берёт; вылезает — открыт
+  const MOUND = e => ({ x: e.x + 5, y: e.groundY - 8, w: e.w - 10, h: 8 });
+  const moleBox = e => (e.st === 'dig' || e.st === 'warn' ? MOUND(e) : e.st === 'up' ? { x: e.x - 15, y: e.y - 6, w: e.w + 30, h: e.h + 6 } : e);
 
   const enemies = {
     cart: { // вагонетка: стоит, пока герой не подойдёт; дребезжит 0,8 с и катится на него до края отрезка
@@ -388,6 +517,126 @@
       },
     },
 
+    toad: { // пещерная жаба на ярусах: приседает 0,9 с (мешок светится, на месте приземления — метка) и прыгает к герою, в т. ч. на соседний ярус
+      w: 30, h: 22, hp: 2, pts: 250, hitColor: '#b6d27a', deathColor: '#ffb347', glowR: 48,
+      bodybox: bodyAfterHit,
+      init(e) { e.st = 'sit'; e.sT = 0; e.tg = null; e.jx = 0; e.jy = 0; },
+      update(e, dt, api) {
+        const dx = api.dx(e), inView = e.y + e.h > api.camY + 20 && e.y < api.camY + api.H && e.x + e.w > api.camX && e.x < api.camX + api.W;
+        e.sT += dt;
+        if (e.st === 'sit') {
+          if (Math.abs(dx) > 6 && Math.abs(dx) < 400) e.dir = Math.sign(dx);
+          e.cd -= dt;
+          if (e.cd <= 0 && inView && Math.abs(dx) < 340) {
+            const t = toadTarget(e, api);
+            if (t) { e.tg = t; e.st = 'crouch'; e.sT = 0; e.dir = t.x > e.x + e.w / 2 ? 1 : -1; } else e.cd = 0.3;
+          }
+        } else if (e.st === 'crouch') {
+          if (e.sT >= CROUCH) { e.st = 'jump'; e.sT = 0; e.jx = e.x; e.jy = e.y; api.burst(e.x + e.w / 2, e.groundY - 2, '#7a6e62', 5, 90, 500); }
+        } else if (e.st === 'jump') { // дуга: подъём на высоту яруса + 50, приземление ровно в метку
+          const s = Math.min(1, e.sT / HOP), t = e.tg, x1 = t.x - e.w / 2, y1 = t.y - e.h, up = Math.max(0, e.jy - y1) + 50;
+          e.x = e.jx + (x1 - e.jx) * s; e.y = e.jy + (y1 - e.jy) * s - up * 4 * s * (1 - s);
+          if (s >= 1) {
+            e.x = x1; e.y = y1; e.groundY = t.y; e.minX = t.x0; e.maxX = t.x1; e.tg = null; e.st = 'land'; e.sT = 0;
+            api.burst(e.x + e.w / 2, e.groundY - 2, '#8a7d70', 8, 130, 600);
+            if (inView) api.shake(2);
+          }
+        } else if (e.sT >= 1.1) { e.st = 'sit'; e.cd = api.rand(0.8, 1.4); }
+      },
+      onDeath(e, api) { api.burst(e.x + e.w / 2, e.y + 8, '#ff9a2a', 8, 150, 500); },
+      draw(e, ctx) { toadBody(e, ctx, false); },
+      glow(e, ctx) {
+        if (e.st === 'crouch' && e.tg) { // метка приземления: мигающий круг на полу — отсюда надо уйти
+          const k = Math.min(1, e.sT / CROUCH), lx = (e.tg.x - (e.x + e.w / 2)) * e.dir, ly = e.tg.y - (e.y + e.h);
+          ctx.strokeStyle = `rgba(255,150,60,${0.45 + 0.45 * Math.sin(e.t * 18) * k})`; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.ellipse(lx, ly - 1, 10 + 10 * k, 3 + k, 0, 0, TAU); ctx.stroke();
+          ctx.fillStyle = 'rgba(255,150,60,.25)'; ctx.beginPath(); ctx.ellipse(lx, ly - 1, 6 + 8 * k, 2 + k, 0, 0, TAU); ctx.fill();
+        }
+        toadBody(e, ctx, true);
+      },
+    },
+
+    mole: { // крот-проходчик: бугром ползёт под почвой к герою, у цели 0,9 с трескается земля — и он выскакивает; потом оглушён 1,6 с
+      w: 30, h: 26, hp: 2, pts: 250, hitColor: '#c9a27a', deathColor: '#7a5a3a', glowR: 40, knockback: false,
+      bodybox: e => (e.hit > 0 ? NOBOX : moleBox(e)),
+      hurtbox: moleBox,
+      init(e) { e.st = 'dig'; e.sT = 0; e.cd = 0.6; e.crumb = 0; },
+      update(e, dt, api) {
+        const P = api.player, dx = api.dx(e), same = Math.abs(P.y + P.h - e.groundY) < 30;
+        e.sT += dt; e.cd -= dt;
+        if (e.st === 'dig') { // к герою, а после вылазки — немного прочь от него
+          const toward = e.cd <= 0, dir = Math.sign(dx) * (toward ? 1 : -1) || e.dir;
+          if (Math.abs(dx) > 3 || !toward) { e.dir = dir; e.x = api.clamp(e.x + dir * 58 * dt, e.minX, e.maxX - e.w); }
+          const stuck = (e.x <= e.minX + 0.5 && dx < 0) || (e.x >= e.maxX - e.w - 0.5 && dx > 0);
+          e.crumb -= dt;
+          if (e.crumb <= 0 && e.x > api.camX - 40 && e.x < api.camX + api.W + 40) { e.crumb = 0.12; api.burst(e.x + e.w / 2, e.groundY - 3, '#6e5c48', 1, 60, 500); }
+          if (toward && same && (Math.abs(dx) < 26 || (stuck && Math.abs(dx) < 120))) { e.st = 'warn'; e.sT = 0; } // останавливается, не доходя до героя: бугор его не задевает
+        } else if (e.st === 'warn') {
+          e.crumb -= dt;
+          if (e.crumb <= 0 && e.x > api.camX - 40 && e.x < api.camX + api.W + 40) { e.crumb = 0.08; api.burst(e.x + e.w / 2 + api.rand(-20, 20), e.groundY - 2, '#8a7d70', 1, 90, 700); } // скачут камешки
+          if (e.sT >= 0.9) { e.st = 'up'; e.sT = 0; api.burst(e.x + e.w / 2, e.groundY - 4, '#7a6e62', 14, 190, 700); if (e.x > api.camX - 40 && e.x < api.camX + api.W + 40) api.shake(3); }
+        } else if (e.st === 'up') { if (e.sT >= 0.3) { e.st = 'daze'; e.sT = 0; } }
+        else if (e.st === 'daze') { if (e.sT >= 1.6) { e.st = 'down'; e.sT = 0; } }
+        else if (e.sT >= 0.4) { e.st = 'dig'; e.sT = 0; e.cd = 1.4; }
+      },
+      onHit(e, api, source) { // под землёй рейка бьёт по камням; прыжок на бугор выбивает его наружу
+        if (e.st !== 'dig' && e.st !== 'warn') return true;
+        if (source === 'stomp') { e.st = 'daze'; e.sT = 0; api.burst(e.x + e.w / 2, e.groundY - 4, '#7a6e62', 10, 160, 600); }
+        else api.burst(e.x + e.w / 2, e.groundY - 4, '#6e5c48', 5, 120, 600); // рейка лишь сбивает землю с бугра
+        return false;
+      },
+      onDeath(e, api) { api.burst(e.x + e.w / 2, e.groundY - 4, '#6e5c48', 12, 170, 600); },
+      draw(e, ctx) {
+        const s = e.st, t = e.t;
+        if (s === 'dig' || s === 'warn') { // бугор свежей породы; при тревоге — трещины и подпрыгивающие камешки
+          const w = s === 'warn' ? 1 + Math.sin(t * 40) * 0.08 : 1, hop = s === 'warn' ? Math.abs(Math.sin(t * 22)) * 3 : 0;
+          ctx.fillStyle = '#54463a'; ctx.beginPath(); ctx.ellipse(0, 0, 14 * w, 8 + hop * 0.5, 0, Math.PI, 0); ctx.fill();
+          ctx.fillStyle = '#6e5c48'; ctx.beginPath(); ctx.ellipse(-3, -3, 7, 3, 0, 0, TAU); ctx.fill();
+          ctx.fillStyle = '#8a7660'; for (let k = 0; k < 4; k++) ctx.fillRect(-9 + k * 5, -4 - ((t * 6 + k * 0.7) % 1) * 3 - (k % 2) * 2 - hop, 3, 2.5);
+          if (s === 'warn') {
+            ctx.strokeStyle = '#140c06'; ctx.lineWidth = 1.5; ctx.beginPath();
+            for (const sx of [-1, 1]) { ctx.moveTo(sx * 10, 0); ctx.lineTo(sx * 18, -2); ctx.lineTo(sx * 24, 0); ctx.moveTo(sx * 16, -1); ctx.lineTo(sx * 20, -5); }
+            ctx.stroke();
+            ctx.fillStyle = '#c9c2b0'; ctx.fillRect(4, -9 - hop, 2, 3); ctx.fillRect(7, -8 - hop, 2, 3); // когти показались
+          }
+          return;
+        }
+        const rise = s === 'up' ? Math.min(1, e.sT / 0.15) : s === 'down' ? 1 - Math.min(1, e.sT / 0.4) : 1;
+        ctx.save(); ctx.beginPath(); ctx.rect(-40, -60, 80, 60); ctx.clip(); ctx.translate(0, (1 - rise) * 26); // вылезает из-под земли
+        ctx.fillStyle = '#6b5a4a'; ctx.beginPath(); ctx.ellipse(-1, -11, 12, 13, 0, 0, TAU); ctx.fill();   // тело
+        ctx.fillStyle = '#8a7662'; ctx.beginPath(); ctx.ellipse(-4, -15, 6, 7, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#e4a0a0'; ctx.beginPath(); ctx.moveTo(9, -16); ctx.lineTo(17, -13); ctx.lineTo(9, -10); ctx.fill(); // нос
+        ctx.fillStyle = '#ff9a9a'; circle(ctx, 17, -13, 1.8);
+        const claw = s === 'up' ? -8 : Math.sin(t * 6) * 2;
+        ctx.fillStyle = '#e4a0a0'; ctx.fillRect(4, -10 + claw, 8, 5); ctx.fillRect(-12, -9 - claw, 6, 5);  // лапы-лопаты
+        ctx.fillStyle = '#e8e0d0'; for (let k = 0; k < 3; k++) ctx.fillRect(12, -10 + claw + k * 1.8, 3, 1.2);
+        ctx.fillStyle = '#f2c230'; ctx.beginPath(); ctx.arc(-1, -22, 8, Math.PI, 0); ctx.fill(); ctx.fillRect(-9, -23, 18, 2); // шахтёрская каска (нашёл)
+        ctx.fillStyle = '#fff4c8'; ctx.fillRect(5, -27, 3, 3);
+        ctx.restore();
+        ctx.fillStyle = '#3b3128'; ctx.beginPath(); ctx.ellipse(0, 0, 18, 4, 0, Math.PI, 0); ctx.fill(); // вал земли вокруг норы
+      },
+      glow(e, ctx, api) {
+        const s = e.st;
+        if (s === 'warn') { // земля светится трещинами — через 0,9 с он вылетит, задевая всё в полуметре
+          const k = Math.min(1, e.sT / 0.9);
+          ctx.fillStyle = `rgba(255,120,40,${0.18 + 0.25 * k})`; ctx.beginPath(); ctx.ellipse(0, -1, 30, 4, 0, 0, TAU); ctx.fill(); // зона выброса ±30
+          ctx.strokeStyle = `rgba(255,150,60,${0.55 + 0.4 * Math.sin(e.t * 24)})`; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.ellipse(0, -1, 30, 4, 0, 0, TAU); ctx.stroke();
+          ctx.strokeStyle = '#ffb347'; ctx.lineWidth = 1.5; ctx.beginPath(); // светящиеся трещины расходятся от бугра
+          for (const sx of [-1, 1]) { ctx.moveTo(sx * 8, -1); ctx.lineTo(sx * (8 + 10 * k), -2); ctx.lineTo(sx * (10 + 18 * k), 0); }
+          ctx.stroke();
+          for (let i = 0; i < 3; i++) { const ph = (e.t * 1.6 + i / 3) % 1; ctx.fillStyle = `rgba(230,210,180,${0.4 * (1 - ph) * k})`; ellipse(ctx, -9 + i * 9, -3 - ph * 16, 3 + ph * 4, 2 + ph * 3); } // пыль курится
+        }
+        if (s === 'dig' || s === 'warn') { ctx.fillStyle = s === 'warn' ? '#ff5a3a' : 'rgba(255,200,120,.55)'; ctx.fillRect(3, -5, 2, 2); ctx.fillRect(7, -5, 2, 2); return; } // глазки из-под земли
+        if (s === 'daze') { // звёздочки над каской
+          ctx.fillStyle = '#ffe38a';
+          for (let k = 0; k < 3; k++) { const a = e.t * 4 + k * 2.1; ctx.fillRect(-1 + Math.cos(a) * 11, -34 + Math.sin(a) * 3, 2.5, 2.5); }
+        }
+        const rise = s === 'up' ? Math.min(1, e.sT / 0.15) : s === 'down' ? 1 - Math.min(1, e.sT / 0.4) : 1;
+        if (rise > 0.5) { ctx.fillStyle = '#fff4c8'; ctx.fillRect(5, -27 + (1 - rise) * 26, 3, 3); }
+      },
+    },
+
     methane: { // облако метана: медленно дрейфует к герою; прыгать на него нельзя, рейка разгоняет с одного взмаха
       w: 44, h: 30, hp: 1, pts: 150, stompable: false, knockback: false, hitColor: '#e6f78a', deathColor: '#cde86a', glowR: 50,
       init(e) { e.puff = 0; },
@@ -398,7 +647,8 @@
         e.x += Math.sin(e.t * 0.8) * 10 * dt; e.y += Math.cos(e.t * 1.1) * 6 * dt; // клубится
         e.x = api.clamp(e.x, e.minX - 200, e.maxX + 200);
         const g = api.groundAt(e.x + e.w / 2);
-        e.y = api.clamp(e.y, CEIL + 6, (g === null ? e.groundY : g) - e.h - 2);
+        const lo = (g === null ? e.groundY : g) - e.h - 2;
+        e.y = api.clamp(e.y, Math.min(CEIL + 6, lo), lo);
       },
       onDeath(e, api) { api.burst(e.x + e.w / 2, e.y + e.h / 2, '#cde86a', 18, 140, 40); api.burst(e.x + e.w / 2, e.y + e.h / 2, '#f4ffb0', 6, 90, 20); },
       draw(e, ctx, api) { methaneBody(e, ctx, 1); ctx.scale(e.dir || 1, 1); api.text('CH₄', 0, -3, 7, 'rgba(50,70,10,.8)'); }, // надпись не зеркалим
@@ -486,6 +736,26 @@
     },
   };
 
+  function toadBody(e, ctx, bright) { // приземистая пещерная жаба: бородавки с угольной крошкой, горловой мешок светится
+    const s = e.st, cr = s === 'crouch', jp = s === 'jump', k = cr ? Math.min(1, e.sT / CROUCH) : 0;
+    const breathe = s === 'sit' ? Math.sin(e.t * 3) * 0.8 : 0, sq = cr ? 3 * k : s === 'land' && e.sT < 0.15 ? 3 : 0;
+    ctx.translate(0, sq);
+    if (!bright) {
+      ctx.fillStyle = '#3e4a2e';
+      if (jp) { ctx.fillRect(-16, -8, 10, 3); ctx.fillRect(-18, -6, 6, 3); } // задние лапы вытянуты
+      else { ctx.beginPath(); ctx.ellipse(-9, -4, 8, 5, 0, 0, TAU); ctx.fill(); }
+      ctx.fillStyle = '#56663c'; ctx.beginPath(); ctx.ellipse(0, -10 - breathe, 15, 10 - sq * 0.6 + breathe, 0, 0, TAU); ctx.fill(); // тело
+      ctx.fillStyle = '#6f8150'; ctx.beginPath(); ctx.ellipse(-2, -14 - breathe, 10, 4, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#1b1c20'; for (const [bx, by] of [[-8, -15], [-2, -18], [5, -15], [-10, -9]]) circle(ctx, bx, by - breathe, 1.4); // бородавки-угольки
+      ctx.fillStyle = '#3e4a2e'; ctx.fillRect(7, -4, 7, 4); ctx.fillRect(-3, -4, 5, 4);                  // передние лапы
+      ctx.fillStyle = '#56663c'; circle(ctx, 9, -18 - breathe, 5);                                        // бугор глаза
+    }
+    const th = cr ? 3 + k * 5 : 2.5 + Math.sin(e.t * 3) * 0.6; // горловой мешок раздувается перед прыжком
+    ctx.fillStyle = bright ? (cr ? '#ff9a2a' : 'rgba(255,190,90,.8)') : '#d9b56a'; ctx.beginPath(); ctx.ellipse(10, -7, th + 2, th, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = bright ? (cr ? '#ff4a2a' : '#ffd54f') : '#e8d890'; circle(ctx, 10, -19 - breathe, 2.6); // глаз
+    ctx.fillStyle = '#140c06'; ctx.fillRect(10, -20 - breathe, 1.4, 2.4);
+  }
+
   function methaneBody(e, ctx, a) { // клубы жёлто-зелёного газа и сонная ухмылка
     const t = e.t, sc = 1 + (e.puff || 0) * 0.18;
     ctx.save(); ctx.translate(0, -15); ctx.scale(sc, sc); ctx.globalAlpha = a;
@@ -505,18 +775,20 @@
   // ---------- механика участка: обвалы кровли ----------
   function tryCaveIn(api) { // точка впереди героя над ровной землёй (не у края шурфа и не на перепаде)
     const P = api.player, f = P.face || 1;
+    if (api.camY < -20 || P.climb) return false; // герой на вышке или на лестнице — кровля далеко, не сыплем
     for (let k = 0; k < 6; k++) {
       const x = P.x + P.w / 2 + f * api.rand(80, 260), g = api.groundAt(x);
       if (g === null || api.groundAt(x - 46) !== g || api.groundAt(x + 46) !== g) continue;
       if (st.warns.some(w => Math.abs(w.x - x) < 60)) continue;
-      st.warns.push({ x, gy: g, t: 0, rock: null });
+      if (api.platforms.some(p => x > p.x - 24 && x < p.x + p.w + 24) || api.ladders.some(l => x > l.x - 30 && x < l.x + l.w + 30)) continue;
+      st.warns.push({ x, gy: g, t: 0, rock: null, top: ceilY(api) + 4 });
       return true;
     }
     return false;
   }
   function dropRock(w, api) {
     w.rock = api.shoot({
-      x: w.x, y: CEIL + 8, w: 18, h: 16, vx: 0, vy: 30, gravity: 1100, life: 3, spin: api.rand(-5, 5), color: '#8a7d70', pts: 20, caveRock: true, draw: noop,
+      x: w.x, y: w.top + 4, w: 18, h: 16, vx: 0, vy: 30, gravity: 1100, life: 3, spin: api.rand(-5, 5), color: '#8a7d70', pts: 20, caveRock: true, draw: noop,
       onLand(p, api) {
         const x = p.x + p.w / 2;
         api.burst(x, p.y + p.h, '#8a7d70', 12, 170, 800); api.burst(x, p.y + p.h, '#cbb89a', 6, 80, 150); api.shake(3);
@@ -532,7 +804,7 @@
   }
 
   function drawWarn(ctx, w, api) { // трещина в кровле, струйки породы, пыльный столб и метка на земле
-    const k = Math.min(1, w.t / WARN), top = CEIL + 4, x = w.x, gy = w.gy, hash = api.hash, falling = w.t < WARN;
+    const k = Math.min(1, w.t / WARN), top = w.top, x = w.x, gy = w.gy, hash = api.hash, falling = w.t < WARN;
     ctx.strokeStyle = `rgba(255,214,140,${0.35 + 0.55 * k})`; ctx.lineWidth = 1.5; ctx.beginPath();
     ctx.moveTo(x - 6 - 14 * k, top); ctx.lineTo(x - 5, top + 5); ctx.lineTo(x + 3, top + 1); ctx.lineTo(x + 6 + 14 * k, top + 6); ctx.stroke();
     if (falling) {
@@ -562,7 +834,7 @@
     lx.globalAlpha = a; lx.fillRect(-1, -1, 2, 2);
   }
   function drawOverlay(ctx, api) {
-    const { W, H, player: P, now, hash } = api, cx = Math.round(api.camX);
+    const { W, H, player: P, now, hash } = api, cx = Math.round(api.camX), cy = Math.round(api.camY); // свет считается в экранных координатах
     const w = Math.ceil((W + LM * 2) / LS), h = Math.ceil((H + LM * 2) / LS);
     if (!lm) lm = document.createElement('canvas');
     if (lm.width !== w || lm.height !== h || !lx) { lm.width = w; lm.height = h; lx = lm.getContext('2d'); lg = null; }
@@ -574,14 +846,14 @@
     lx.setTransform(1, 0, 0, 1, 0, 0); lx.globalCompositeOperation = 'source-over'; lx.globalAlpha = 1;
     lx.clearRect(0, 0, w, h); lx.fillStyle = 'rgba(3,4,8,.94)'; lx.fillRect(0, 0, w, h);
     lx.globalCompositeOperation = 'destination-out'; lx.fillStyle = lg;
-    const hx = P.x + P.w / 2 - cx, hy = P.y - 2, f = P.face || 1;
+    const hx = P.x + P.w / 2 - cx, hy = P.y - 2 - cy, f = P.face || 1;
     spot(hx, hy, 250, 250, 1, 0);                              // фонарь на каске: пятно вокруг героя
     spot(hx + f * 150, hy + 30, 240, 64, 0.95, f * 0.12);      // и узкий луч вперёд, чуть вниз
     for (const L of st.lights) spot(L.x, L.y, L.r, L.r, L.a, 0);
     for (const e of api.enemies) { // враги подсвечены своими огоньками — силуэт читается и во тьме
       if (e.dead || e.x + e.w < cx - 60 || e.x > cx + W + 60) continue;
-      const r = e.def.glowR || 44, hot = e.st === 'rattle' || e.st === 'roll' || e.st === 'scrape' || e.st === 'rush';
-      spot(e.x + e.w / 2 - cx, e.y + e.h / 2, r, r, hot ? 0.92 : 0.7, 0); // перед атакой — ярче
+      const r = e.def.glowR || 44, hot = e.st === 'rattle' || e.st === 'roll' || e.st === 'scrape' || e.st === 'rush' || e.st === 'crouch' || e.st === 'warn';
+      spot(e.x + e.w / 2 - cx, e.y + e.h / 2 - cy, r, r, hot ? 0.92 : 0.7, 0); // перед атакой — ярче
     }
     lx.globalCompositeOperation = 'source-over'; lx.fillStyle = tg; // тёплая дымка в свете ламп и фонаря
     for (const L of st.lights) if (!L.cool) spot(L.x, L.y, L.r * 0.8, L.r * 0.8, L.a, 0);
@@ -591,7 +863,7 @@
     ctx.imageSmoothingEnabled = true;
 
     // то, что должно читаться в темноте: отражатели у шурфов, обвалы, глыбы, глаза врагов
-    ctx.save(); ctx.translate(-cx, 0);
+    ctx.save(); ctx.translate(-cx, -cy);
     for (const p of api.pits) {
       if (p.x + p.w < cx - 60 || p.x > cx + W + 60) continue;
       for (let i = 0; i < 5; i += 2) { ctx.fillStyle = 'rgba(242,194,48,.75)'; ctx.fillRect(p.x - 25 + i * 4.4, p.y - 20, 4.4, 4); }
@@ -626,6 +898,8 @@
       { type: 'cart', where: 'ground', weight: 2, from: 0.12 },
       { type: 'methane', where: 'air', weight: 2, from: 0.08 },
       { type: 'beetle', where: 'upper', weight: 1 },
+      { type: 'toad', where: 'upper', weight: 3 },
+      { type: 'mole', where: 'ground', weight: 2, from: 0.18 },
     ],
     init(api) { st.caveT = api.rand(6, 9); st.warns.length = 0; st.rubble.length = 0; st.lights.length = 0; },
     update(dt, api) {
@@ -640,6 +914,6 @@
       st.caveT -= dt;
       if (st.caveT <= 0) st.caveT = st.warns.length < 3 && tryCaveIn(api) ? api.rand(6, 9) : 0.7;
     },
-    drawBackground, drawGround, drawPit, drawPlatform, drawObstacle, drawDecor, drawFinish, drawOverlay,
+    drawBackground, drawGround, drawPit, drawPlatform, drawObstacle, drawDecor, drawFinish, drawOverlay, drawLadder,
   });
 })();

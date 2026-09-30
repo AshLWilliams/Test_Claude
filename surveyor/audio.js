@@ -9,13 +9,13 @@ const Sound = (() => {
   const MUSIC_VOL = 0.25;  // музыка — фоном, тише эффектов
   const SFX_VOL = 0.9;     // общий уровень эффектов
 
-  // ---------- саундтрек: участки 1–5 и меню — трек 1, участки 6–10 — трек 2 ----------
-  const tracks = ['music/track1.mp3', 'music/track2.mp3'].map(src => {
+  // ---------- саундтрек: «КиШ Геодезия» на всех участках и в меню ----------
+  const tracks = ['music/kish-geodeziya.mp3'].map(src => {
     const a = new Audio(); a.src = src; a.loop = true; a.preload = 'none'; a.volume = MUSIC_VOL;
     return a;
   });
   let current = null, wantPlay = false;
-  function trackFor(level) { return tracks[level >= 5 ? 1 : 0]; }
+  function trackFor() { return tracks[0]; }
   function syncMusic() {
     for (const t of tracks) if (t !== current && !t.paused) t.pause();
     if (!current) return;
