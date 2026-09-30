@@ -170,7 +170,7 @@
     // Бровка насыпи плавно держится чуть выше самой высокой видимой дороги — иначе при высокой земле
     // над асфальтом торчат только крыши бытовок и кузова, и их легко принять за препятствия.
     let top = 255;
-    for (const s of api.solids) if (s.kind === 'ground' && s.x < camX + W && s.x + s.w > camX && s.y - 3 < top) top = s.y - 3;
+    for (const s of api.solids) if (s.kind === 'ground' && !s.wall && s.x < camX + W && s.x + s.w > camX && s.y - 3 < top) top = s.y - 3;
     const bdt = api.clamp(now - st.bermT, 0, 0.1); st.bermT = now;
     st.berm = st.berm === null ? top : st.berm + (top - st.berm) * Math.min(1, bdt * 3);
     const by = Math.round(st.berm * 2) / 2;

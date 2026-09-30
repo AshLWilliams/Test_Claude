@@ -26,6 +26,9 @@ const GRAVITY = 1800, JUMP_V = 620, RUN = 220, ACCEL = 2200, FRICTION = 2400;
 const COYOTE = 0.1, JUMP_BUFFER = 0.12;
 const DEATH_Y = H + 60;
 const MAX_PIT = 112, MAX_STEP = 55, MAX_HAZARD_W = 64; // пределы, при которых любой уровень проходим
+const FALL_HURT = 260;   // падение с высоты больше этой (≈6 ростов героя) отнимает каску
+const CLIMB = 150;       // скорость лазания по лестнице
+const LENGTH_SCALE = 1.6; // участки стали длиннее: длина из темы умножается на это число
 
 // ---------- темы ----------
 const THEMES = [];
@@ -33,8 +36,8 @@ function registerTheme(t) { THEMES.push(t); THEMES.sort((a, b) => a.index - b.in
 
 // параметры генератора по умолчанию; тема может переопределить их в gen
 const GEN = {
-  length: 3800,                                                   // длина участка до финиша
-  weights: { pit: 24, platforms: 20, step: 14, obstacle: 14, flat: 28 }, // частоты видов отрезков
+  length: 3800,                                                   // базовая длина участка до финиша (умножается на LENGTH_SCALE)
+  weights: { pit: 24, platforms: 20, step: 14, obstacle: 14, flat: 28, wall: 9, tower: 8 }, // частоты видов отрезков
   pitW: [70, 112],                                                // ширина провалов
   groundRange: [225, 305],                                        // высота земли
   upperChance: 0.7,                                               // вероятность второго яруса платформ
@@ -48,17 +51,18 @@ const GEN = {
 
 // ---------- состояние ----------
 let levelIdx = 0, startLevel = 0, practice = false, theme = null, G = GEN;
-let seed, solids, platforms, pits, decor, pickups, enemies, projectiles, checkpoints, particles, popups;
-let player, camX, levelEnd, finishX, finishY, respawn, arena = null;
+let skyTop = '#000';
+let seed, solids, platforms, pits, decor, pickups, enemies, projectiles, checkpoints, particles, popups, ladders, helmets;
+let player, camX, camY = 0, levelEnd, finishX, finishY, respawn, arena = null;
 let score, lives, kills, time, levelTime, shake, banner = null, clearInfo = null;
 let mode = 'menu'; // menu | play | pause | clear | over | win
 let overAt = 0, menuLevel = 0;
 let board = null, globalBoard = null, session = null, final = null;
 const forcedLevel = Math.max(0, (parseInt(PARAMS.get('level'), 10) || 1) - 1); // ?level=N — тренировка с участка N
 
-const input = { left: false, right: false, down: false, jumpHeld: false }; // итоговое состояние: клавиатура + сенсорные кнопки
-const kb = { left: false, right: false, down: false, jump: false };
-let jumpBuf = 0, attackQueued = false;
+const input = { left: false, right: false, down: false, up: false, jumpHeld: false }; // итоговое состояние: клавиатура + сенсорные кнопки
+const kb = { left: false, right: false, down: false, up: false, jump: false };
+let jumpBuf = 0, attackQueued = false, upWas = false;
 
 const nameForm = document.getElementById('nameForm'), nameInput = document.getElementById('nameInput');
 try { nameInput.value = localStorage.getItem(NAME_KEY) || ''; } catch (e) {}
@@ -103,11 +107,11 @@ function toGame(e) {
 // Один объект на всю игру: темы получают его во все свои функции.
 const api = {
   get W() { return W; }, H,
-  get camX() { return camX; }, get player() { return player; },
+  get camX() { return camX; }, get camY() { return camY; }, get player() { return player; }, // camY ≤ 0: камера поднялась вверх
   get time() { return levelTime; },                 // секунд с начала участка
   get now() { return performance.now() / 1000; },   // для анимаций
   get enemies() { return enemies; }, get solids() { return solids; }, get platforms() { return platforms; }, get pits() { return pits; },
-  get projectiles() { return projectiles; },
+  get projectiles() { return projectiles; }, get ladders() { return ladders; },
   get levelIndex() { return levelIdx; }, get levels() { return THEMES.length; },
   get progress() { return clamp(player.x / (arena ? arena.x1 : finishX), 0, 1); },
   get arena() { return arena; }, get mode() { return mode; }, get theme() { return theme; },
@@ -128,16 +132,16 @@ const api = {
   },
   dx(e) { return player.x + player.w / 2 - (e.x + e.w / 2); }, // >0 — игрок справа
   near(e, rx = 240, ry = 120) { return Math.abs(api.dx(e)) < rx && Math.abs(player.y - e.y) < ry; },
-  toScreen(x, y) { return { x: x - camX, y }; },
+  toScreen(x, y) { return { x: x - camX, y: y - camY }; },
 };
 
 // ---------- генерация участка ----------
 function generateLevel(s) {
   const R = mulberry32(s);
   const r = (a, b) => a + R() * (b - a), ri = (a, b) => Math.floor(r(a, b + 1)), pick = arr => arr[Math.floor(R() * arr.length)];
-  solids = []; platforms = []; pits = []; decor = []; pickups = []; enemies = []; checkpoints = [];
+  solids = []; platforms = []; pits = []; decor = []; pickups = []; enemies = []; checkpoints = []; ladders = []; helmets = [];
   arena = null;
-  const LENGTH = G.length;
+  const LENGTH = Math.round(G.length * LENGTH_SCALE);
   const [gMin, gMax] = [clamp(G.groundRange[0], 200, 310), clamp(G.groundRange[1], 200, 310)];
   const pitMin = clamp(G.pitW[0], 50, MAX_PIT), pitMax = clamp(G.pitW[1], pitMin, MAX_PIT);
   const obH = clamp(G.obstacleH, 20, 32), obW = clamp(G.obstacleW, 30, 60);
@@ -160,8 +164,12 @@ function generateLevel(s) {
   }
   function blueprints(x0, w, y) {
     const n = ri(0, 3), h = r(40, 95);
-    for (let i = 0; i < n; i++) pickups.push({ x: x0 + w / 2 + (i - (n - 1) / 2) * 34, y: Math.max(50, y - h), t: R() * 6 });
+    for (let i = 0; i < n; i++) pickups.push({ x: x0 + w / 2 + (i - (n - 1) / 2) * 34, y: Math.max(y < 120 ? -400 : 50, y - h), t: R() * 6 });
   }
+  function helmet(x0, y, chanceWhite) { // каска восстанавливает жизни: белая — две, оранжевая — одну; встречаются редко
+    helmets.push({ x: x0, y: y - 26, kind: R() < chanceWhite ? 'white' : 'orange', t: R() * 6 });
+  }
+  const ladder = (lx, top, bottom, wall = false) => ladders.push({ x: lx, w: 22, top, bottom, wall, v: R() });
   function pickType(wheres) { // случайный тип врага из таблицы темы с учётом весов и прогресса
     const p = progress();
     const opts = (theme.enemyTable || []).filter(o => wheres.includes(o.where) && (o.from || 0) <= p && (o.to == null || o.to >= p) && theme.enemies[o.type]);
@@ -195,7 +203,8 @@ function generateLevel(s) {
   const wts = G.weights, wsum = Object.values(wts).reduce((a, b) => a + b, 0);
   while (x < LENGTH) {
     let t = R() * wsum;
-    const kind = ['pit', 'platforms', 'step', 'obstacle', 'flat'].find(k => (t -= wts[k] || 0) < 0) || 'flat';
+    let kind = ['pit', 'platforms', 'step', 'obstacle', 'flat', 'wall', 'tower'].find(k => (t -= wts[k] || 0) < 0) || 'flat';
+    if ((kind === 'wall' || kind === 'tower') && x < 700) kind = 'flat'; // в начале участка — без высотных конструкций
     if (kind === 'pit') {
       const w = ri(pitMin, pitMax);
       pits.push({ x, w, y: gy, v: R() });
@@ -232,14 +241,43 @@ function generateLevel(s) {
       const after = bx + stacks * obW + 10;
       decorate(x, len * 0.3, gy); if (x + len - after > 80) enemiesOn(after, x + len - after, gy, 0.1);
       x += len;
+    } else if (kind === 'wall') { // стена выше прыжка: подняться по лестнице, пройти поверху и спрыгнуть
+      const baseY = gy;
+      ground(x, 140, baseY); decorate(x, 90, baseY); x += 140;
+      const wh = ri(130, 150), ww = ri(170, 260), top = baseY - wh;
+      ladder(x - 24, top, baseY, true);
+      solids.push({ x, y: top, w: ww, h: H + 200 - top, kind: 'ground', wall: true, v: R() }); prevGy = null;
+      blueprints(x, ww, top);
+      if (R() < 0.15) helmet(x + ww / 2, top, 0.2);
+      else enemiesOn(x, ww, top, -0.15);
+      x += ww;
+      ground(x, ri(200, 300), baseY); decorate(x, 150, baseY);
+      x = solids[solids.length - 1].x + solids[solids.length - 1].w;
+    } else if (kind === 'tower') { // вышка в три яруса по лестницам — необязательный маршрут наверх, выше края экрана
+      const len = ri(520, 640);
+      ground(x, len, gy);
+      const t1 = { x: x + 70, y: gy - 110, w: 230, h: 10, base: gy, tier: 1, v: R(), tower: true };
+      const t2 = { x: x + 190, y: gy - 230, w: 230, h: 10, base: t1.y, tier: 2, v: R(), tower: true };
+      const t3 = { x: x + 80, y: gy - 350, w: 220, h: 10, base: t2.y, tier: 3, v: R(), tower: true };
+      platforms.push(t1, t2, t3);
+      // лестницы стоят там, где ярусы перекрываются: нижний конец каждой — на предыдущем ярусе
+      ladder(t1.x + 18, t1.y, gy); ladder(x + 262, t2.y, t1.y); ladder(x + 202, t3.y, t2.y);
+      blueprints(t2.x, t2.w, t2.y);
+      if (R() < 0.6) helmet(t3.x + t3.w - 60, t3.y, 0.35); else blueprints(t3.x, t3.w, t3.y);
+      const o = R() < 0.5 + progress() * 0.3 ? pickType(['upper']) : null;
+      if (o) spawnEnemy(o.type, t3.x + t3.w * 0.5, t3.y, { minX: t3.x, maxX: t3.x + t3.w, groundY: t3.y, upper: true });
+      const o2 = R() < 0.5 ? pickType(['upper']) : null;
+      if (o2) spawnEnemy(o2.type, t2.x + t2.w * 0.35, t2.y, { minX: t2.x, maxX: t2.x + t2.w, groundY: t2.y, upper: true });
+      enemiesOn(x, len, gy, -0.1);
+      x += len;
     } else { // ровный отрезок
       const len = ri(260, 420);
       ground(x, len, gy); decorate(x, len, gy); blueprints(x, len, gy);
       if (!hazardOn(x, len, gy)) enemiesOn(x, len, gy, 0.15);
       x += len;
     }
-    if (x - lastCP > 1500 && x < LENGTH - 400) { // чекпоинт — нивелир на штативе
-      checkpoints.push({ x: x - 60, y: gy, on: false });
+    if (x - lastCP > 1800 && x < LENGTH - 400) { // чекпоинт — нивелир на штативе
+      checkpoints.push({ x: x - 60, y: groundAt(x - 60) ?? gy, on: false });
       lastCP = x;
     }
   }
@@ -297,11 +335,22 @@ function loadLevel(i) {
   seed = (Math.random() * 2 ** 32) >>> 0;
   projectiles = []; particles = []; popups = [];
   generateLevel(seed);
-  player = { x: 80, y: checkpoints[0].y - 40, w: 18, h: 40, vx: 0, vy: 0, face: 1, onGround: false, coyote: 0, inv: 0, attackT: 0, attackCd: 0, hitSet: null, anim: 0, drop: 0 };
+  player = { x: 80, y: checkpoints[0].y - 40, w: 18, h: 40, vx: 0, vy: 0, face: 1, onGround: false, coyote: 0, inv: 0, attackT: 0, attackCd: 0, hitSet: null, anim: 0, drop: 0, climb: null, peakY: 0 };
   respawn = { x: 80, y: checkpoints[0].y - 60 };
-  camX = 0; levelTime = 0; lives = 3; shake = 0;
+  camX = 0; camY = 0; levelTime = 0; lives = 3; shake = 0;
   banner = { top: `Участок ${i + 1} из ${THEMES.length}`, title: theme.title, sub: theme.subtitle || '', t: 3.2 };
   if (theme.init) theme.init(api);
+  skyTop = sampleSkyTop();
+}
+
+function sampleSkyTop() { // цвет верхнего края фона темы — один раз при загрузке участка
+  try {
+    const c = document.createElement('canvas'); c.width = W; c.height = 4;
+    const x = c.getContext('2d'); theme.drawBackground(x, api);
+    const d = x.getImageData(0, 1, W, 1).data; let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4 * 16) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+    return `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`;
+  } catch (e) { return '#000'; }
 }
 
 function reset(start = menuLevel) { // новая смена (прохождение); с 1-го участка — в рейтинг, с других — тренировка
@@ -314,7 +363,7 @@ function reset(start = menuLevel) { // новая смена (прохожден
 }
 
 function levelComplete() {
-  const timeBonus = Math.max(0, Math.round(1500 - levelTime * 12)), lifeBonus = lives * 200, finishBonus = 500 + (G.boss ? 5000 : 0);
+  const timeBonus = Math.max(0, Math.round(2200 - levelTime * 12)), lifeBonus = lives * 200, finishBonus = 500 + (G.boss ? 5000 : 0);
   score += timeBonus + lifeBonus + finishBonus;
   clearInfo = { timeBonus, lifeBonus, finishBonus, level: levelIdx, time: levelTime };
   if (levelIdx + 2 > unlocked) { unlocked = Math.min(THEMES.length, levelIdx + 2); try { localStorage.setItem(UNLOCK_KEY, unlocked); } catch (e) {} }
@@ -372,6 +421,14 @@ function moveY(o, dy) {
   }
 }
 
+function fallHurt(h) {
+  if (mode !== 'play') return;
+  lives--; player.inv = Math.max(player.inv, 1); shake = 9; Sound.play('hurt'); Sound.play('thud');
+  burst(player.x + player.w / 2, player.y + player.h, '#ff5d5d', 14, 160);
+  popup(player.x, player.y - 10, 'Высоко! −каска', '#ff8a7a');
+  if (lives <= 0) endGame(false);
+}
+
 function hurtPlayer(fromX) {
   if (player.inv > 0 || mode !== 'play') return;
   lives--; player.inv = 1.4; shake = 8; Sound.play('hurt');
@@ -392,8 +449,29 @@ function update(dt) {
   if (banner) { banner.t -= dt; if (banner.t <= 0) banner = null; }
   const P = player;
 
-  // бег
+  // лестницы: ↑ (или кнопка прыжка на телефоне) — лезть вверх, ↓ — вниз, пробел — спрыгнуть
+  const upEdge = input.up && !upWas; upWas = input.up;
+  const onLad = l => P.x + P.w > l.x + 3 && P.x < l.x + l.w - 3 && P.y + P.h > l.top - 2 && P.y + P.h <= l.bottom + 2;
+  if (!P.climb) {
+    const l = ladders.find(onLad);
+    if (l && ((input.up && (P.onGround || upEdge) && P.y + P.h > l.top + 2) || (input.down && P.onGround && P.y + P.h < l.bottom - 4))) {
+      P.climb = l; jumpBuf = 0; P.vx = 0; P.vy = 0; P.x = l.x + l.w / 2 - P.w / 2;
+    }
+  } else if (!onLad(P.climb)) P.climb = null;
   const dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  if (P.climb) {
+    const l = P.climb;
+    P.vy = input.up ? -CLIMB : input.down ? CLIMB : 0;
+    P.y = clamp(P.y + P.vy * dt, l.top - P.h, l.bottom - P.h);
+    if (dir) { P.face = dir; moveX(P, dir * 90 * dt); } // шаг в сторону — сойти с лестницы
+    P.anim += Math.abs(P.vy) * dt * 0.05;
+    P.onGround = P.y + P.h >= l.bottom - 1 || P.y + P.h <= l.top + 1; P.coyote = COYOTE; P.peakY = P.y;
+    if (jumpBuf > 0 && !input.up) { P.climb = null; P.vy = -JUMP_V * 0.6; jumpBuf = 0; Sound.play('jump'); } // пробел — спрыгнуть
+    if (P.climb && P.y + P.h >= l.bottom - 1 && input.down) P.climb = null; // спустился
+    if (!onLad(l)) P.climb = null;
+  }
+  if (!P.climb) {
+  // бег
   if (dir) { P.vx = clamp(P.vx + dir * ACCEL * dt, -RUN, RUN); P.face = dir; }
   else { const f = FRICTION * clamp(G.friction, 0.2, 1) * dt; P.vx = Math.abs(P.vx) <= f ? 0 : P.vx - Math.sign(P.vx) * f; }
 
@@ -410,7 +488,12 @@ function update(dt) {
   const wasAir = !P.onGround;
   moveX(P, P.vx * dt);
   moveY(P, P.vy * dt);
-  if (P.onGround && wasAir && P.vy === 0) burst(P.x + P.w / 2, P.y + P.h, theme.dust || '#b9a58a', 5, 70, 300);
+  if (P.onGround && wasAir && P.vy === 0) {
+    burst(P.x + P.w / 2, P.y + P.h, theme.dust || '#b9a58a', 5, 70, 300);
+    if (P.y - P.peakY > FALL_HURT) fallHurt(P.y - P.peakY); // урон от падения с большой высоты
+  }
+  if (P.onGround) P.peakY = P.y; else P.peakY = Math.min(P.peakY, P.y);
+  }
   if (arena && arena.active) P.x = clamp(P.x, arena.x1, arena.x2 - P.w);
   P.x = clamp(P.x, 0, levelEnd);
   P.anim += Math.abs(P.vx) * dt * 0.05;
@@ -445,7 +528,7 @@ function update(dt) {
     lives--; shake = 6; Sound.play('fall');
     if (lives <= 0) { endGame(false); return; }
     const rp = arena && arena.active ? { x: arena.x1 + 60, y: arena.y - 60 } : respawn;
-    Object.assign(P, { x: rp.x, y: rp.y, vx: 0, vy: 0, inv: 1.5 });
+    Object.assign(P, { x: rp.x, y: rp.y, vx: 0, vy: 0, inv: 1.5, climb: null, peakY: rp.y });
   }
 
   updateEnemies(dt);
@@ -459,6 +542,16 @@ function update(dt) {
     if (!k.got && Math.abs(k.x - (P.x + P.w / 2)) < 20 && Math.abs(k.y - (P.y + P.h / 2)) < 30) { k.got = true; Sound.play('pickup'); addScore(50, k.x, k.y - 10); burst(k.x, k.y, '#7ec8ff', 10, 140, 200); }
   }
   pickups = pickups.filter(k => !k.got);
+  for (const k of helmets) { // каски: белая +2 жизни, оранжевая +1; при полном здоровье — очки
+    k.t += dt;
+    if (k.got || Math.abs(k.x - (P.x + P.w / 2)) > 22 || Math.abs(k.y - (P.y + P.h / 2)) > 30) continue;
+    k.got = true; const add = k.kind === 'white' ? 2 : 1, was = lives;
+    lives = Math.min(3, lives + add);
+    if (lives > was) popup(k.x - 20, k.y - 14, (k.kind === 'white' ? 'Белая каска +' : 'Каска +') + (lives - was), '#9cff9c');
+    else addScore(150, k.x, k.y - 10);
+    Sound.play('checkpoint'); burst(k.x, k.y, k.kind === 'white' ? '#ffffff' : '#ff9a3c', 16, 160, 200);
+  }
+  helmets = helmets.filter(k => !k.got);
 
   // чекпоинты
   for (const c of checkpoints) {
@@ -480,6 +573,9 @@ function update(dt) {
   if (arena && arena.active) { lo = arena.x1 - Math.max(0, (W - (arena.x2 - arena.x1)) / 2); hi = Math.max(lo, arena.x2 - W); }
   const target = clamp(P.x - W * 0.35 + P.face * 40, lo, hi);
   camX += (target - camX) * Math.min(1, dt * 6);
+  // по вертикали камера поднимается, когда герой высоко (вышки, стены), и не опускается ниже обычного кадра
+  const ty = Math.min(0, P.y + P.h / 2 - H * 0.52);
+  camY += (ty - camY) * Math.min(1, dt * 5);
 }
 
 function damageEnemy(e, n, source, knock) {
@@ -579,6 +675,24 @@ function drawFinishFlag() {
   for (let i = 0; i < 8; i++) for (let j = 0; j < 2; j++) { ctx.fillStyle = (i + j) % 2 ? '#111' : '#fff'; ctx.fillRect(x - 14 + i * 4, gy + j * 4, 4, 4); } // финишная клетка
 }
 
+function drawLadder(l) { // лестница по умолчанию: стальные тетивы и ступени (тема может нарисовать свою — drawLadder)
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(l.x + 3, l.top, l.w - 2, l.bottom - l.top);
+  ctx.fillStyle = '#c9c2b0'; ctx.fillRect(l.x, l.top - 12, 3, l.bottom - l.top + 12); ctx.fillRect(l.x + l.w - 3, l.top - 12, 3, l.bottom - l.top + 12);
+  ctx.fillStyle = '#e8e2d0'; for (let y = l.top + 6; y < l.bottom; y += 12) ctx.fillRect(l.x + 2, y, l.w - 4, 3);
+  ctx.fillStyle = '#f2c230'; ctx.fillRect(l.x - 1, l.top - 14, 5, 3); ctx.fillRect(l.x + l.w - 4, l.top - 14, 5, 3); // поручни сверху
+}
+
+function drawHelmetPickup(k) { // каска-аптечка с ореолом: белая +2, оранжевая +1
+  const y = k.y + Math.sin(k.t * 3) * 3, white = k.kind === 'white';
+  ctx.save(); ctx.translate(k.x, y);
+  ctx.fillStyle = white ? 'rgba(255,255,255,.22)' : 'rgba(255,150,60,.22)'; ctx.beginPath(); ctx.arc(0, -3, 17 + Math.sin(k.t * 5) * 2, 0, 7); ctx.fill();
+  ctx.fillStyle = white ? '#f7f7f7' : '#ff8a1a'; ctx.beginPath(); ctx.arc(0, 0, 10, Math.PI, 0); ctx.fill(); ctx.fillRect(-13, -1, 26, 3);
+  ctx.fillStyle = white ? '#d0d4d8' : '#c2600e'; ctx.fillRect(-2, -10, 4, 9);
+  ctx.fillStyle = '#e53935'; ctx.fillRect(-4, -6, 8, 2); ctx.fillRect(-1, -9, 2, 8); // крестик: восстанавливает здоровье
+  if (white) text('+2', 0, -16, 9, '#ffffff'); else text('+1', 0, -16, 9, '#ffd0a0');
+  ctx.restore();
+}
+
 function drawBlueprint(k) { // рулон чертежей
   const y = k.y + Math.sin(k.t * 3) * 3;
   ctx.save(); ctx.translate(k.x, y); ctx.rotate(-0.4);
@@ -605,7 +719,7 @@ function drawPlayer() {
   if (P.inv > 0 && Math.floor(P.inv * 14) % 2) return;
   const cx = P.x + P.w / 2, feet = P.y + P.h;
   ctx.save(); ctx.translate(cx, feet); ctx.scale(P.face, 1);
-  const running = P.onGround && Math.abs(P.vx) > 20, sw = running ? Math.sin(P.anim * 2) * 0.7 : (P.onGround ? 0 : 0.5);
+  const running = P.onGround && Math.abs(P.vx) > 20 && !P.climb, sw = P.climb ? Math.sin(P.anim * 3) * 0.5 : running ? Math.sin(P.anim * 2) * 0.7 : (P.onGround ? 0 : 0.5);
   // ноги
   ctx.strokeStyle = '#2b3445'; ctx.lineWidth = 5; ctx.lineCap = 'round';
   for (const s of [sw, -sw]) { ctx.beginPath(); ctx.moveTo(0, -17); ctx.lineTo(Math.sin(s) * 12, -2); ctx.stroke(); }
@@ -620,7 +734,7 @@ function drawPlayer() {
   ctx.fillStyle = '#f7f7f7'; ctx.beginPath(); ctx.arc(1, -45, 7, Math.PI, 0); ctx.fill(); ctx.fillRect(-6, -46, 16, 2);
   if (theme.headlamp) { ctx.fillStyle = '#fff6b0'; ctx.fillRect(6, -48, 3, 3); } // налобный фонарь (шахта)
   // рейка: в покое — на плече, при ударе — дуга вперёд
-  let ang = -1.9 + (running ? Math.sin(P.anim * 2) * 0.05 : 0);
+  let ang = P.climb ? -1.35 : -1.9 + (running ? Math.sin(P.anim * 2) * 0.05 : 0); // на лестнице рейка за спиной
   if (P.attackT > 0) {
     const ph = 1 - P.attackT / 0.26, e = ph < 0.6 ? ph / 0.6 : 1;
     ang = -2.4 + (2.4 + 0.35) * (1 - Math.pow(1 - e, 3));
@@ -785,17 +899,21 @@ function draw() {
   ctx.setTransform(scale, 0, 0, scale, 0, 0); // рисуем в игровых единицах, холст — в пикселях экрана
   ctx.save();
   if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
-  ctx.save(); theme.drawBackground(ctx, api); ctx.restore();
-  ctx.save(); ctx.translate(-Math.round(camX), 0);
+  const bgShift = Math.round(-camY * 0.35); // при подъёме фон чуть опускается (параллакс по вертикали)
+  if (bgShift > 0) { ctx.fillStyle = skyTop; ctx.fillRect(0, 0, W, bgShift + 2); } // открывшуюся полосу заливаем цветом верха неба
+  ctx.save(); ctx.translate(0, bgShift); theme.drawBackground(ctx, api); ctx.restore();
+  ctx.save(); ctx.translate(-Math.round(camX), -Math.round(camY));
   const vis = o => o.x + (o.w || 160) > camX - 80 && o.x < camX + W + 80;
   const T = theme;
   for (const p of pits) if (vis(p)) { ctx.save(); T.drawPit(p, ctx, api); ctx.restore(); }
   for (const p of platforms) if (vis(p)) { ctx.save(); T.drawPlatform(p, ctx, api); ctx.restore(); }
   for (const d of decor) if (vis(d)) { ctx.save(); T.drawDecor(d, ctx, api); ctx.restore(); }
   for (const s of solids) if (vis(s)) { ctx.save(); (s.kind === 'obstacle' ? T.drawObstacle : T.drawGround)(s, ctx, api); ctx.restore(); }
+  for (const l of ladders) if (vis(l)) { ctx.save(); (T.drawLadder || drawLadder)(l, ctx, api); ctx.restore(); }
   for (const c of checkpoints) if (vis(c)) drawCheckpoint(c);
   if (finishX !== Infinity && finishX > camX - 300 && finishX < camX + W + 300) { ctx.save(); if (T.drawFinish) T.drawFinish(finishX, finishY, ctx, api); ctx.restore(); drawFinishFlag(); }
   for (const k of pickups) if (vis(k)) drawBlueprint(k);
+  for (const k of helmets) if (vis(k)) drawHelmetPickup(k);
   for (const e of enemies) if (vis(e)) drawEnemy(e);
   for (const p of projectiles) drawProjectile(p);
   if (mode !== 'over') drawPlayer();
@@ -865,13 +983,14 @@ function pressAttack() { if (mode === 'play') attackQueued = true; }
 
 const KEYMAP = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowDown: 'down', KeyS: 'down' };
 const JUMP_KEYS = ['Space', 'ArrowUp', 'KeyW', 'KeyK'];
+const UP_KEYS = ['ArrowUp', 'KeyW']; // на лестнице ↑/W — лезть вверх, пробел — спрыгнуть
 addEventListener('keydown', e => {
   if (e.target === nameInput) return;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (mode === 'menu' && KEYMAP[e.code] && !e.repeat) { if (KEYMAP[e.code] !== 'down') selectLevel(KEYMAP[e.code] === 'left' ? -1 : 1); return; }
   if (KEYMAP[e.code]) { kb[KEYMAP[e.code]] = true; syncInput(); return; }
   if (e.repeat) return;
-  if (JUMP_KEYS.includes(e.code)) { kb.jump = true; syncInput(); pressJump(); }
+  if (JUMP_KEYS.includes(e.code)) { kb.jump = true; if (UP_KEYS.includes(e.code)) kb.up = true; syncInput(); pressJump(); }
   else if (e.code === 'KeyJ' || e.code === 'KeyX' || e.code === 'KeyF') pressAttack();
   else if (e.code === 'KeyM') Sound.toggleMute();
   else if (e.code === 'KeyP' || e.code === 'Escape') { if (mode === 'play' || mode === 'pause') startOrToggle(); }
@@ -881,6 +1000,7 @@ addEventListener('keyup', e => {
   if (e.target === nameInput) return;
   if (KEYMAP[e.code]) kb[KEYMAP[e.code]] = false;
   if (JUMP_KEYS.includes(e.code)) kb.jump = false;
+  if (UP_KEYS.includes(e.code)) kb.up = false;
   syncInput();
 });
 
@@ -907,6 +1027,7 @@ function syncInput() {
   input.right = kb.right || held.has('right');
   input.down = kb.down || held.has('down');
   input.jumpHeld = kb.jump || held.has('jump');
+  input.up = kb.up || held.has('jump'); // на телефоне кнопка прыжка у лестницы — лезть вверх
 }
 
 canvas.addEventListener('pointerdown', e => {

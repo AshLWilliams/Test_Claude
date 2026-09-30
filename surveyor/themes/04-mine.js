@@ -79,7 +79,7 @@
       }
       ctx.fillStyle = '#2a1c11'; ctx.fillRect(x - 6, top + 14, 7, 290 - top); ctx.fillRect(x + w - 1, top + 14, 7, 290 - top); ctx.fillRect(x - 10, top + 8, w + 20, 8);
       ctx.fillStyle = '#ffcf6b'; circle(ctx, c, 188, 1.6);
-      addLight(c, 188, 40, 0.6 * flick(api, i + 3));
+      addLight(c, 188 + Math.round(-api.camY * 0.35), 40, 0.6 * flick(api, i + 3)); // фон сдвинут движком на −camY·0.35
     }
 
     // кровля: порода и затяжки над верхняками
@@ -120,7 +120,7 @@
         ctx.fillStyle = '#23252a'; ctx.beginPath(); ctx.arc(lx, ly - 2, 6, Math.PI, 0); ctx.fill();
         ctx.fillStyle = a === 1 ? '#fff1c2' : a > 0 ? '#9a8a60' : '#3a3630'; circle(ctx, lx, ly + 1, 3.5);
         ctx.strokeStyle = '#3a3c40'; ctx.beginPath(); ctx.moveTo(lx - 4, ly - 1); ctx.lineTo(lx - 2, ly + 5); ctx.moveTo(lx + 4, ly - 1); ctx.lineTo(lx + 2, ly + 5); ctx.moveTo(lx - 4, ly + 2); ctx.lineTo(lx + 4, ly + 2); ctx.stroke();
-        if (live) addLight(lx, ly + 3, 92, a);
+        if (live) addLight(lx, ly + 3 + Math.round(-api.camY * 0.35), 92, a);
       }
       if (v < 0.35) { // капель с верхняка
         const ph = (now * (0.55 + v) + v * 5) % 1;
@@ -247,7 +247,7 @@
       ctx.fillStyle = '#23252a'; ctx.beginPath(); ctx.arc(x + 11, y - 45, 6.5, Math.PI, 0); ctx.fill();
       ctx.fillStyle = a === 1 ? '#fff4c8' : '#9a8a60'; circle(ctx, x + 11, y - 42, 4);
       ctx.strokeStyle = '#3a3c40'; ctx.beginPath(); ctx.moveTo(x + 7, y - 44); ctx.lineTo(x + 9, y - 37); ctx.moveTo(x + 15, y - 44); ctx.lineTo(x + 13, y - 37); ctx.stroke();
-      addLight(x + 11 - Math.round(api.camX), y - 40, 118, a);
+      addLight(x + 11 - Math.round(api.camX), y - 40 - Math.round(api.camY), 118, a);
     } else if (d.kind === 'helmet') { // каска на гвозде, вбитом в стойку
       ctx.fillStyle = '#3f2a17'; ctx.fillRect(x - 4, y - 50, 8, 50); ctx.fillStyle = '#654529'; ctx.fillRect(x - 4, y - 50, 2, 50);
       ctx.fillStyle = '#a0a6ad'; ctx.fillRect(x + 3, y - 38, 5, 1.5);
@@ -305,7 +305,7 @@
     const on = Math.sin(now * 5) > 0;                                                                       // сигнальный фонарь стволового
     ctx.fillStyle = on ? '#6cff8a' : '#1d6b35'; circle(ctx, x + cw + 14, gy - 86, 4);
     const sc = x + cw / 2 - Math.round(api.camX);
-    addLight(sc, gy - 64, 210, 1, true); addLight(sc, 70, 150, 0.8, true);
+    const cy = Math.round(api.camY); addLight(sc, gy - 64 - cy, 210, 1, true); addLight(sc, 70 - cy, 150, 0.8, true);
   }
 
   // ---------- враги ----------
@@ -562,7 +562,7 @@
     lx.globalAlpha = a; lx.fillRect(-1, -1, 2, 2);
   }
   function drawOverlay(ctx, api) {
-    const { W, H, player: P, now, hash } = api, cx = Math.round(api.camX);
+    const { W, H, player: P, now, hash } = api, cx = Math.round(api.camX), cy = Math.round(api.camY); // свет считается в экранных координатах
     const w = Math.ceil((W + LM * 2) / LS), h = Math.ceil((H + LM * 2) / LS);
     if (!lm) lm = document.createElement('canvas');
     if (lm.width !== w || lm.height !== h || !lx) { lm.width = w; lm.height = h; lx = lm.getContext('2d'); lg = null; }
@@ -574,14 +574,14 @@
     lx.setTransform(1, 0, 0, 1, 0, 0); lx.globalCompositeOperation = 'source-over'; lx.globalAlpha = 1;
     lx.clearRect(0, 0, w, h); lx.fillStyle = 'rgba(3,4,8,.94)'; lx.fillRect(0, 0, w, h);
     lx.globalCompositeOperation = 'destination-out'; lx.fillStyle = lg;
-    const hx = P.x + P.w / 2 - cx, hy = P.y - 2, f = P.face || 1;
+    const hx = P.x + P.w / 2 - cx, hy = P.y - 2 - cy, f = P.face || 1;
     spot(hx, hy, 250, 250, 1, 0);                              // фонарь на каске: пятно вокруг героя
     spot(hx + f * 150, hy + 30, 240, 64, 0.95, f * 0.12);      // и узкий луч вперёд, чуть вниз
     for (const L of st.lights) spot(L.x, L.y, L.r, L.r, L.a, 0);
     for (const e of api.enemies) { // враги подсвечены своими огоньками — силуэт читается и во тьме
       if (e.dead || e.x + e.w < cx - 60 || e.x > cx + W + 60) continue;
       const r = e.def.glowR || 44, hot = e.st === 'rattle' || e.st === 'roll' || e.st === 'scrape' || e.st === 'rush';
-      spot(e.x + e.w / 2 - cx, e.y + e.h / 2, r, r, hot ? 0.92 : 0.7, 0); // перед атакой — ярче
+      spot(e.x + e.w / 2 - cx, e.y + e.h / 2 - cy, r, r, hot ? 0.92 : 0.7, 0); // перед атакой — ярче
     }
     lx.globalCompositeOperation = 'source-over'; lx.fillStyle = tg; // тёплая дымка в свете ламп и фонаря
     for (const L of st.lights) if (!L.cool) spot(L.x, L.y, L.r * 0.8, L.r * 0.8, L.a, 0);
@@ -591,7 +591,7 @@
     ctx.imageSmoothingEnabled = true;
 
     // то, что должно читаться в темноте: отражатели у шурфов, обвалы, глыбы, глаза врагов
-    ctx.save(); ctx.translate(-cx, 0);
+    ctx.save(); ctx.translate(-cx, -cy);
     for (const p of api.pits) {
       if (p.x + p.w < cx - 60 || p.x > cx + W + 60) continue;
       for (let i = 0; i < 5; i += 2) { ctx.fillStyle = 'rgba(242,194,48,.75)'; ctx.fillRect(p.x - 25 + i * 4.4, p.y - 20, 4.4, 4); }
