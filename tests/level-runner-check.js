@@ -99,7 +99,7 @@ function harness(files) {
             const gy = solids[0].y;
             Object.assign(player, { x: 100, y: gy - 40, vx: 0, vy: 0, inv: 999 });
             const air = (THEMES[0].enemyTable || []).some(o => o.type === type && o.where === 'air');
-            const e = spawnEnemy(type, 330, air ? gy - 120 : gy, { minX: 180, maxX: 450, air, groundY: gy });
+            const e = spawnEnemy(type, 330, air ? gy - (G.indoor ? 95 : 120) : gy, { minX: 180, maxX: 450, air, groundY: gy });
             // 5 секунд жизни
             let bad = null;
             for (let i = 0; i < 300; i++) {
@@ -127,7 +127,7 @@ function harness(files) {
             // урон при касании
             if (def.contact !== false) {
               reset(0); mode = 'play'; enemies = []; projectiles = []; banner = null;
-              const e2 = spawnEnemy(type, 330, air ? gy - 120 : gy, { minX: 180, maxX: 450, air, groundY: gy });
+              const e2 = spawnEnemy(type, 330, air ? gy - (G.indoor ? 95 : 120) : gy, { minX: 180, maxX: 450, air, groundY: gy });
               e2.awake = true;
               // враг может двигаться — несколько кадров ставим героя прямо в него (не сверху)
               const before = lives;
@@ -181,7 +181,7 @@ function harness(files) {
         camX = 0;
         types.forEach((t, i) => {
           const air = (THEMES[0].enemyTable || []).some(o => o.type === t && o.where === 'air');
-          const e = spawnEnemy(t, 130 + i * (W - 160) / Math.max(1, types.length), air ? gy - 120 : gy, { minX: 0, maxX: 2000, air, groundY: gy });
+          const e = spawnEnemy(t, 130 + i * (W - 160) / Math.max(1, types.length), air ? gy - (G.indoor ? 95 : 120) : gy, { minX: 0, maxX: 2000, air, groundY: gy });
           e.awake = true; e.dir = -1;
         });
       });

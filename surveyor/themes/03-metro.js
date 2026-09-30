@@ -904,7 +904,7 @@
     index: 3, id: 'metro', hero: { weapon: 'prism' },
     title: 'Метро', subtitle: 'Проходка тоннеля и строящаяся станция',
     accent: '#e53935', dust: '#9a948a', headlamp: true,
-    gen: { obstacleW: 46, hazardChance: 0.3 },
+    gen: { obstacleW: 46, hazardChance: 0.3, underground: 'metro', weights: { under: 12 } }, // часть провалов ведёт в нижний тоннель
     decor: ['signal', 'exit', 'toolbox', 'barrel', 'phone', 'coil', 'signal', 'toolbox'],
     enemies,
     init: fixTinySteps,
