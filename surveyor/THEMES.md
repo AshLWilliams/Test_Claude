@@ -21,6 +21,7 @@ registerTheme({
   accent: '#7ec8ff',                        // цвет акцентов HUD и заголовков
   dust: '#9a9a9a',                          // цвет пыли от прыжков/приземлений
   headlamp: false,                          // true — на каске героя светится фонарь (для тёмных участков)
+  snowy: false,                             // true — снег налипает на героя, шаги хрустят (снежные участки)
   gen: { ... },                             // параметры генератора (см. ниже), можно {}
   decor: ['lamp', 'sign'],                  // виды декора (повтор = чаще); рисует drawDecor
   enemies: { ... },                         // враги (см. ниже)
@@ -68,7 +69,8 @@ enemies: {
     heavy: false,                        // тяжёлый: слабее отбрасывается, сильнее трясёт экран при гибели
     stompable: true,                     // можно ли победить прыжком сверху
     invulnerable: false,                 // неуязвим (для опасностей вроде лужи битума)
-    contact: true,                       // наносит ли урон касанием
+    contact: true,                       // проверять ли касание с героем (false — ни урона, ни прыжка сверху)
+    touchHurts: true,                    // false — касание не ранит, но прыжок сверху засчитывается (враг бьёт сам, как халтурщик с GPS)
     knockback: true,                     // отбрасывается ли ударом рейки
     hitColor, deathColor,                // цвета искр при попадании/гибели
     init(e, api) {},                     // после появления: e.minX/maxX, e.groundY, e.air уже заданы
@@ -108,7 +110,7 @@ enemyTable: [
 - `text(str, x, y, size, color, align)`, `drawStaff(len)` — рисует нивелирную рейку
 - `patrol(e, speed, dt)` — ходьба с разворотом у границ отрезка; `dx(e)` — расстояние до героя по X (>0 — справа); `near(e, rx=240, ry=120)`
 - `spawnEnemy(type, x, groundY, props)` — призвать врага своей темы (x — центр, groundY — на чём стоит)
-- `shoot({x, y, w, h, vx, vy, gravity=900, life=6, spin, color, draw(p,ctx,api), reflectable, destructible=true, hitsSolids=true, hurts=true, pts=10, source, onLand(p,api), update(p,dt,api)})`
+- `shoot({x, y, w, h, vx, vy, gravity=900, life=6, spin, color, draw(p,ctx,api), reflectable, destructible=true, hitsSolids=true, hurts=true, pts=10, source, onLand(p,api), update(p,dt,api), silent})` — на экране звучит свист (silent: true — без него)
   — снаряд (x, y — центр). Рейка разбивает `destructible` снаряды (+очки) и **отбивает** `reflectable` во врага `source`
   (отбитый снаряд наносит урон врагам). `draw` рисует вокруг (0,0), поворот `rot` учтён.
 - `hurtPlayer(fromX)` — ранить героя (есть неуязвимость после урона), `damageEnemy(e, n, source)`
@@ -148,3 +150,10 @@ NODE_PATH=$(npm root -g) node tests/level-runner-check.js --out /tmp/lr-NN --see
   или вычитайте `api.camX` и `api.camY`.
 - **Урон от падения:** падение больше 260 по высоте отнимает каску (спрыгнуть со стены безопасно, с верха вышки — больно).
 - **Каски** (белая +2 жизни, оранжевая +1) расставляет и рисует движок — на вершинах вышек и изредка на стенах.
+
+## Что движок добавляет сам (темы ничего не делают)
+- **Бочки и ящики** (`solids` с `kind: 'breakable'`) на ровных отрезках и уступах — ломаются рейкой, внутри бывает чертёж или каска.
+- **Тайник** в стене: `ghosts` — стена рисуется целиком через `drawGround`, а сталкиваются с ней по кускам (`hidden: true`, `kind: 'hidden'`);
+  вход закрыт кладкой с трещинами (`sort: 'crack'`). Внутри — золотые чертежи. Перебирая `api.solids`, учитывайте эти виды.
+- **Каски**: наверху вышек и стен, изредка на земле; в бою с боссом вылетают из него (`bossDrop`) и живут 7,5 с.
+- **Геодезист-халтурщик с GPS** (`ENGINE_ENEMIES.gps`, варианты — `GPS_VARIANTS[индекс участка]`) — один на участок.
