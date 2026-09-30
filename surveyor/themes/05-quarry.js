@@ -955,7 +955,7 @@
   }
 
   registerTheme({
-    index: 5, id: 'quarry',
+    index: 5, id: 'quarry', hero: { weapon: 'slam' },
     title: 'Карьер', subtitle: 'Открытая добыча: уступы, БелАЗы и взрывные работы',
     accent: '#ff9f43', dust: '#d8b98f',
     gen: { length: 3900, weights: { pit: 22, platforms: 18, step: 22, obstacle: 14, flat: 24 }, obstacleH: 32, obstacleW: 48 },

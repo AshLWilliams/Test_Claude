@@ -901,7 +901,7 @@
   };
 
   registerTheme({
-    index: 3, id: 'metro',
+    index: 3, id: 'metro', hero: { weapon: 'prism' },
     title: 'Метро', subtitle: 'Проходка тоннеля и строящаяся станция',
     accent: '#e53935', dust: '#9a948a', headlamp: true,
     gen: { obstacleW: 46, hazardChance: 0.3 },
