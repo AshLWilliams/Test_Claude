@@ -507,7 +507,8 @@ function generateLevel(s) {
     if (!fs.length) fs = spots.filter(o => o !== gpsSpot && o.p > 0.05 && o.w > 150);
     if (!fs.length && gpsSpot) fs = [gpsSpot];
     if (!fs.length) fs = solids.filter(q => q.kind === 'ground' && !q.slab && !q.wall && q.w > 180 && q.x > LENGTH * 0.15 && q.x < LENGTH * 0.85).map(q => ({ x0: q.x, w: q.w, y: q.y })); // любой широкий кусок земли
-    const freeAt = (x, y) => !solids.some(q => q.kind !== 'ground' && x + 16 > q.x && x - 16 < q.x + q.w && y - 44 < q.y + q.h && y > q.y); // не внутри ящика
+    const freeAt = (x, y) => !solids.some(q => q.kind !== 'ground' && x + 16 > q.x && x - 16 < q.x + q.w && y - 44 < q.y + q.h && y > q.y) // не внутри ящика
+      && !enemies.some(h => h.hazard && x + 16 > h.x && x - 16 < h.x + h.w); // и не в луже битума
     for (let k = ri(1, 2); k > 0 && fs.length; k--) {
       const o = fs.splice(Math.floor(R() * fs.length), 1)[0];
       for (const f of [0.5, 0.85, 0.7, 0.3, 0.15]) { const fx = o.x0 + o.w * f; if (freeAt(fx, o.y) && !(o === gpsSpot && Math.abs(f - 0.6) < 0.2)) { spawnEnemy('angryForeman', fx, o.y, { groundY: o.y }); break; } }
@@ -573,7 +574,7 @@ function walkerStep(e, dt, want, speed, jumpPits = true) {
   const feet = e.y + e.h;
   let vx = want * speed * (e.onG ? 1 : 1.35);
   if (want && e.onG) {
-    const fx = want > 0 ? e.x + e.w + 6 : e.x - 6, blk = solidAt(fx, feet - 4);
+    const look = Math.max(6, Math.abs(want * speed) * dt + 2), fx = want > 0 ? e.x + e.w + look : e.x - look, blk = solidAt(fx, feet - 4); // смотрим вперёд на целый кадр — даже при подтормаживании
     if (blk) { // уступ — запрыгнуть, стена — стоп
       if (feet - blk.y <= 70 && !solidAt(fx, blk.y - 24)) { e.vy = -640; e.onG = false; } else vx = 0;
     } else {
@@ -1735,13 +1736,21 @@ function drawKids(c) { // хулиганят: рисуют граффити, к�
   ctx.font = 'bold 12px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.lineWidth = 3; ctx.strokeStyle = '#1a1a1a'; ctx.strokeText(tag, wx + 4, c.y - 14);
   ctx.fillStyle = ['#ff3d7f', '#00e5ff', '#c6ff00', '#ffb02e'][c.seed % 4]; ctx.fillText(tag, wx + 4, c.y - 14); ctx.restore();
   const sx = c.x + 78; ctx.strokeStyle = '#7a8aa0'; ctx.lineWidth = 2; ctx.strokeRect(sx, c.y - 58, 26, 58); ctx.beginPath(); ctx.moveTo(sx, c.y - 29); ctx.lineTo(sx + 26, c.y - 29); ctx.stroke();
-  const acts = ['spray', 'smoke', 'climb', 'throw', 'smoke'];
+  const acts = ['spray', 'smoke', 'climb', 'throw', 'smoke'], kids = [];
   for (let i = 0; i < Math.min(c.n, 5); i++) {
     const act = acts[(i + c.seed) % acts.length], h = hash(c.seed + i * 13);
-    let x = c.x + 12 + i * 22, y = c.y, dir = 1;
+    let x = c.x + [10, 30, 122, 142, 162][i], y = c.y, dir = 1; // стоят по краям: у стенки — художник, у лесов — верхолаз
     if (act === 'spray') x = wx + 60;
     if (act === 'climb') { x = sx + 13; y = c.y - (8 + Math.abs(Math.sin(now * 0.8 + h * 6)) * 34) * clamp(1 - run / 12, 0, 1); } // убегая — спрыгивает с лесов
-    if (run > 0) { const k = Math.floor(i / 2); x += run * (i % 2 ? 1 : -1); dir = i % 2 ? 1 : -1; if (c.x0 != null) x = clamp(x, c.x0 + 8 + k * 14, c.x1 - 8 - k * 14); } // не дальше своего куска земли и не друг в друга
+    if (run > 0) { x += run * (i % 2 ? 1 : -1); dir = i % 2 ? 1 : -1; }
+    kids.push({ i, act, h, x, y, dir });
+  }
+  if (run > 0) for (const d of [-1, 1]) { // убегающие — не дальше своего куска земли и не друг в друга
+    const g = kids.filter(k => k.dir === d).sort((a, b) => d < 0 ? a.x - b.x : b.x - a.x);
+    const edge = d < 0 ? (c.x0 != null ? c.x0 + 8 : -Infinity) : (c.x1 != null ? c.x1 - 8 : Infinity);
+    g.forEach((k, j) => { k.x = d < 0 ? Math.max(k.x, edge) : Math.min(k.x, edge); if (j) k.x = d < 0 ? Math.max(k.x, g[j - 1].x + 14) : Math.min(k.x, g[j - 1].x - 14); });
+  }
+  for (const { i, act, h, x, y, dir } of kids) {
     ctx.save(); ctx.translate(x, y); ctx.scale(0.62 * (act === 'spray' && !run ? -1 : dir), 0.62);
     const hood = ['#e53935', '#3949ab', '#43a047', '#8e24aa', '#fb8c00'][(c.seed + i) % 5], sw = run ? Math.sin(now * 18 + i) * 0.8 : 0;
     ctx.strokeStyle = '#263238'; ctx.lineWidth = 5; ctx.lineCap = 'round';
