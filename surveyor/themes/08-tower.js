@@ -252,7 +252,8 @@
   function drawGround(s, ctx, api) { // одинаковые детали собираем в один путь — меньше вызовов отрисовки
     if (s.wall) { drawCore(s, ctx, api); return; }
     const { H, hash, now } = api, x0 = s.x, x1 = s.x + s.w, y = s.y, top = y + SLAB;
-    const nl = api.groundBelow(x0 - 3, y - 4), nr = api.groundBelow(x1 + 3, y - 4); // соседи на своём этаже (этажи стоят друг над другом)
+    const side = xx => api.groundBelow(xx, y - 4) ?? (api.solids.some(q => xx >= q.x && xx <= q.x + q.w && q.y < y && q.y + q.h > y) ? y : null); // сосед на своём этаже; стена ядра — не обрыв
+    const nl = side(x0 - 3), nr = side(x1 + 3);
     const openL = x0 > 0 && nl === null, openR = nr === null;
     const cols = [], floors = [];
     for (let cx = Math.ceil((x0 + 12) / COL) * COL; cx < x1 - 12; cx += COL) cols.push(cx);
@@ -580,12 +581,15 @@
           e.y += (e.baseY + Math.sin(e.t * 2.3) * 7 - e.y) * Math.min(1, dt * 3);
           if (Math.abs(e.vx) > 8) e.dir = Math.sign(e.vx);
           e.cd -= dt;
-          if (e.cd <= 0 && Math.abs(dx) < 170 && Math.abs(dx) > 24 && P.y > e.y + 10) { e.state = 'aim'; e.aim = 0.85; }
+          const px = P.x + P.w / 2, ex = e.x + e.w / 2, feet = P.y + P.h;
+          const slabBetween = api.solids.some(s => s.slab && s.x < Math.max(px, ex) + 12 && s.x + s.w > Math.min(px, ex) - 12 && s.y > e.y + e.h - 2 && s.y < feet - 2); // герой этажом ниже — не достать
+          if (e.cd <= 0 && Math.abs(dx) < 170 && Math.abs(dx) > 24 && P.y > e.y + 10 && !slabBetween) { e.state = 'aim'; e.aim = 0.85; }
         } else if (e.state === 'aim') { // замах: взмывает, топорщится, «курлык!» — 0,85 с на реакцию
           e.aim -= dt; e.y -= 14 * dt; e.dir = Math.sign(dx) || e.dir;
           if (e.aim <= 0) {
             const sx = e.x + e.w / 2, sy = e.y + e.h / 2, tx = api.clamp(P.x + P.w / 2, sx - 150, sx + 150);
-            const surf = api.groundBelow(tx, P.y + P.h - 8), ty = Math.max(sy + 10, Math.min(P.y + 12, (surf === null ? P.y + P.h : surf) - 14));
+            const surf = api.groundBelow(tx, P.y + P.h - 8), under = api.groundBelow(tx, sy); // и не ниже первой опоры под самим голубем
+            const ty = Math.max(sy + 10, Math.min(P.y + 12, (surf === null ? P.y + P.h : surf) - 14, (under === null ? Infinity : under) - 14));
             const ex = api.clamp(tx + (tx - sx) * 0.7, e.homeX + e.w / 2 - 240, e.homeX + e.w / 2 + 240), ey = sy - 6;
             Object.assign(e, { state: 'dive', s: 0, sx, sy, ex, ey, qx: 2 * tx - 0.5 * (sx + ex), qy: 2 * ty - 0.5 * (sy + ey), dur: api.clamp(Math.hypot(tx - sx, ty - sy) / 220, 0.55, 1) });
           }
