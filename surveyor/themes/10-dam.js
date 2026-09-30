@@ -878,7 +878,7 @@
   }
 
   registerTheme({
-    index: 10, id: 'dam',
+    index: 10, id: 'dam', hero: { weapon: 'staff', backpack: true },
     title: 'ГЭС: сдача объекта', subtitle: 'Плотина, машинный зал и приёмочная комиссия',
     accent: '#ff5d5d', dust: '#9aa6b8', headlamp: true,
     gen: { length: 2800, groundRange: [255, 300], pitW: [72, 108], weights: { pit: 26, platforms: 20, step: 10, obstacle: 16, flat: 28 }, enemyDensity: 1.15, boss: { type: 'inspector', arenaW: 860 } },

@@ -429,7 +429,7 @@
   };
 
   registerTheme({
-    index: 1, id: 'city',
+    index: 1, id: 'city', hero: { weapon: 'staff' },
     title: 'Городская стройка', subtitle: 'Жилой квартал на закате: краны, леса, котлованы',
     accent: '#ffb02e', dust: '#b9a58a',
     gen: {},

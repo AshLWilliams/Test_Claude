@@ -945,7 +945,7 @@
   }
 
   registerTheme({
-    index: 8, id: 'tower',
+    index: 8, id: 'tower', hero: { weapon: 'invar' },
     title: 'Небоскрёб', subtitle: 'Монтаж каркаса на высоте 200 метров',
     accent: '#b388ff', dust: '#cbbfd0',
     gen: { length: 3900, groundRange: [220, 292], weights: { pit: 26, platforms: 22, step: 12, obstacle: 14, flat: 26 }, obstacleH: 28, obstacleW: 48 },

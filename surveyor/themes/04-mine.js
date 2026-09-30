@@ -887,7 +887,7 @@
   }
 
   registerTheme({
-    index: 4, id: 'mine',
+    index: 4, id: 'mine', hero: { weapon: 'prism', dirty: true },
     title: 'Угольная шахта', subtitle: 'Глубоко под землёй — светит только фонарь на каске',
     accent: '#ffd54f', dust: '#7a6e62', headlamp: true,
     gen: { groundRange: [232, 300], obstacleW: 50, obstacleH: 30, weights: { pit: 26, platforms: 18, step: 16, obstacle: 14, flat: 26 } },

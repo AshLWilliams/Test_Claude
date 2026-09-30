@@ -885,7 +885,7 @@
   };
 
   registerTheme({
-    index: 2, id: 'pit',
+    index: 2, id: 'pit', hero: { weapon: 'gnss' },
     title: 'Котлован', subtitle: 'Подземная часть: фундамент и паркинг ниже уровня земли',
     accent: '#e0a060', dust: '#a8683c',
     gen: { groundRange: [250, 305], obstacleW: 50, decorCount: [0, 2] },

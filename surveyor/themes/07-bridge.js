@@ -938,7 +938,7 @@
   }
 
   registerTheme({
-    index: 7, id: 'bridge',
+    index: 7, id: 'bridge', hero: { weapon: 'prismMark' },
     title: 'Мост через реку', subtitle: 'Монтаж пролётов над водой',
     accent: '#26c6da', dust: '#cfc6b4',
     gen: { length: 3900, weights: { pit: 28, platforms: 20, step: 10, obstacle: 14, flat: 28 }, groundRange: [232, 288], obstacleH: 30, obstacleW: 46 },

@@ -505,10 +505,10 @@ function loadLevel(i) {
   seed = (Math.random() * 2 ** 32) >>> 0;
   projectiles = []; particles = []; popups = [];
   generateLevel(seed);
-  player = { x: 80, y: checkpoints[0].y - 40, w: 18, h: 40, vx: 0, vy: 0, face: 1, onGround: false, coyote: 0, inv: 0, attackT: 0, attackCd: 0, hitSet: null, anim: 0, drop: 0, climb: null, peakY: 0, snow: 0.3, stepK: 0, rungK: 0 };
+  player = { x: 80, y: checkpoints[0].y - 40, w: 18, h: 40, vx: 0, vy: 0, face: 1, onGround: false, coyote: 0, inv: 0, attackT: 0, attackCd: 0, hitSet: null, anim: 0, drop: 0, climb: null, peakY: 0, snow: 0.3, stepK: 0, rungK: 0, domeSnow: 1 };
   respawn = { x: 80, y: checkpoints[0].y - 60 };
   camX = 0; camY = 0; levelTime = 0; lives = 3; shake = 0; hintsShown = new Set();
-  banner = { top: `Участок ${i + 1} из ${THEMES.length}`, title: theme.title, sub: theme.subtitle || '', t: 3.2 };
+  banner = { top: `Участок ${i + 1} из ${THEMES.length}`, title: theme.title, sub: (theme.subtitle || '') + ' · в руках: ' + WEAPONS[weaponOf()].name.toLowerCase(), t: 3.2 };
   if (theme.init) theme.init(api);
   skyTop = sampleSkyTop();
 }
@@ -638,7 +638,8 @@ function hurtPlayer(fromX) {
 
 // ---------- игровой цикл ----------
 function update(dt) {
-  for (const p of particles) { p.vy += p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; if (p.chunk) { p.rot += p.vr * dt; const g = p.vy > 0 ? groundAt(p.x) : null; if (g !== null && p.y > g - 2 && p.y < g + 14) { p.y = g - 2; p.vy *= -0.3; p.vx *= 0.6; p.vr *= 0.5; } } } // обломки падают на землю
+  for (const p of particles) { if (p.paper) { p.vx = p.vx * (1 - dt * 1.5) + Math.sin(p.life * 5 + p.ph) * 120 * dt; p.vy = Math.min(p.vy, 90); } // бумага планирует
+    p.vy += p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; if (p.chunk) { p.rot += p.vr * dt; const g = p.vy > 0 ? groundAt(p.x) : null; if (g !== null && p.y > g - 2 && p.y < g + 14) { p.y = g - 2; p.vy *= -0.3; p.vx *= 0.6; p.vr *= 0.5; } } } // обломки падают на землю
   if (solids) for (const s of solids) if (s.hit > 0) s.hit -= dt;
   particles = particles.filter(p => p.life > 0);
   for (const p of popups) { p.y -= 40 * dt; p.life -= dt; }
@@ -681,7 +682,7 @@ function update(dt) {
   jumpBuf -= dt; P.drop -= dt;
   if (jumpBuf > 0 && P.coyote > 0) {
     if (input.down && P.onGround && platforms.some(p => Math.abs(P.y + P.h - p.y) < 2 && P.x + P.w > p.x && P.x < p.x + p.w)) { P.drop = 0.25; P.y += 2; }
-    else { P.vy = -JUMP_V; Sound.play('jump'); burst(P.x + P.w / 2, P.y + P.h, theme.dust || '#b9a58a', 6, 80, 300); shakeSnow(0.6); }
+    else { P.vy = -JUMP_V; Sound.play('jump'); burst(P.x + P.w / 2, P.y + P.h, theme.dust || '#b9a58a', 6, 80, 300); shakeSnow(0.6); papers(); }
     jumpBuf = 0; P.coyote = 0;
   }
   if (!input.jumpHeld && P.vy < -250) P.vy = -250; // короткое нажатие — низкий прыжок
@@ -702,22 +703,25 @@ function update(dt) {
   P.anim += Math.abs(P.vx) * dt * 0.05;
   P.inv = Math.max(0, P.inv - dt);
   if (theme.snowy) { // снег налипает на каску и плечи, особенно когда стоишь; прыжок и удар его стряхивают
-    P.snow = Math.min(1, P.snow + dt * (Math.abs(P.vx) < 20 ? 0.12 : 0.05));
+    P.snow = Math.min(1, Math.max(P.snow + dt * (Math.abs(P.vx) < 20 ? 0.12 : 0.05), api.progress * 0.95)); // к концу участка герой весь в снегу
     if (Math.random() < dt * 1.2) particles.push({ x: P.x + P.w / 2 + P.face * 6, y: P.y + 4, vx: P.face * rand(10, 30), vy: -rand(5, 20), life: 0.9, max: 0.9, color: 'rgba(235,245,255,.55)', grav: -30, size: rand(2, 4) }); // пар изо рта
   }
 
+  if (heroOf().domeSnow) P.domeSnow = Math.min(1, P.domeSnow + dt * 0.22); // сугроб на приёмнике постепенно намерзает
+  if (heroOf().dirty && P.onGround && Math.abs(P.vx) > 60 && Math.random() < dt * 4) burst(P.x + P.w / 2, P.y + P.h - 4, '#2a2622', 2, 40, -40); // угольная пыль с одежды
   if (theme.update) theme.update(dt, api);
   if (mode !== 'play') return; // тема могла закончить игру (урон)
 
   // удар рейкой: широкая дуга перед геодезистом
   P.attackCd -= dt;
-  if (attackQueued && P.attackCd <= 0) { P.attackT = 0.26; P.attackCd = 0.36; P.hitSet = new Set(); Sound.play('swing'); shakeSnow(0.3); }
+  if (attackQueued && P.attackCd <= 0) { P.attackT = 0.26; P.attackCd = 0.36; P.hitSet = new Set(); Sound.play(weaponOf() === 'staff' || weaponOf() === 'invar' ? 'swing' : 'swingPole'); shakeSnow(0.3); domeSnowFall(); }
   attackQueued = false;
   if (P.attackT > 0) {
     P.attackT -= dt;
     const phase = 1 - P.attackT / 0.26;
     if (phase > 0.15 && phase < 0.75) {
-      const hb = { x: P.face > 0 ? P.x + P.w / 2 : P.x + P.w / 2 - 78, y: P.y - 22, w: 78, h: P.h + 20 };
+      const reach = WEAPONS[weaponOf()].reach;
+      const hb = { x: P.face > 0 ? P.x + P.w / 2 : P.x + P.w / 2 - reach, y: P.y - 22, w: reach, h: P.h + 20 };
       for (const e of enemies) {
         if (e.dead || P.hitSet.has(e) || e.def.invulnerable) continue;
         if (overlap(hb, e.def.hurtbox ? e.def.hurtbox(e, api) : e)) { P.hitSet.add(e); damageEnemy(e, 1, 'staff', P.face * 220); }
@@ -825,11 +829,27 @@ function bossDrop() {
   Sound.play('bossDrop'); burst(cx, cy, '#ffffff', 12, 180);
   popup(cx, cy - 16, 'Каска!', '#9cff9c');
 }
+function domeSnowFall() { // сугроб с купола приёмника слетает от удара и потом снова намерзает
+  const P = player;
+  if (!heroOf().domeSnow || P.domeSnow < 0.15) return;
+  const hx = P.x + P.w / 2 - P.face * 22, hy = P.y + P.h - 104;
+  debris(hx, hy, ['#ffffff', '#eef6ff', '#d8e8f8'], Math.round(6 + P.domeSnow * 10), 150);
+  burst(hx, hy, '#f4faff', 8, 90, 400);
+  Sound.play('snowFall'); P.domeSnow = 0;
+}
+function papers() { // из рюкзака при прыжке вылетают бумаги и разлетаются в стороны
+  const P = player;
+  if (!heroOf().backpack) return;
+  const bx = P.x + P.w / 2 - P.face * 10, by = P.y + 6, n = 3 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < n; i++) particles.push({ x: bx, y: by, vx: rand(-150, 150) - P.face * 40, vy: -rand(120, 260), life: rand(1.4, 2.2), max: 2.2, color: '#f4f1e6',
+    grav: 260, size: 4, w: 7, h: 9, rot: rand(0, 6), vr: rand(-6, 6), chunk: true, paper: true, ph: rand(0, 6) });
+  Sound.play('paper');
+}
 function shakeSnow(k) { // стряхнуть снег (снежный участок)
   const P = player;
   if (!theme.snowy || P.snow < 0.25) return;
   burst(P.x + P.w / 2, P.y + 6, '#f4faff', Math.round(P.snow * 10), 110, 500);
-  P.snow *= 1 - k;
+  P.snow = Math.max(api.progress * 0.95, P.snow * (1 - k)); // налипший за участок снег не стряхнуть
 }
 
 function damageEnemy(e, n, source, knock) {
@@ -1021,24 +1041,129 @@ function drawStaff(len) { // нивелирная рейка: белая, шаш
   ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1; ctx.strokeRect(-10, -3, len, 6);
 }
 
+// ---------- снаряжение героя: на каждом участке свой геодезический инструмент (theme.hero.weapon) ----------
+// Инструмент рисуется вдоль оси x (от руки наружу); голова инструмента — на конце, «вверх» у неё — наружу по оси.
+const WEAPONS = {
+  staff:     { name: 'Нивелирная рейка', reach: 78 },
+  gnss:      { name: 'GNSS-приёмник на вешке', reach: 80 },
+  prism:     { name: 'Вешка с отражателем', reach: 80 },
+  slam:      { name: 'SLAM-сканер на вешке', reach: 80 },
+  prism360:  { name: 'Вешка с отражателем 360°', reach: 82 },
+  prismMark: { name: 'Большой отражатель с маркой', reach: 88 },
+  invar:     { name: 'Инварная рейка', reach: 86 },
+};
+const heroOf = () => (theme && theme.hero) || {};
+const weaponOf = () => WEAPONS[heroOf().weapon] ? heroOf().weapon : 'staff';
+
+function drawPole(len, color = '#f2c230') { // вешка: секции, резиновая ручка, наконечник и круглый уровень
+  ctx.fillStyle = '#9e9e9e'; ctx.fillRect(-16, -0.8, 7, 1.6);
+  ctx.fillStyle = color; ctx.fillRect(-10, -1.7, len + 10, 3.4);
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(len * 0.45, -1.7, 1.5, 3.4);
+  ctx.fillStyle = '#263238'; ctx.fillRect(-4, -2.2, 12, 4.4);
+  ctx.fillStyle = '#7cc47c'; ctx.beginPath(); ctx.arc(14, -3.5, 2.2, 0, 7); ctx.fill();
+}
+
+function drawWeapon(kind, len) {
+  const now = performance.now() / 1000, h = heroOf();
+  if (kind === 'staff') { drawStaff(len); return; }
+  if (kind === 'invar') { // инварная рейка: алюминиевый профиль, в пазу — штрихкод, ручки и круглый уровень
+    const L = len + 8;
+    ctx.fillStyle = '#b8c2ca'; ctx.fillRect(-12, -4, L, 8);
+    ctx.fillStyle = '#f4f4f0'; ctx.fillRect(-9, -2.6, L - 6, 5.2);
+    ctx.fillStyle = '#111';
+    for (let x = -8, i = 0; x < L - 16; i++) { const w = 1 + Math.floor(hash(i * 13 + 7) * 3); if (i % 2 === 0) ctx.fillRect(x, -2.6, w, 5.2); x += w; }
+    ctx.fillStyle = '#6d7880'; ctx.fillRect(-12, -4, 3, 8); ctx.fillRect(L - 15, -4, 3, 8); ctx.fillRect(18, 3.5, 8, 3); ctx.fillRect(40, 3.5, 8, 3);
+    ctx.fillStyle = '#7cc47c'; ctx.beginPath(); ctx.arc(22, -6, 2.3, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1; ctx.strokeRect(-12, -4, L, 8);
+    return;
+  }
+  const big = kind === 'prismMark';
+  drawPole(big ? len + 6 : len, kind === 'slam' ? '#37474f' : kind === 'gnss' ? '#263238' : '#f2c230');
+  if (kind === 'gnss') { ctx.fillStyle = '#263238'; ctx.fillRect(len * 0.5, 2, 8, 6); ctx.fillStyle = '#7cffb2'; ctx.fillRect(len * 0.5 + 1, 3, 6, 4); } // контроллер на кронштейне
+  ctx.save(); ctx.translate(big ? len + 6 : len, 0); ctx.rotate(Math.PI / 2); // дальше «вверх» = наружу по вешке
+  if (big) ctx.scale(1.4, 1.4);
+  if (kind === 'gnss') { // приёмник: корпус и купол антенны; на снежном участке на куполе растёт сугроб
+    ctx.fillStyle = '#607d8b'; ctx.fillRect(-7, -5, 14, 5);
+    ctx.fillStyle = '#f5f5f5'; ctx.beginPath(); ctx.ellipse(0, -5, 8, 6, 0, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = Math.floor(now * 3) % 2 ? '#39ff6a' : '#1b5e20'; ctx.fillRect(3, -4, 2, 2);
+    if (h.domeSnow && player.domeSnow > 0.05) {
+      const s = player.domeSnow;
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(0, -9, 7 + 3 * s, 2 + 7 * s, 0, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = 'rgba(190,215,240,.8)'; ctx.fillRect(-6 - 3 * s, -9.5, 12 + 6 * s, 1.2);
+      if (s > 0.8) { ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(-1, -9 - 7 * s, 2.5, 0, 7); ctx.fill(); }
+    }
+  } else if (kind === 'prism' || kind === 'prismMark') { // однопризменный отражатель в оранжевой оправе
+    ctx.fillStyle = '#555'; ctx.fillRect(-1.5, -4, 3, 4);
+    ctx.fillStyle = '#ff7a1a'; ctx.beginPath(); ctx.arc(0, -11, 7, 0, 7); ctx.fill();
+    ctx.fillStyle = '#c85a0c'; ctx.fillRect(-9, -12.5, 2, 3); ctx.fillRect(7, -12.5, 2, 3); // оси вилки
+    const g = ctx.createRadialGradient(-1.5, -12.5, 0.5, 0, -11, 5); g.addColorStop(0, '#ffffff'); g.addColorStop(0.35, '#a8e0ff'); g.addColorStop(1, '#2d6c9c');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -11, 4.6, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(0, -15.5); ctx.lineTo(0, -11); ctx.lineTo(-3.9, -8.7); ctx.moveTo(0, -11); ctx.lineTo(3.9, -8.7); ctx.stroke();
+    if (kind === 'prismMark') { // визирная марка: оранжево-белые треугольники над призмой
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(-7, -27, 14, 9);
+      ctx.fillStyle = '#ff6d00'; ctx.beginPath(); ctx.moveTo(-7, -27); ctx.lineTo(0, -22.5); ctx.lineTo(-7, -18); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(7, -27); ctx.lineTo(0, -22.5); ctx.lineTo(7, -18); ctx.fill();
+      ctx.strokeStyle = '#c85a0c'; ctx.lineWidth = 0.8; ctx.strokeRect(-7, -27, 14, 9);
+    }
+  } else if (kind === 'prism360') { // отражатель 360°: кольцо из шести призм между жёлтыми крышками
+    ctx.fillStyle = '#555'; ctx.fillRect(-1.5, -4, 3, 4);
+    ctx.fillStyle = '#f2c230'; ctx.fillRect(-7, -7, 14, 3); ctx.fillRect(-7, -23, 14, 3); ctx.fillRect(-2, -26, 4, 3);
+    for (let i = 0; i < 3; i++) { // видны три грани кольца
+      const x = -7 + i * 4.67, w = 4.67;
+      const g = ctx.createLinearGradient(x, -20, x + w, -7); g.addColorStop(0, '#dff4ff'); g.addColorStop(0.5, i === 1 ? '#7fc4ee' : '#4f93c4'); g.addColorStop(1, '#1f4f78');
+      ctx.fillStyle = g; ctx.fillRect(x, -20, w, 13);
+      ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.moveTo(x + w / 2, -20); ctx.lineTo(x + w / 2, -13.5); ctx.lineTo(x, -7); ctx.moveTo(x + w / 2, -13.5); ctx.lineTo(x + w, -7); ctx.stroke();
+    }
+    ctx.strokeStyle = '#1b2a36'; ctx.lineWidth = 0.8; ctx.strokeRect(-7, -20, 14, 13);
+  } else if (kind === 'slam') { // SLAM-сканер: корпус с ручкой, наверху — наклонённый вращающийся лидар
+    ctx.fillStyle = '#263238'; ctx.fillRect(-2, -5, 4, 5);
+    ctx.fillStyle = '#eceff1'; ctx.fillRect(-7, -16, 14, 11);
+    ctx.fillStyle = '#ff6d00'; ctx.fillRect(-7, -9, 14, 2);
+    ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(-3, -12, 1.6, 0, 7); ctx.arc(3, -12, 1.6, 0, 7); ctx.fill(); // камеры
+    ctx.save(); ctx.translate(0, -16); ctx.rotate(-0.45);
+    ctx.fillStyle = '#37474f'; ctx.fillRect(-4.5, -12, 9, 12);
+    ctx.fillStyle = '#90a4ae'; for (let i = 0; i < 3; i++) { const y = -11 + ((now * 30 + i * 4) % 12); ctx.fillRect(-4.5, y, 9, 1.2); } // вращение
+    ctx.fillStyle = '#1b1b1b'; ctx.fillRect(-5, -13.5, 10, 2);
+    ctx.fillStyle = `rgba(255,40,40,${0.5 + 0.5 * Math.sin(now * 25)})`; ctx.fillRect(4, -7, 2, 2);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 function drawPlayer() {
   const P = player;
   if (P.inv > 0 && Math.floor(P.inv * 14) % 2) return;
   const cx = P.x + P.w / 2, feet = P.y + P.h;
   ctx.save(); ctx.translate(cx, feet); ctx.scale(P.face, 1);
   const running = P.onGround && Math.abs(P.vx) > 20 && !P.climb, sw = P.climb ? Math.sin(P.anim * 3) * 0.5 : running ? Math.sin(P.anim * 2) * 0.7 : (P.onGround ? 0 : 0.5);
+  const hero = heroOf(), dirty = hero.dirty;
+  if (hero.backpack) { // полурасстёгнутый рюкзак с исполнительной документацией
+    ctx.fillStyle = '#5d4030'; ctx.fillRect(-15, -37, 9, 18);
+    ctx.fillStyle = '#f4f1e6'; ctx.save(); ctx.translate(-12, -37); ctx.rotate(-0.25); ctx.fillRect(-3, -7, 6, 8); ctx.restore();
+    ctx.save(); ctx.translate(-9, -38); ctx.rotate(0.2); ctx.fillRect(-2, -6, 5, 7); ctx.fillStyle = '#9ab'; ctx.fillRect(-1, -4, 3, 0.8); ctx.fillRect(-1, -2.5, 3, 0.8); ctx.restore();
+    ctx.fillStyle = '#4a3326'; ctx.save(); ctx.translate(-15, -37); ctx.rotate(-0.9); ctx.fillRect(0, -2, 10, 3); ctx.restore(); // откинутый клапан
+    ctx.fillStyle = '#3b2a20'; ctx.fillRect(-15, -27, 9, 2); ctx.fillStyle = '#c9a227'; ctx.fillRect(-11, -27, 2, 2);
+  }
   // ноги
   ctx.strokeStyle = '#2b3445'; ctx.lineWidth = 5; ctx.lineCap = 'round';
   for (const s of [sw, -sw]) { ctx.beginPath(); ctx.moveTo(0, -17); ctx.lineTo(Math.sin(s) * 12, -2); ctx.stroke(); }
   ctx.fillStyle = '#4a3320'; for (const s of [sw, -sw]) ctx.fillRect(Math.sin(s) * 12 - 3, -4, 9, 4);
   // корпус: тёмная куртка и сигнальный жилет со световозвращающими полосами
-  ctx.fillStyle = '#2f4a7a'; ctx.fillRect(-7, -36, 14, 20);
-  ctx.fillStyle = '#ff7a1a'; ctx.fillRect(-7, -35, 14, 17);
-  ctx.fillStyle = '#e9f2f2'; ctx.fillRect(-7, -28, 14, 2); ctx.fillRect(-7, -23, 14, 2); ctx.fillRect(-3, -35, 2, 7);
+  ctx.fillStyle = dirty ? '#252c38' : '#2f4a7a'; ctx.fillRect(-7, -36, 14, 20);
+  ctx.fillStyle = dirty ? '#a4551a' : '#ff7a1a'; ctx.fillRect(-7, -35, 14, 17);
+  ctx.fillStyle = dirty ? '#8e9090' : '#e9f2f2'; ctx.fillRect(-7, -28, 14, 2); ctx.fillRect(-7, -23, 14, 2); ctx.fillRect(-3, -35, 2, 7);
+  if (hero.backpack) { ctx.fillStyle = '#3b2a20'; ctx.fillRect(-7, -35, 3, 12); } // лямка рюкзака
   // голова и белая каска инженера
-  ctx.fillStyle = '#f1c27d'; ctx.beginPath(); ctx.arc(1, -42, 6, 0, 7); ctx.fill();
+  ctx.fillStyle = dirty ? '#b98f60' : '#f1c27d'; ctx.beginPath(); ctx.arc(1, -42, 6, 0, 7); ctx.fill();
   ctx.fillStyle = '#222'; ctx.fillRect(3, -44, 2, 2);
-  ctx.fillStyle = '#f7f7f7'; ctx.beginPath(); ctx.arc(1, -45, 7, Math.PI, 0); ctx.fill(); ctx.fillRect(-6, -46, 16, 2);
+  if (dirty) { ctx.fillStyle = '#fff'; ctx.fillRect(3, -44, 1, 1); } // на чумазом лице блестят глаза
+  ctx.fillStyle = dirty ? '#b4b4ae' : '#f7f7f7'; ctx.beginPath(); ctx.arc(1, -45, 7, Math.PI, 0); ctx.fill(); ctx.fillRect(-6, -46, 16, 2);
+  if (dirty) { // угольная пыль: пятна на каске, лице, жилете и штанах
+    ctx.fillStyle = 'rgba(20,20,20,.55)';
+    ctx.fillRect(-4, -50, 4, 2); ctx.fillRect(3, -48, 3, 2); ctx.fillRect(-3, -41, 3, 2); ctx.fillRect(4, -40, 3, 1.5);
+    ctx.fillRect(-6, -33, 4, 3); ctx.fillRect(2, -30, 4, 4); ctx.fillRect(-5, -21, 5, 2); ctx.fillRect(1, -19, 5, 3);
+    ctx.fillStyle = 'rgba(10,10,10,.35)'; ctx.fillRect(-7, -17, 14, 3);
+  }
   if (theme.headlamp) { ctx.fillStyle = '#fff6b0'; ctx.fillRect(6, -48, 3, 3); } // налобный фонарь (шахта)
   if (theme.snowy) { // снег на каске, плечах и рукавах
     const k = clamp(P.snow, 0, 1);
@@ -1048,6 +1173,8 @@ function drawPlayer() {
     ctx.fillRect(-8, -37 - k * 2, 6, 1.5 + k * 2); ctx.fillRect(3, -37 - k * 2, 5, 1.5 + k * 2);
     if (k > 0.4) { ctx.fillRect(-7, -30, 2, 2); ctx.fillRect(4, -22, 2, 2); ctx.fillRect(-1, -3, 4, 2); }
     if (k > 0.7) { ctx.fillStyle = 'rgba(200,225,255,.6)'; ctx.fillRect(-7, -18, 14, 2); } // иней на куртке
+    if (k > 0.55) { ctx.fillStyle = '#fff'; for (const s of [sw, -sw]) ctx.fillRect(Math.sin(s) * 12 - 3, -6, 9, 2.5); } // снег на ботинках
+    if (k > 0.85) { ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(-7, -35, 3, 10); ctx.fillRect(4, -26, 3, 5); ctx.beginPath(); ctx.arc(-4, -53, 2.5, 0, 7); ctx.fill(); } // облеплен снегом
   }
   // рейка: в покое — на плече, при ударе — дуга вперёд
   let ang = P.climb ? -1.35 : -1.9 + (running ? Math.sin(P.anim * 2) * 0.05 : 0); // на лестнице рейка за спиной
@@ -1057,9 +1184,9 @@ function drawPlayer() {
     ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 10;
     ctx.beginPath(); ctx.arc(4, -26, 62, -2.2, ang); ctx.stroke();
   }
-  ctx.save(); ctx.translate(4, -26); ctx.rotate(ang); drawStaff(76); ctx.restore();
-  // рука, держащая рейку
-  ctx.strokeStyle = '#2f4a7a'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, -32); ctx.lineTo(4, -26); ctx.stroke();
+  ctx.save(); ctx.translate(4, -26); ctx.rotate(ang); drawWeapon(weaponOf(), 76); ctx.restore();
+  // рука, держащая инструмент
+  ctx.strokeStyle = dirty ? '#252c38' : '#2f4a7a'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, -32); ctx.lineTo(4, -26); ctx.stroke();
   ctx.fillStyle = '#f1c27d'; ctx.beginPath(); ctx.arc(4, -26, 2.5, 0, 7); ctx.fill();
   ctx.restore();
 }
@@ -1268,7 +1395,9 @@ function draw() {
   if (mode !== 'over') drawPlayer();
   for (const p of particles) {
     ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color;
-    if (p.chunk) { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore(); }
+    if (p.chunk) { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      if (p.paper) { ctx.fillStyle = '#8a9aa8'; for (let y = -2.5; y < 3; y += 2) ctx.fillRect(-2.5, y, 5, 0.7); ctx.fillStyle = '#c62828'; ctx.fillRect(1, 2.5, 2, 1.5); } // строки и печать
+      ctx.restore(); }
     else ctx.fillRect(p.x, p.y, p.size, p.size);
   }
   ctx.globalAlpha = 1;
