@@ -54,6 +54,7 @@ const GEN = {
   indoor: false,                                                  // true — участок внутри здания: этажи, финиш на крыше
   breakables: ['crate', 'barrel'],                                // какие разрушаемые предметы стоят на участке (см. BREAKABLES)
   foreman: false,                                                 // true — на участке бегает разгневанный прораб
+  yeti: false,                                                    // true — в сугробе сидит снежный человек (один на участок)
 };
 
 // ---------- состояние ----------
@@ -502,6 +503,11 @@ function generateLevel(s) {
   if (!mid.length) mid = spots.filter(o => o.p > 0.12);
   let gpsSpot = null;
   if (mid.length) { gpsSpot = pick(mid); spawnEnemy('gps', gpsSpot.x0 + gpsSpot.w * 0.6, gpsSpot.y, { groundY: gpsSpot.y, variant: GPS_VARIANTS[levelIdx % GPS_VARIANTS.length] }); }
+  if (G.yeti) { // снежный человек в сугробе — один на участок
+    const ys = spots.filter(o => o !== gpsSpot && o.p > 0.2 && o.p < 0.85 && o.w > 200 && !enemies.some(h => h.x > o.x0 && h.x < o.x0 + o.w));
+    const o = ys.length ? pick(ys) : spots.find(q => q !== gpsSpot && q.w > 200);
+    if (o) spawnEnemy('yeti', o.x0 + o.w * 0.6, o.y, { groundY: o.y });
+  }
   if (G.foreman) { // разгневанный прораб — 1–2 на участок
     let fs = spots.filter(o => o !== gpsSpot && o.p > 0.12 && o.p < 0.9 && o.w > 200);
     if (!fs.length) fs = spots.filter(o => o !== gpsSpot && o.p > 0.05 && o.w > 150);
@@ -634,6 +640,23 @@ const FOREMAN_RETURN = ['А ну стой, геодезист!', 'Сейчас �
 const FOREMAN_HIT = ['Вот тебе чертежи! Читай!', 'Демонтаж — за твой счёт!', 'Всё ломать и заново строить!', 'По проекту смотри, по проекту!', 'Переделывать будешь сам!'];
 const FOREMAN_OUCH = ['Ай! Я жаловаться буду!', 'На прораба руку поднял?!', 'Ох, в журнал запишу!'];
 const FOREMAN_DEATH = ['Всё, я к главному инженеру!', 'Ладно… перемеряй и приходи.', 'Сам ты лентяй… ой.'];
+// шутки снежного человека — про тундру, холод и геодезистов
+const YETI_LINES = ['Я не снеговик, я снежный человек! Разница — в зарплате.', 'Геодезист в тундре? Теодолит на лыжах привёз?',
+  'Ищешь репер? Я его ещё прошлой зимой съел!', 'Минус сорок — это тепло, куртку расстегни!', 'Хожу на руках — ноги берегу для лыж!',
+  'GPS тут не ловит. Зато я ловлю — геодезистов!', 'Отметка нуля? У меня всё ниже нуля!', 'Меня никто не видел. И ты не видел, понял?',
+  'Вечная мерзлота — вечная, а твоя смена — нет!', 'Съёмку сугробов делаешь? Я тут главный сугроб!'];
+function drawSay(e, ctx, color) { // облачко с репликой над врагом (текст не зеркалим)
+  if (!(e.sayT > 0 && e.say)) return;
+  ctx.save(); ctx.scale(e.dir || 1, 1);
+  let fs = 10; ctx.font = `bold ${fs}px system-ui, sans-serif`;
+  const tw = ctx.measureText(e.say).width; if (tw > 210) { fs = 10 * 210 / tw; ctx.font = `bold ${fs}px system-ui, sans-serif`; } // длинная фраза — мельче шрифт, но целиком в облачке
+  const w = Math.min(tw, 210) + 12, y = -84;
+  ctx.fillStyle = 'rgba(255,255,255,.95)'; ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.rect(-w / 2, y - 14, w, 20); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-4, y + 6); ctx.lineTo(2, y + 16); ctx.lineTo(6, y + 6); ctx.fill();
+  ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.fillText(e.say, 0, y);
+  ctx.restore();
+}
 const pickLine = (list, e) => e ? list[(e.lineI = (e.lineI || 0) + 1) % list.length] : list[Math.floor(Math.random() * list.length)];
 
 const ENGINE_ENEMIES = {
@@ -785,17 +808,75 @@ const ENGINE_ENEMIES = {
       if (e.roll) { ctx.fillStyle = '#2f6fd0'; ctx.fillRect(12, -3, 30, 7); ctx.fillStyle = '#cfe6ff'; ctx.fillRect(14, -2, 26, 1.5); ctx.fillStyle = '#1d4f9a'; ctx.beginPath(); ctx.ellipse(42, 0.5, 2, 3.5, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#e53935'; ctx.fillRect(24, -3, 2, 7); }
       ctx.restore();
       if (e.state === 'swing' && e.st < 0.2) { ctx.strokeStyle = 'rgba(207,230,255,.5)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(6, -34, 40, -2, 0.4); ctx.stroke(); }
-      if (e.sayT > 0 && e.say) { // облачко с руганью (текст не зеркалим)
-        ctx.save(); ctx.scale(e.dir || 1, 1);
-        let fs = 10; ctx.font = `bold ${fs}px system-ui, sans-serif`;
-        const tw = ctx.measureText(e.say).width; if (tw > 210) { fs = 10 * 210 / tw; ctx.font = `bold ${fs}px system-ui, sans-serif`; } // длинная фраза — мельче шрифт, но целиком в облачке
-        const w = Math.min(tw, 210) + 12, y = -84;
-        ctx.fillStyle = 'rgba(255,255,255,.95)'; ctx.strokeStyle = '#c62828'; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.rect(-w / 2, y - 14, w, 20); ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-4, y + 6); ctx.lineTo(2, y + 16); ctx.lineTo(6, y + 6); ctx.fill();
-        ctx.fillStyle = '#b71c1c'; ctx.textAlign = 'center'; ctx.fillText(e.say, 0, y);
+      drawSay(e, ctx, '#c62828');
+    },
+  },
+  // снежный человек (тундра): сидит в сугробе, выпрыгивает на героя с сосулькой, отскакивает, ходит на руках и снова нападает; шутит
+  yeti: {
+    w: 24, h: 42, hp: 4, pts: 500, touchHurts: false, hitColor: '#e3f0fa', deathColor: '#ffffff',
+    init(e) { e.state = 'hidden'; e.st = 0; e.vx = 0; e.vy = 0; e.onG = true; e.dir = -1; e.say = null; e.sayT = 0; e.lineI = Math.floor(Math.random() * YETI_LINES.length); e.peek = 0; },
+    onHit(e) { if (e.state === 'hidden') { e.state = 'leap'; e.vy = -420; e.onG = false; } else if (e.state === 'hands' || e.state === 'windup') { e.state = 'hop'; e.vy = -380; e.onG = false; e.dir = -e.dir; } },
+    onDeath(e) { popup(e.x + e.w / 2, e.y - 30, 'Ухожу в сугроб… навсегда!', '#e3f0fa'); burst(e.x + e.w / 2, e.y + 10, '#ffffff', 24, 200, 400); },
+    update(e, dt) {
+      const P = player, dx = api.dx(e), adx = Math.abs(dx), toP = Math.sign(dx) || 1, level = Math.abs(P.y + P.h - (e.y + e.h)) < 40;
+      e.st -= dt; e.sayT -= dt; e.peek -= dt;
+      const joke = () => { e.say = pickLine(YETI_LINES, e); e.sayT = 2.4; };
+      let want = 0, speed = 150;
+      if (e.state === 'hidden') { // в сугробе: иногда выглядывают глаза — внимательный заметит
+        if (e.peek < -2.5) e.peek = 0.8;
+        if (adx < 120 && level) { e.state = 'leap'; e.dir = toP; e.vy = -520; e.onG = false; joke(); Sound.play('roar'); burst(e.x + e.w / 2, e.y + e.h - 6, '#ffffff', 26, 220, 500); shake = Math.max(shake, 3); }
+        e.vxNow = 0; return;
+      }
+      if (e.state === 'leap') { want = e.dir; speed = 170; if (e.onG && e.vy === 0) { e.state = adx < 50 ? 'windup' : 'approach'; e.st = 0.3; } } // приземлился
+      else if (e.state === 'approach') { want = adx < 12 && !level ? 0 : toP; if (adx < 38 && level && e.onG) { e.state = 'windup'; e.st = 0.3; e.dir = toP; } }
+      else if (e.state === 'windup') { if (e.st <= 0) { e.state = 'strike'; e.st = 0.18; e.hitDone = false; Sound.play('swing'); } }
+      else if (e.state === 'strike') {
+        const hb = { x: e.dir > 0 ? e.x + e.w / 2 : e.x + e.w / 2 - 36, y: e.y - 10, w: 36, h: e.h + 10 };
+        if (!e.hitDone && overlap(hb, P)) { e.hitDone = true; hurtPlayer(e.x + e.w / 2); }
+        if (e.st <= 0) { e.state = 'hop'; e.dir = -toP; e.vy = -430; e.onG = false; }
+      } else if (e.state === 'hop') { want = e.dir; speed = 150; if (e.onG && e.vy === 0) { e.state = 'hands'; e.st = rand(1.8, 2.6); joke(); } } // отскок
+      else if (e.state === 'hands') { // ходит на руках туда-сюда и балагурит
+        want = Math.sin(e.t * 1.7) > 0 ? 1 : -1; speed = 70;
+        if (e.st <= 0) { e.state = 'approach'; if (e.sayT < 0.5) joke(); }
+      }
+      if (want) e.dir = want;
+      const vx = walkerStep(e, dt, want, speed, e.state !== 'hands');
+      if (want && !vx && e.onG && e.state === 'hands') e.t += 1.8; // упёрся — пойдёт в другую сторону
+      if (e.y > deathLimit(e)) e.dead = true;
+    },
+    draw(e, ctx) {
+      const now = e.t;
+      if (e.state === 'hidden') { // сугроб; изредка из него смотрят два глаза
+        ctx.fillStyle = '#dfeefa'; ctx.beginPath(); ctx.ellipse(0, -8, 26, 16, 0, Math.PI, 0); ctx.fill(); ctx.fillRect(-26, -8, 52, 8);
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(-6, -18, 14, 7, 0, Math.PI, 0); ctx.fill();
+        ctx.fillStyle = 'rgba(150,180,210,.5)'; ctx.fillRect(-20, -3, 40, 2);
+        if (e.peek > 0) { ctx.fillStyle = '#1a2a3a'; ctx.fillRect(-7, -14, 3, 3); ctx.fillRect(1, -14, 3, 3); }
+        return;
+      }
+      const hands = e.state === 'hands';
+      ctx.save();
+      if (hands) { ctx.translate(0, -e.h); ctx.scale(1, -1); } // вверх ногами: руки внизу
+      const run = e.onG && Math.abs(e.vxNow || 0) > 10, sw = run ? Math.sin(now * 14) * 0.7 : 0;
+      ctx.strokeStyle = '#e3eef8'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+      for (const s of [sw, -sw]) { ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(Math.sin(s) * 11, -2); ctx.stroke(); }
+      ctx.fillStyle = '#9fb3c6'; for (const s of [sw, -sw]) ctx.fillRect(Math.sin(s) * 11 - 5, -4, 11, 4); // ступни
+      ctx.fillStyle = '#f2f7fc'; ctx.beginPath(); ctx.ellipse(0, -28, 13, 15, 0, 0, 7); ctx.fill(); // лохматое туловище
+      ctx.fillStyle = '#d4e3f1'; for (let k = 0; k < 6; k++) ctx.fillRect(-12 + k * 4, -16 + (k % 2) * 2, 2, 5);
+      ctx.fillStyle = '#f2f7fc'; ctx.beginPath(); ctx.arc(2, -44, 9, 0, 7); ctx.fill();
+      ctx.fillStyle = '#8fa6bd'; ctx.beginPath(); ctx.ellipse(5, -43, 5, 4.5, 0, 0, 7); ctx.fill(); // лицо
+      ctx.fillStyle = '#1a2a3a'; ctx.fillRect(4, -45, 2, 2); ctx.fillRect(8, -45, 2, 2); ctx.fillRect(5, -41, 5, 1.2);
+      // руки и сосулька
+      let ang = 0.4;
+      if (e.state === 'windup') ang = -2.2; else if (e.state === 'strike') ang = 0.9; else if (hands) ang = 1.4;
+      for (const side of hands ? [-1, 1] : [1]) {
+        ctx.save(); ctx.translate(side * 7, -34); ctx.rotate(side > 0 ? ang : Math.PI - ang);
+        ctx.strokeStyle = '#e3eef8'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(14, 0); ctx.stroke();
+        if (!hands && side > 0) { ctx.fillStyle = '#bfe6ff'; ctx.beginPath(); ctx.moveTo(14, -3); ctx.lineTo(34, 0); ctx.lineTo(14, 3); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(16, -1, 12, 1); }
         ctx.restore();
       }
+      ctx.restore();
+      if (e.state === 'strike') { ctx.strokeStyle = 'rgba(191,230,255,.6)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(7, -34, 30, -1.8, 0.9); ctx.stroke(); }
+      drawSay(e, ctx, '#1e5bb8');
     },
   },
 };
@@ -1629,12 +1710,12 @@ const AMBIENT = {
   road:   { birds: 'sparrow', plane: true, look: { vests: ['#ff6d00', '#c6ff00'], helmets: ['#ff6d00', '#ffffff'], jacket: '#424242' } },
   bridge: { birds: 'gull', look: { vests: ['#00e5ff', '#ff7a1a'], helmets: ['#ff9800', '#ffffff'], jacket: '#1a237e' } },
   tower:  { birds: 'pigeon', heli: true, jumpers: 2, look: { vests: ['#ff7a1a', '#b388ff'], helmets: ['#e53935', '#ffffff', '#f2c230'], jacket: '#263238', harness: true } },
-  tundra: { birds: 'raven', look: { vests: ['#ff3d00', '#ff7a1a'], helmets: ['#ff7a1a', '#ffffff'], jacket: '#1b5e20', coat: true } },
+  tundra: { birds: 'raven', sleds: 2, look: { vests: ['#ff3d00', '#ff7a1a'], helmets: ['#ff7a1a', '#ffffff'], jacket: '#1b5e20', coat: true } },
   dam:    { birds: 'gull', heli: true, look: { vests: ['#ff7a1a', null, null], helmets: ['#ffffff', '#ffffff', '#1e5bb8'], jacket: '#263238', suits: true } },
 };
 const ambOf = () => AMBIENT[theme && theme.id] || AMBIENT.city;
 let amb = null;
-function resetAmbient() { amb = { jumpers: [], jumpLeft: (ambOf().jumpers || 0), jumpT: rand(6, 12), flocks: [], flockT: rand(1, 4), plane: null, planeT: rand(8, 18), heli: null, heliT: rand(12, 25), rats: [], ratT: rand(2, 5), bats: [], batT: rand(3, 6), drips: [], dripT: 1, lastCam: camX }; }
+function resetAmbient() { amb = { sleds: [], sledLeft: (ambOf().sleds || 0), sledT: rand(3, 8), jumpers: [], jumpLeft: (ambOf().jumpers || 0), jumpT: rand(6, 12), flocks: [], flockT: rand(1, 4), plane: null, planeT: rand(8, 18), heli: null, heliT: rand(12, 25), rats: [], ratT: rand(2, 5), bats: [], batT: rand(3, 6), drips: [], dripT: 1, lastCam: camX }; }
 
 function updateAmbient(dt) {
   if (!amb) resetAmbient();
@@ -1651,6 +1732,13 @@ function updateAmbient(dt) {
   amb.flocks = amb.flocks.filter(f => f.x > -250 && f.x < W + 250);
   if (A.plane && !amb.plane && (amb.planeT -= dt) <= 0) { const d = Math.random() < 0.5 ? -1 : 1; amb.plane = { x: d > 0 ? -40 : W + 40, y: rand(22, 55), vx: d * rand(22, 34), trail: [] }; amb.planeT = rand(22, 38); }
   if (amb.plane) { const p = amb.plane; p.x += p.vx * dt - dc * 0.05; p.trail.push({ x: p.x, y: p.y, t: 0 }); for (const q of p.trail) { q.t += dt; q.x -= dc * 0.05; } p.trail = p.trail.filter(q => q.t < 9); if (p.x < -300 || p.x > W + 300) amb.plane = null; }
+  if (amb.sledLeft > 0 && (amb.sledT -= dt) <= 0) { // оленья упряжка вдали на снежном поле (не больше двух за участок)
+    amb.sledLeft--; amb.sledT = rand(25, 45);
+    const d = Math.random() < 0.5 ? -1 : 1, n = Math.random() < 0.5 ? 1 : 2;
+    amb.sleds.push({ x: d > 0 ? -140 : W + 140, y: rand(218, 224), vx: d * rand(60, 85), n, t: 0 });
+  }
+  for (const q of amb.sleds) { q.x += q.vx * dt - dc * 0.3; q.t += dt; }
+  amb.sleds = amb.sleds.filter(q => q.x > -260 && q.x < W + 260);
   if (amb.jumpLeft > 0 && camY < -120 && (amb.jumpT -= dt) <= 0) { // бейсджампер с крыши соседнего небоскрёба (не больше двух за участок)
     amb.jumpLeft--; amb.jumpT = rand(12, 22);
     amb.jumpers.push({ x: rand(W * 0.15, W * 0.85), y: -30, vx: rand(-25, 25), vy: 60, t: 0, open: false, col: ['#e53935', '#1e88e5', '#fdd835', '#8e24aa'][Math.floor(rand(0, 4))] });
@@ -1679,6 +1767,37 @@ function updateAmbient(dt) {
   amb.drips = amb.drips.filter(d => !d.done);
 }
 
+function drawSled(q, bgShift) { // чукотская оленья упряжка: 1–2 оленя, узкие нарты, каюр в кухлянке с хореем
+  const d = Math.sign(q.vx), t = q.t;
+  ctx.save(); ctx.translate(q.x, q.y + bgShift); ctx.scale(0.78 * d, 0.78);
+  for (let k = 0; k < 3; k++) { const a = (t * 2 + k / 3) % 1; ctx.fillStyle = `rgba(240,248,255,${0.5 * (1 - a)})`; ctx.beginPath(); ctx.arc(-50 - a * 30, -4 - a * 8, 3 + a * 6, 0, 7); ctx.fill(); } // снежная пыль
+  // нарты: полозья с загнутым носом, настил, копылья
+  ctx.strokeStyle = '#e8dcc0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-44, 0); ctx.lineTo(-4, 0); ctx.quadraticCurveTo(4, 0, 4, -7); ctx.stroke();
+  ctx.fillStyle = '#8a6a44'; ctx.fillRect(-42, -8, 40, 3); ctx.fillStyle = '#e8dcc0'; for (let x = -38; x < -4; x += 10) ctx.fillRect(x, -6, 2, 6);
+  // каюр в кухлянке: мех наружу, капюшон с опушкой, в руке хорей
+  ctx.fillStyle = '#7a5a3a'; ctx.beginPath(); ctx.ellipse(-26, -18, 9, 11, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#5a3f26'; ctx.fillRect(-35, -12, 18, 3); // орнаментная кайма
+  ctx.fillStyle = '#e9d3a8'; ctx.beginPath(); ctx.arc(-24, -33, 7, 0, 7); ctx.fill(); // опушка капюшона
+  ctx.fillStyle = '#7a5a3a'; ctx.beginPath(); ctx.arc(-24, -33, 5.5, 0, 7); ctx.fill();
+  ctx.fillStyle = '#c99a6a'; ctx.beginPath(); ctx.arc(-22.5, -32.5, 3.2, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#5a3f26'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(-22, -22); ctx.lineTo(20 + Math.sin(t * 3) * 2, -40); ctx.stroke(); // хорей
+  // олени
+  for (let k = 0; k < q.n; k++) {
+    const ox = 22 + k * 30, ph = t * 11 + k * 1.3, lg = Math.sin(ph) * 5;
+    ctx.strokeStyle = '#3a2a1a'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(2, -8); ctx.lineTo(ox - 8, -18); ctx.stroke(); // постромка
+    ctx.strokeStyle = '#4a3a2a'; ctx.lineWidth = 2.2; ctx.beginPath();
+    ctx.moveTo(ox - 8, -12); ctx.lineTo(ox - 10 + lg, -1); ctx.moveTo(ox - 4, -12); ctx.lineTo(ox - 2 - lg, -1);
+    ctx.moveTo(ox + 6, -12); ctx.lineTo(ox + 8 + lg, -1); ctx.moveTo(ox + 10, -12); ctx.lineTo(ox + 12 - lg, -1); ctx.stroke();
+    ctx.fillStyle = '#8a7a66'; ctx.beginPath(); ctx.ellipse(ox, -17, 13, 6, 0, 0, 7); ctx.fill(); // туловище
+    ctx.fillStyle = '#e8e0d0'; ctx.fillRect(ox - 13, -14, 5, 3); // светлый «фартук»
+    ctx.fillStyle = '#8a7a66'; ctx.beginPath(); ctx.moveTo(ox + 10, -20); ctx.lineTo(ox + 18, -28); ctx.lineTo(ox + 22, -25); ctx.lineTo(ox + 14, -17); ctx.fill(); // шея
+    ctx.beginPath(); ctx.ellipse(ox + 22, -27, 5, 3, 0.3, 0, 7); ctx.fill(); // голова
+    ctx.strokeStyle = '#d8c8a8'; ctx.lineWidth = 1.2; ctx.beginPath(); // рога
+    ctx.moveTo(ox + 19, -30); ctx.lineTo(ox + 15, -40); ctx.lineTo(ox + 11, -43); ctx.moveTo(ox + 16, -37); ctx.lineTo(ox + 20, -42);
+    ctx.moveTo(ox + 21, -30); ctx.lineTo(ox + 22, -39); ctx.lineTo(ox + 26, -41); ctx.stroke();
+  }
+  ctx.restore();
+}
 function drawBird(kind, x, y, ph) { // птица — «галочка» с машущими крыльями
   const k = Math.sin(ph) * 0.6, col = kind === 'gull' ? '#f4f6f8' : kind === 'pigeon' ? '#7d8592' : kind === 'sparrow' ? '#6d5540' : '#1c1c22', s = kind === 'sparrow' ? 0.7 : kind === 'gull' ? 1.2 : 1;
   ctx.strokeStyle = col; ctx.lineWidth = 1.6 * s; ctx.beginPath();
@@ -1699,6 +1818,7 @@ function drawSkyAmbient(bgShift) { // в экранных координатах
     ctx.fillStyle = '#9fd3ff'; ctx.fillRect(h.x + d * 3, y - 3, 4 * d, 3);
     ctx.fillStyle = 'rgba(40,40,50,.5)'; ctx.fillRect(h.x - 14 + Math.sin(now * 40) * 3, y - 7, 28, 1.5); ctx.fillRect(h.x - 5, y + 5, 11, 1.2);
   }
+  for (const q of amb.sleds) drawSled(q, bgShift);
   for (const f of amb.flocks) for (const b of f.birds) drawBird(f.kind, f.x + b.dx, f.y + b.dy + bgShift, now * 11 + b.ph);
   for (const j of amb.jumpers) { // бейсджампер: сначала свободное падение в вингсьюте, потом купол-крыло
     ctx.save(); ctx.translate(j.x, j.y); ctx.scale(0.7, 0.7);
