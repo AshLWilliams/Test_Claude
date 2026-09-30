@@ -7,7 +7,7 @@
   const GUST_WARN = 1.1, GUST_LEN = 1.8, GUST_V = 42; // предупреждение, длительность и сила порыва (ед./с)
   const SNOW = '#eef7ff', SNOW_SH = '#a9c8e0', ICE = '#9fdcf2';
   // состояние темы: кэш градиентов, порыв ветра, смещение метели
-  const st = { ctx: null, sky: null, aur: null, aurCv: null, gust: { phase: 'calm', t: 6, k: 0, dir: -1 }, snowX: 0, last: 0 };
+  const st = { ctx: null, sky: null, aur: null, aurCv: null, aurFadeCv: null, aurFade: null, gust: { phase: 'calm', t: 6, k: 0, dir: -1 }, snowX: 0, last: 0 };
 
   const poly = (ctx, p) => { ctx.beginPath(); ctx.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) ctx.lineTo(p[i], p[i + 1]); ctx.closePath(); ctx.fill(); };
   const oval = (ctx, x, y, rx, ry, rot = 0) => { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rot, 0, TAU); ctx.fill(); };
@@ -60,6 +60,11 @@
       }
     }
     ac.globalAlpha = 1;
+    // верх холста сияния растворяем: при поднятой камере фон опускается, и срез ленты стал бы виден
+    ac.setTransform(1, 0, 0, 1, 0, 0);
+    if (st.aurFadeCv !== cv) { st.aurFadeCv = cv; st.aurFade = ac.createLinearGradient(0, 0, 0, 36 * AUR_K); st.aurFade.addColorStop(0, 'rgba(0,0,0,1)'); st.aurFade.addColorStop(1, 'rgba(0,0,0,0)'); }
+    ac.globalCompositeOperation = 'destination-out'; ac.fillStyle = st.aurFade; ac.fillRect(0, 0, cv.width, 36 * AUR_K);
+    ac.globalCompositeOperation = 'source-over';
     ctx.drawImage(cv, 0, AUR_Y, cv.width / AUR_K, AUR_H);
   }
 
@@ -145,7 +150,7 @@
     off = camX * 0.55; step = 150;
     ctx.fillStyle = '#4f75a0';
     for (let i = Math.floor(off / step) - 1; i < (off + W) / step + 1; i++) oval(ctx, i * step - off + hash(i + 3) * 60, 252, 70 + hash(i) * 40, 14 + hash(i + 9) * 10);
-    ctx.fillRect(0, 252, W, 52); // ниже y≈300 всегда земля или провал
+    ctx.fillRect(0, 252, W, H - 252); // до низа кадра: когда камера поднята, фон опущен и низ виден
     step = 540;
     for (let i = Math.floor(off / step) - 1; i < (off + W) / step + 1; i++) {
       const kind = Math.floor(hash(i + 23) * 3), x = i * step - off + 120 + hash(i + 29) * 220;
@@ -173,6 +178,7 @@
 
   // ---------- земля, провалы, платформы, препятствия ----------
   function drawGround(s, ctx, api) { // наст поверх вечной мерзлоты: снег, синие тени, ледяные проплешины
+    if (s.wall) return drawWall(s, ctx, api); // стена — ледяной торос
     const { H, hash, now } = api, x0 = s.x, x1 = s.x + s.w;
     // тёмное тело — без нахлёста слева, а светлые слои — с нахлёстом 1 ед.: иначе на стыке
     // сглаженный край тёмной заливки просвечивает сквозь снег тонкой тёмной чертой
@@ -200,6 +206,99 @@
       const g = ((now * 0.6 + h * 3) % 2) / 2 * (w + 30) - 15;
       if (g > 0 && g < w - 6) { ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(x + g, s.y + 1, 6, 1.5); }
     }
+  }
+
+  // стена — ледяной торос, намёрзший на занесённый блок трубопровода: наклонные льдины, снежный карниз, сосульки
+  function drawWall(s, ctx, api) {
+    const { H, hash } = api, x0 = s.x, x1 = s.x + s.w, w = s.w, id = Math.floor(x0);
+    if (s.baseY == null) s.baseY = Math.max(s.y + 90, api.groundAt(x0 - 2) ?? s.y + 140); // уровень соседней земли (считается один раз)
+    const base = s.baseY;
+    ctx.fillStyle = '#243041'; ctx.fillRect(x0, base, w + 1, H - base + 10); // ниже соседей — та же мерзлота, что под настом
+    ctx.fillStyle = '#34445a'; ctx.fillRect(x0, base + 12, w + 1, 8);
+    ctx.fillStyle = '#4d7da3'; ctx.fillRect(x0, s.y, w + 1, base - s.y + 1);
+    for (let r = 0, y = s.y + 14; y < base - 6; r++, y += 30) { // ряды льдин: светлая кромка сверху, тёмный скол справа
+      const bot = Math.min(y + 30, base);
+      for (let i = 0, x = x0 + (r % 2 ? -16 : 0); x < x1; i++) {
+        const h = hash(id * 31 + r * 7 + i), sw = 34 + h * 30, a = Math.max(x, x0 + 1), b = Math.min(x + sw - 3, x1 - 1), tl = (h - 0.5) * 8;
+        x += sw;
+        if (b - a < 6) continue;
+        ctx.fillStyle = h > 0.62 ? '#8cc4e2' : h > 0.3 ? '#74acd0' : '#6399c0';
+        poly(ctx, [a, y + 3 + tl * 0.5, b, y - tl * 0.5, b, bot, a, bot]);
+        ctx.fillStyle = 'rgba(230,248,255,.55)'; poly(ctx, [a, y + 3 + tl * 0.5, b, y - tl * 0.5, b, y + 2 - tl * 0.5, a, y + 5 + tl * 0.5]);
+        ctx.fillStyle = 'rgba(25,55,95,.35)'; ctx.fillRect(b - 4, y + 2, 4, bot - y - 2);
+        if (h > 0.8) { ctx.strokeStyle = 'rgba(40,90,140,.7)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(a + 8, y + 6); ctx.lineTo(a + 14, y + 16); ctx.lineTo(a + 10, bot - 4); ctx.stroke(); } // трещина
+      }
+    }
+    // торец вмёрзшей трубы у подножия
+    const pcx = x0 + 36 + hash(id + 5) * Math.max(0, w - 100), pcy = base - 23;
+    ctx.fillStyle = '#1d2b3d'; oval(ctx, pcx, pcy, 21, 21); ctx.fillStyle = '#8ea4ba'; oval(ctx, pcx, pcy, 18, 18);
+    ctx.fillStyle = '#f2c230'; oval(ctx, pcx, pcy, 14, 14); ctx.fillStyle = '#0f1826'; oval(ctx, pcx, pcy, 12, 12);
+    ctx.fillStyle = SNOW; oval(ctx, pcx, pcy - 18, 15, 4); oval(ctx, x0 + 8, base, 14, 5); oval(ctx, x1 - 8, base, 14, 5); // снег на трубе и сугробы у подножия
+    ctx.fillStyle = 'rgba(15,30,55,.4)'; ctx.fillRect(x0, s.y + 10, 3, base - s.y - 10); ctx.fillRect(x1 - 3, s.y + 10, 3, base - s.y - 10); // грани
+    // снежная шапка с карнизами и сосульками — по ней ходят
+    ctx.fillStyle = SNOW_SH; ctx.fillRect(x0 - 4, s.y, w + 8, 14);
+    ctx.fillStyle = SNOW; ctx.fillRect(x0 - 4, s.y, w + 8, 9); oval(ctx, x0 - 3, s.y + 8, 5, 6); oval(ctx, x1 + 3, s.y + 8, 5, 6);
+    ctx.beginPath(); for (let x = x0 + 8; x < x1 - 8; x += 15) { const h = hash(Math.floor(x) * 9); ctx.ellipse(x, s.y + 1, 6 + h * 5, 1.5 + h, 0, Math.PI, TAU); } ctx.fill();
+    ctx.fillStyle = '#cdeaf8';
+    for (let x = x0 + 3; x < x1 - 3; x += 11) { const h = hash(Math.floor(x) * 7 + 3); if (h > 0.35) poly(ctx, [x, s.y + 13, x + 2, s.y + 18 + h * 12, x + 4, s.y + 13]); }
+  }
+
+  // опоры яруса вышки считаются один раз: стоят на нижнем ярусе или на земле и не загораживают лестницы
+  function towerLegs(p, api) {
+    if (p.legs) return p.legs;
+    p.legs = [p.x + 14, p.x + p.w - 14].map((x, i) => {
+      for (let k = 0; k < 3 && api.ladders.some(l => Math.abs(l.top - p.y) < 3 && Math.abs(l.x + l.w / 2 - x) < 24); k++) x += i ? -34 : 34;
+      let bottom = api.groundAt(x) ?? p.base;
+      for (const q of api.platforms) if (q !== p && q.y > p.y + 20 && q.y < bottom && x >= q.x && x <= q.x + q.w) bottom = q.y;
+      return { x, bottom };
+    });
+    return p.legs;
+  }
+
+  function drawTowerTier(p, ctx, api) { // ярус вышки связи: решётчатые мачты, ферма под настилом, перила; наверху — огонь и ветроуказатель
+    for (const L of towerLegs(p, api)) {
+      const top = p.y + 6, h = L.bottom - top;
+      ctx.fillStyle = '#34465c'; ctx.fillRect(L.x - 6, top, 3, h); ctx.fillRect(L.x + 3, top, 3, h);
+      ctx.strokeStyle = '#5b6f88'; ctx.lineWidth = 1.4; ctx.beginPath();
+      for (let y = top; y < L.bottom - 6; y += 14) { const y2 = Math.min(L.bottom, y + 14); ctx.moveTo(L.x - 4.5, y); ctx.lineTo(L.x + 4.5, y2); ctx.moveTo(L.x - 4.5, y2); ctx.lineTo(L.x + 4.5, y2); }
+      ctx.stroke();
+      ctx.fillStyle = '#56687f'; ctx.fillRect(L.x - 9, L.bottom - 3, 18, 3);
+      ctx.fillStyle = SNOW; ctx.fillRect(L.x - 6, top + 12, 12, 1.5); ctx.fillRect(L.x - 9, L.bottom - 4, 18, 1.5);
+    }
+    ctx.strokeStyle = '#3a4a5e'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(p.x, p.y + 18); ctx.lineTo(p.x + p.w, p.y + 18); ctx.stroke();
+    ctx.strokeStyle = '#56687f'; ctx.lineWidth = 1.2; ctx.beginPath(); // ферма под настилом
+    for (let x = p.x; x < p.x + p.w - 1; x += 20) { ctx.moveTo(x, p.y + 7); ctx.lineTo(x + 10, p.y + 18); ctx.lineTo(Math.min(x + 20, p.x + p.w), p.y + 7); }
+    ctx.stroke();
+    ctx.fillStyle = '#cdeaf8';
+    for (let x = p.x + 5; x < p.x + p.w - 4; x += 16) { const h = api.hash(Math.floor(x) * 5 + 1); if (h > 0.5) poly(ctx, [x, p.y + 19, x + 1.5, p.y + 23 + h * 6, x + 3, p.y + 19]); }
+    ctx.fillStyle = '#4f6680'; ctx.fillRect(p.x - 4, p.y, p.w + 8, 7);
+    ctx.fillStyle = '#34465c'; for (let x = p.x; x < p.x + p.w; x += 6) ctx.fillRect(x, p.y + 2, 2, 4);
+    ctx.fillStyle = '#f2c230';
+    for (let x = p.x; x <= p.x + p.w; x += 32) ctx.fillRect(x - 1, p.y - 15, 2, 15);
+    ctx.fillRect(p.x - 4, p.y - 16, p.w + 8, 2); ctx.fillRect(p.x - 4, p.y - 8, p.w + 8, 1);
+    ctx.fillStyle = SNOW; ctx.fillRect(p.x - 4, p.y - 1.5, p.w + 8, 3); ctx.fillRect(p.x - 4, p.y - 17.5, p.w + 8, 1.5);
+    if (p.tier !== 3) return;
+    const now = api.now, mx = p.x + p.w - 6, on = Math.sin(now * 3 + p.x) > 0; // заградительный огонь
+    ctx.fillStyle = '#3a4a5e'; ctx.fillRect(mx - 1, p.y - 44, 2, 44);
+    if (on) { ctx.fillStyle = 'rgba(255,60,60,.25)'; oval(ctx, mx, p.y - 46, 8, 8); }
+    ctx.fillStyle = on ? '#ff3b3b' : '#6a1a1a'; ctx.fillRect(mx - 2.5, p.y - 48, 5, 4);
+    const g = st.gust, sx = p.x + 8, d = g.k > 0.05 ? g.dir : -1, lift = 0.3 + 0.7 * g.k; // ветроуказатель: в порыв надувается по ветру
+    ctx.fillStyle = '#3a4a5e'; ctx.fillRect(sx - 1, p.y - 50, 2, 50);
+    for (let i = 0; i < 4; i++) {
+      const fl = Math.sin(now * (6 + 6 * g.k) + i) * (0.6 + g.k), yA = p.y - 49 + i * (1 - lift) * 4 + fl * i * 0.3, yB = p.y - 49 + (i + 1) * (1 - lift) * 4 + fl * (i + 1) * 0.3;
+      const xA = sx + d * i * 6, xB = xA + d * 6, hA = 8 - i * 1.1, hB = 8 - (i + 1) * 1.1;
+      ctx.fillStyle = i % 2 ? '#f4f4f0' : '#ff6d1a'; poly(ctx, [xA, yA, xB, yB, xB, yB + hB, xA, yA + hA]);
+    }
+  }
+
+  function drawLadder(l, ctx) { // лестница в инее: снег на ступенях, сосульки на тетивах
+    const h = l.bottom - l.top;
+    ctx.fillStyle = 'rgba(10,20,40,.3)'; ctx.fillRect(l.x + 3, l.top, l.w - 2, h);
+    ctx.fillStyle = '#6f879f'; ctx.fillRect(l.x, l.top - 12, 3, h + 12); ctx.fillRect(l.x + l.w - 3, l.top - 12, 3, h + 12);
+    for (let y = l.top + 6; y < l.bottom; y += 12) { ctx.fillStyle = '#b9cad8'; ctx.fillRect(l.x + 2, y, l.w - 4, 3); ctx.fillStyle = SNOW; ctx.fillRect(l.x + 2, y - 1, l.w - 4, 1.5); }
+    ctx.fillStyle = '#f2c230'; ctx.fillRect(l.x - 1, l.top - 14, 5, 3); ctx.fillRect(l.x + l.w - 4, l.top - 14, 5, 3);
+    ctx.fillStyle = '#cdeaf8';
+    for (const x of [l.x, l.x + l.w - 3]) poly(ctx, [x, l.top + 18, x + 1.5, l.top + 25 + l.v * 8, x + 3, l.top + 18]);
   }
 
   function drawPit(p, ctx, api) { // полынья с льдинами и паром — или ледяная трещина до мерзлоты
@@ -241,6 +340,7 @@
   }
 
   function drawPlatform(p, ctx, api) {
+    if (p.tower) return drawTowerTier(p, ctx, api);
     const { hash } = api;
     if (p.tier === 1) { // утеплённый магистральный газопровод на опорах, сверху — ровный снег
       const D = 24, n = Math.max(2, Math.round(p.w / 80));
@@ -388,6 +488,31 @@
     e.w = e.h = size;
     e.x = Math.max(e.minX, Math.min(e.maxX - size, cx - size / 2));
     e.y = e.groundY - size;
+  }
+
+  // росомаха ищет, куда прыгнуть: опоры — ярусы платформ и верх земли (без препятствий сверху)
+  function wolvPlan(e, api) {
+    const P = api.player, feet = P.y + P.h, cx = e.x + e.w / 2, pcx = P.x + P.w / 2, dx = pcx - cx, side = Math.sign(dx) || e.dir;
+    if (Math.abs(dx) > 300 || P.climb || !P.onGround) return null;
+    if (Math.abs(feet - e.groundY) < 4) { // герой на том же уровне — выпад низким прыжком прямо в него
+      if (Math.abs(dx) > 210 || pcx < e.minX || pcx > e.maxX) return null;
+      const x1 = api.clamp(e.x + api.clamp(dx, -150, 150), e.minX, e.maxX - e.w);
+      return Math.abs(x1 - e.x) < 12 ? null : { x1, gy: e.groundY, minX: e.minX, maxX: e.maxX, dur: 0.45, hgt: 22, lunge: true };
+    }
+    const up = feet < e.groundY, cands = [];
+    for (const p of api.platforms) if (p.x < cx + 260 && p.x + p.w > cx - 260) cands.push({ x0: p.x, x1: p.x + p.w, y: p.y, plat: true });
+    for (const s of api.solids) if (s.kind === 'ground' && s.x < cx + 260 && s.x + s.w > cx - 260) cands.push({ x0: s.x + 4, x1: s.x + s.w - 4, y: s.y });
+    let best = null, bs = 1e9;
+    for (const c of cands) {
+      const dy = e.groundY - c.y;
+      if (Math.abs(dy) < 30 || Math.abs(dy) > 140 || (up ? dy < 0 || c.y < feet - 3 : dy > 0 || c.y > feet + 3) || c.x1 - c.x0 < e.w + 10) continue;
+      const lx = api.clamp(pcx - side * 70 - e.w / 2, c.x0, c.x1 - e.w), lc = lx + e.w / 2; // приземлиться сбоку от героя, а не на него
+      if (Math.abs(lc - cx) > 200 || (Math.abs(c.y - feet) < 4 && Math.abs(lc - pcx) < 45)) continue;
+      if (!c.plat && api.groundAt(lc) !== c.y) continue; // на земле стоит препятствие — туда нельзя
+      const sc = Math.abs(c.y - feet) * 3 + Math.abs(lc - pcx);
+      if (sc < bs) { bs = sc; best = { x1: lx, gy: c.y, minX: c.x0, maxX: c.x1, dur: 0.6, hgt: 40 }; }
+    }
+    return best;
   }
 
   const enemies = {
@@ -538,6 +663,105 @@
         ctx.fillStyle = 'rgba(255,255,255,.9)'; oval(ctx, -r * 0.35, -r * 1.45, r * 0.28, r * 0.16, -0.5);
       },
     },
+
+    wolverine: { // росомаха: скачет с яруса на ярус вслед за героем, на одном уровне — выпад; перед каждым прыжком приседает 0,85 с
+      w: 34, h: 20, hp: 2, pts: 250, hitColor: '#e0c9a6', deathColor: '#5a3f2a',
+      init(e) { e.state = 'walk'; e.st = 0; e.jump = null; },
+      update(e, dt, api) {
+        if (e.state === 'walk') {
+          api.patrol(e, 46, dt); e.y = e.groundY - e.h; e.cd -= dt;
+          if (e.cd <= 0) {
+            e.jump = wolvPlan(e, api);
+            if (e.jump) { e.state = 'crouch'; e.st = 0.85; e.dir = Math.sign(e.jump.x1 - e.x) || e.dir; } else e.cd = 0.3;
+          }
+        } else if (e.state === 'crouch') {
+          e.st -= dt;
+          if (e.st <= 0) { e.state = 'jump'; e.st = 0; e.jump.x0 = e.x; e.jump.y0 = e.y; e.jump.y1 = e.jump.gy - e.h; }
+        } else if (e.state === 'jump') { // дуга Безье: вершина на hgt выше верхней из опор
+          const j = e.jump, k = Math.min(1, (e.st += dt) / j.dur), c = 2 * (Math.min(j.y0, j.y1) - j.hgt) - (j.y0 + j.y1) / 2;
+          e.x = j.x0 + (j.x1 - j.x0) * k; e.y = (1 - k) * (1 - k) * j.y0 + 2 * k * (1 - k) * c + k * k * j.y1;
+          if (k >= 1) {
+            Object.assign(e, { x: j.x1, y: j.y1, groundY: j.gy, minX: j.minX, maxX: j.maxX, state: 'rest', st: j.lunge ? 0.7 : 0.4 });
+            api.burst(e.x + e.w / 2, j.gy, '#e8f4ff', 6, 90, 400);
+          }
+        } else { e.st -= dt; if (e.st <= 0) { e.state = 'walk'; e.cd = api.rand(0.8, 1.4); } }
+      },
+      draw(e, ctx) {
+        const s = e.state, cr = s === 'crouch' ? Math.min(1, (0.85 - e.st) / 0.25) : 0, air = s === 'jump';
+        const run = s === 'walk' ? Math.sin(e.t * 16) * 2.5 : 0, pant = s === 'rest' ? Math.sin(e.t * 14) * 0.8 : 0;
+        if (!air) { ctx.fillStyle = 'rgba(20,40,70,.3)'; oval(ctx, 0, 0, 15, 2.2); }
+        if (s === 'crouch' && e.jump) { // метка приземления на опоре — куда прыгнет
+          const tx = (e.jump.x1 - e.x) * e.dir, ty = e.jump.gy - e.groundY, a = 0.45 + 0.4 * Math.sin(e.t * 16);
+          ctx.strokeStyle = `rgba(255,120,70,${a.toFixed(3)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(tx, ty, 16, 4, 0, 0, TAU); ctx.stroke();
+          ctx.setLineDash([3, 5]); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(8, -14); ctx.quadraticCurveTo(tx / 2, Math.min(0, ty) - 50, tx, ty - 4); ctx.stroke(); ctx.setLineDash([]);
+        }
+        ctx.save(); ctx.translate(0, cr * 3); ctx.rotate(air ? (e.y < e.jump.y0 ? -0.18 : 0.15) : 0);
+        const a = air ? 4 : run;
+        ctx.fillStyle = '#2a1d15'; // лапы
+        ctx.fillRect(-12 - a, -7, 4, 7 - cr * 2); ctx.fillRect(-6 + a, -7, 4, 7 - cr * 2); ctx.fillRect(5 + a, -7, 4, 7 - cr * 2); ctx.fillRect(10 - a, -7, 4, 7 - cr * 2);
+        ctx.fillStyle = '#3b2a1f'; ctx.beginPath(); ctx.ellipse(-20, -12 + Math.sin(e.t * 5) * 1.2, 7, 4, -0.4 - cr * 0.3, 0, TAU); ctx.fill(); // пушистый хвост
+        ctx.beginPath(); ctx.ellipse(-1, -12 + pant * 0.3, 15, 7.5, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#c9a26b'; ctx.beginPath(); ctx.ellipse(-3, -12, 12, 2.2, -0.05, 0, TAU); ctx.fill(); // светлая полоса по боку
+        ctx.fillStyle = '#3b2a1f'; ctx.beginPath(); ctx.arc(13, -13, 6, 0, TAU); ctx.fill(); oval(ctx, 18, -11, 4, 3);
+        ctx.fillStyle = '#9c8062'; oval(ctx, 12, -16, 4, 2); // светлая «маска» на лбу
+        ctx.fillStyle = '#2a1d15'; oval(ctx, 9, -19, 2.2, 2.2); oval(ctx, 14, -19, 2.2, 2.2);
+        ctx.fillStyle = '#111'; ctx.fillRect(21, -12.5, 2.5, 2.5);
+        ctx.fillStyle = cr > 0 || air ? '#ffb13b' : '#e8e0d0'; ctx.fillRect(14.5, -15, 2.4, 2.2); // глаз: в прыжке горит
+        if (cr > 0 || air) { ctx.fillStyle = '#fff'; poly(ctx, [17, -9.5, 18, -7, 19, -9.5]); poly(ctx, [20, -9.5, 21, -7.5, 22, -9.5]); } // оскал
+        if (cr > 0) { ctx.fillStyle = '#2a1d15'; for (let k = 0; k < 5; k++) poly(ctx, [-12 + k * 5, -18, -10 + k * 5, -22 - cr * 3, -8 + k * 5, -18]); } // шерсть дыбом
+        ctx.restore();
+        if (cr > 0) { ctx.fillStyle = '#ff6e57'; ctx.fillRect(-1.5, -40, 3, 10); ctx.fillRect(-1.5, -28, 3, 3); }
+      },
+    },
+
+    owl: { // полярная сова: скользит над участком, замирает с поднятыми крыльями (0,9 с) и пикирует дугой сквозь место героя
+      w: 32, h: 18, hp: 1, pts: 200, hitColor: '#ffffff', deathColor: '#f4f9fd',
+      init(e) { e.baseY = e.y; e.state = 'fly'; e.st = 0; e.tx = e.x; e.ty = e.y; },
+      update(e, dt, api) {
+        const P = api.player, cx = e.x + e.w / 2, pcx = P.x + P.w / 2, pcy = P.y + P.h / 2, lo = e.minX, hi = Math.max(e.minX, e.maxX - e.w);
+        const aim = () => { e.tx = api.clamp(pcx - e.w / 2, lo, hi); e.ty = Math.min(pcy - e.h / 2, e.groundY - e.h - 2); };
+        if (e.state === 'fly') {
+          api.patrol(e, 55, dt); e.y = e.baseY + Math.sin(e.t * 2.2) * 6; e.cd -= dt;
+          const adx = Math.abs(pcx - cx);
+          if (e.cd <= 0 && adx > 60 && adx < 260 && pcx > lo && pcx < hi + e.w && pcy > e.y + e.h + 20 && pcy - e.y < 240) { e.state = 'warn'; e.st = 0.9; e.dir = Math.sign(pcx - cx); aim(); }
+        } else if (e.state === 'warn') { // крылья подняты, глаза горят; первые 0,55 с следит за героем, потом цель замирает
+          e.st -= dt; if (e.st > 0.35) { aim(); e.dir = Math.sign(pcx - cx) || e.dir; }
+          if (e.st <= 0) { e.state = 'dive'; e.st = 0; e.sx = e.x; e.sy = e.y; e.ex = api.clamp(2 * e.tx - e.x, lo, hi); e.dir = Math.sign(e.ex - e.sx) || e.dir; }
+        } else if (e.state === 'dive') { // дуга: вниз к цели и снова вверх по другую сторону
+          const k = Math.min(1, (e.st += dt) / 1.05), u = 2 * k - 1;
+          e.x = e.sx + (e.ex - e.sx) * k; e.y = e.sy + (e.ty - e.sy) * (1 - u * u);
+          if (k >= 1) { e.state = 'fly'; e.cd = api.rand(2.2, 3.2); e.baseY = e.y; e.t = 0; }
+        }
+      },
+      draw(e, ctx) {
+        const s = e.state, warn = s === 'warn', dive = s === 'dive';
+        const fl = warn ? -0.5 + Math.sin(e.t * 30) * 0.05 : dive ? 1.25 : 0.35 + Math.sin(e.t * 9) * 0.75; // крыло: поднято и дрожит / сложено / машет
+        if (warn) { // пунктир будущей дуги и метка цели
+          const tx = (e.tx - e.x) * e.dir, ty = e.ty - e.y, ex = Math.abs(2 * tx), a = 0.5 + 0.4 * Math.sin(e.t * 18);
+          ctx.strokeStyle = `rgba(255,214,90,${a.toFixed(3)})`; ctx.lineWidth = 1.4; ctx.setLineDash([4, 5]);
+          ctx.beginPath(); ctx.moveTo(0, -9); ctx.quadraticCurveTo(tx, 2 * ty - 9, ex, -9); ctx.stroke(); ctx.setLineDash([]);
+          ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(tx, ty - 9, 9, 0, TAU); ctx.stroke();
+        }
+        ctx.save(); if (dive) ctx.rotate(e.st < 0.52 ? 0.35 : -0.3); // нос вниз, затем вверх
+        for (let k = 0; k < 2; k++) { // крылья сбоку: дальнее темнее и чуть сдвинуто
+          ctx.save(); ctx.translate(k ? -1 : 2, -12); ctx.rotate(fl + (k ? 0 : -0.15));
+          ctx.fillStyle = k ? '#eef4f9' : '#b7c6d4'; poly(ctx, [2, 0, -5, -12, -15, -19, -24, -17, -16, -5]);
+          ctx.fillStyle = k ? '#8fa1b4' : '#7d8fa3'; poly(ctx, [-15, -19, -24, -17, -21, -13, -14, -15]); // тёмные концы маховых
+          ctx.restore();
+        }
+        ctx.fillStyle = '#f4f9fd'; ctx.strokeStyle = OUT; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.ellipse(-2, -9, 11, 7.5, 0, 0, TAU); ctx.fill(); ctx.stroke();
+        poly(ctx, [-12, -9, -18, -6, -12, -5]); // хвост
+        ctx.fillStyle = '#5a6878'; for (let k = 0; k < 5; k++) ctx.fillRect(-9 + k * 3.5, -11 + (k % 2) * 3, 1.6, 1.6); // крапинки
+        ctx.fillStyle = '#f4f9fd'; ctx.beginPath(); ctx.arc(8, -12, 6.5, 0, TAU); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = warn ? '#ffe14a' : '#f5c518'; oval(ctx, 7, -13, 2.4, 2.4); oval(ctx, 11.5, -13, 2.4, 2.4);
+        if (warn) { ctx.fillStyle = 'rgba(255,225,74,.3)'; oval(ctx, 9, -13, 8, 5); }
+        ctx.fillStyle = '#111'; ctx.fillRect(7, -13.8, 1.4, 1.6); ctx.fillRect(11.6, -13.8, 1.4, 1.6);
+        ctx.fillStyle = '#3c4656'; poly(ctx, [9, -11, 11, -11, 10, -8.5]); // клюв
+        ctx.fillStyle = '#3c4656'; ctx.fillRect(-4, -2.5, 1.5, 3); ctx.fillRect(0, -2.5, 1.5, 3); // когти
+        ctx.restore();
+      },
+    },
   };
 
   // ---------- метель и порывы ветра ----------
@@ -570,13 +794,13 @@
 
   function update(dt, api) {
     const g = st.gust, P = api.player;
-    if (P.onGround) stepUp(P, api);
+    if (P.onGround && !P.climb) stepUp(P, api);
     g.t -= dt;
     if (g.phase === 'calm' && g.t <= 0) { g.phase = 'warn'; g.t = GUST_WARN; g.dir = Math.random() < 0.65 ? -1 : 1; }
     else if (g.phase === 'warn' && g.t <= 0) { g.phase = 'gust'; g.t = GUST_LEN; }
     else if (g.phase === 'gust' && g.t <= 0) { g.phase = 'calm'; g.t = api.rand(5, 8); }
     g.k += ((g.phase === 'gust' ? 1 : g.phase === 'warn' ? 0.35 : 0) - g.k) * Math.min(1, dt * 4);
-    if (g.phase === 'gust' && P.onGround) windPush(P, g.dir * GUST_V * Math.min(1, (GUST_LEN - g.t) * 4, g.t * 4) * dt, api);
+    if (g.phase === 'gust' && P.onGround && !P.climb) windPush(P, g.dir * GUST_V * Math.min(1, (GUST_LEN - g.t) * 4, g.t * 4) * dt, api);
   }
 
   function drawForeground(ctx, api) { // позёмка: снег струится по насту у самых ног
@@ -642,10 +866,13 @@
       { type: 'snowball', where: 'ground', weight: 2, from: 0.1 },
       { type: 'bear', where: 'ground', weight: 2, from: 0.25 },
       { type: 'fox', where: 'upper', weight: 1 },
+      { type: 'wolverine', where: 'upper', weight: 3 },
+      { type: 'wolverine', where: 'ground', weight: 1, from: 0.3 },
+      { type: 'owl', where: 'air', weight: 2, from: 0.15 },
     ],
     init(api) {
       Object.assign(st.gust, { phase: 'calm', t: api.rand(4, 6), k: 0, dir: -1 });
     },
-    update, drawBackground, drawGround, drawPit, drawPlatform, drawObstacle, drawDecor, drawFinish, drawForeground, drawOverlay,
+    update, drawBackground, drawGround, drawPit, drawPlatform, drawObstacle, drawDecor, drawFinish, drawForeground, drawOverlay, drawLadder,
   });
 })();
