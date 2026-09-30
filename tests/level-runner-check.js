@@ -88,6 +88,27 @@ function harness(files) {
         return res;
       }, SEEDS);
 
+      // 2б) геометрия ярусов и этажей: проём в перекрытии роняет не больше чем на один ярус/этаж (иначе — урон от падения)
+      r.geometry = await page.evaluate(n => {
+        const res = { levels: 0, deepDrops: [] };
+        for (let k = 0; k < n; k++) {
+          reset(0); res.levels++;
+          const step = G.indoor ? FH : TUN_H, slabs = solids.filter(s => s.slab);
+          for (const Y of [...new Set(slabs.map(s => s.y))]) {
+            const row = slabs.filter(s => s.y === Y), x0 = Math.min(...row.map(s => s.x)), x1 = Math.max(...row.map(s => s.x + s.w));
+            for (let x = x0; x <= x1; x += 6) {
+              if (solids.some(s => x >= s.x && x <= s.x + s.w && Y + 1 >= s.y && Y + 1 <= s.y + s.h)) continue; // не проём
+              if (platforms.some(p => p.hatch && x >= p.x && x <= p.x + p.w && Math.abs(p.y - Y) < 2)) continue; // люк
+              const g = groundBelow(x, Y + 1);
+              if (g === null || g > Y + step + 2) { res.deepDrops.push({ seed, x, y: Y, landing: g }); break; }
+            }
+          }
+        }
+        res.deepDrops = res.deepDrops.slice(0, 5);
+        return res;
+      }, Math.min(SEEDS, 20));
+      if (r.geometry.deepDrops.length) r.errors.push('проём роняет больше чем на ярус: ' + JSON.stringify(r.geometry.deepDrops[0]));
+
       // 3) враги по одному
       r.enemies = await page.evaluate(() => {
         const out = {};

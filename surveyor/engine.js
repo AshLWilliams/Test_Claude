@@ -180,8 +180,8 @@ function generateLevel(s) {
     const n = ri(G.decorCount[0], G.decorCount[1]) + (R() < 0.5 ? 1 : 0); // окружения стало больше
     for (let i = 0; i < n; i++) decor.push({ kind: pick(decorKinds), x: x0 + r(20, w - 20), y, v: R() });
   }
-  function blueprints(x0, w, y) {
-    const n = ri(0, 3), h = r(40, 95);
+  function blueprints(x0, w, y, maxH = 95) {
+    const n = ri(0, 3), h = r(40, Math.max(41, maxH));
     for (let i = 0; i < n; i++) pickups.push({ x: x0 + w / 2 + (i - (n - 1) / 2) * 34, y: Math.max(y < 120 ? -5000 : 50, y - h), t: R() * 6 });
   }
   function helmet(x0, y, chanceWhite) { // каска восстанавливает жизни: белая — две, оранжевая — одну; встречаются редко
@@ -203,7 +203,7 @@ function generateLevel(s) {
   function crowd(x0, w, y) { // бригада рабочих на заднем плане
     if (w < 240 || R() > 0.5) return;
     const n = ri(3, 7), sp = ambOf().special, type = sp && R() < sp.chance ? sp.type : 'workers'; // иногда вместо бригады — особая компания
-    crowds.push({ x: x0 + r(20, Math.max(21, w - n * 20 - 110)), y, n, seed: Math.floor(R() * 1e6), type });
+    crowds.push({ x: x0 + r(20, Math.max(21, w - n * 20 - 110)), y, n, seed: Math.floor(R() * 1e6), type, x0, x1: x0 + w }); // x0..x1 — свой отрезок земли
   }
   function tunnel() { // подземный ход: под верхним тоннелем — ещё ярусы вниз; в тупиках нижних ярусов — завалы и клады
     const first = !tunnels.length, len = first ? ri(1900, 2500) : ri(1300, 1800), top = gy, deep = first ? ri(3, 4) : ri(2, 3); // первый ход на участке — самый длинный и глубокий
@@ -234,18 +234,23 @@ function generateLevel(s) {
       if (sb - sa >= 520) sub = [sa, sb];
     }
     const pieces = []; // куски пола, на которых можно стоять: [x0, x1]
+    // дыры вниз — все с лестницами; не под дырами потолка (иначе пролетишь два яруса и разобьёшься) и не над сокровищницей следующего яруса
+    const fh = [];
+    if (sub) {
+      const far = sub[1] - 300, clash = (hx, w) => topHoles.find(([h0, hw]) => hx < h0 + hw + 70 && hx + w > h0 - 70);
+      for (let hx = sub[0] + ri(60, 120); hx < far;) {
+        const w = ri(60, 86), c = clash(hx, w);
+        if (c) { hx = c[0] + c[1] + 71; continue; } // сдвигаемся за дыру потолка
+        if (hx + w > far) break;
+        fh.push([hx, w]); hx += w + ri(200, 320);
+      }
+      if (!fh.length) for (let hx = sub[0] + 30; hx + 70 < far; hx += 8) if (!clash(hx, 70)) { fh.push([hx, 70]); break; }
+      if (!fh.length) sub = null; // некуда пробить проём — ярус ниже не строим
+    }
     if (sub) {
       solids.push({ x: a, y: floor, w: sub[0] - a, h: bottom - floor, kind: 'ground', under: true, v: R() });
       solids.push({ x: sub[1], y: floor, w: b - sub[1], h: bottom - floor, kind: 'ground', under: true, v: R() });
       pieces.push([a, sub[0]], [sub[1], b]);
-      // дыры вниз — все с лестницами; не под дырами потолка (чтобы не пролететь два яруса) и не над сокровищницей следующего яруса
-      const far = sub[1] - 300, fh = [];
-      for (let hx = sub[0] + ri(60, 120); hx < far; hx += ri(260, 380)) {
-        const w = ri(60, 86);
-        if (topHoles.some(([h0, hw]) => hx < h0 + hw + 70 && hx + w > h0 - 70)) { hx += 60; continue; }
-        fh.push([hx, w]);
-      }
-      if (!fh.length) fh.push([sub[0] + 40, 70]);
       let sx = sub[0];
       for (const [h0, hw] of fh) {
         if (h0 > sx) { solids.push({ x: sx, y: floor, w: h0 - sx, h: TUN_SLAB, kind: 'ground', slab: true, under: true, v: R() }); pieces.push([sx, h0]); }
@@ -343,7 +348,9 @@ function generateLevel(s) {
       const holes = [[L - 30, 30, 'hatch']]; // проём над лестницей перехода
       const shafts = pits.filter(p => p.x < L + 40);
       const free = (h0, hw, m) => !holes.some(([a, w]) => h0 < a + w + m && h0 + hw > a - m) && !shafts.some(p => h0 < p.x + p.w + 70 && h0 + hw > p.x - 70)
-        && !belowHoles.some(([a, w]) => h0 < a + w + 70 && h0 + hw > a - 70); // не над проёмом этажом ниже — иначе пролетишь два этажа
+        && !belowHoles.some(([a, w]) => h0 < a + w + 70 && h0 + hw > a - 70) // не над проёмом этажом ниже — иначе пролетишь два этажа
+        && !solids.some(s => (s.kind === 'obstacle' || s.kind === 'breakable') && Math.abs(s.y + s.h - below.y) < 2 && s.x < h0 + hw + 30 && s.x + s.w > h0 - 30) // лестница не упирается в ящик
+        && !platforms.some(p => p.y < below.y && p.y > y && p.x < h0 + hw + 20 && p.x + p.w > h0 - 20); // и не проходит сквозь настил
       for (let n = ri(1, 2), tries = 0; n > 0 && tries < 20; tries++) { // лестничные клетки: вниз и вверх в любом месте
         const hx = r(180, L - 260);
         if (free(hx, 30, 160)) { holes.push([hx, 30, 'stair']); n--; }
@@ -383,7 +390,7 @@ function generateLevel(s) {
     let t = R() * wsum;
     let kind = ['pit', 'platforms', 'step', 'obstacle', 'flat', 'wall', 'tower', 'under'].find(k => (t -= wts[k] || 0) < 0) || 'flat';
     if ((kind === 'wall' || kind === 'tower') && x < 700) kind = 'flat'; // в начале участка — без высотных конструкций
-    if (kind === 'under' && (!G.underground || x < 900 || x > LENGTH - 1500 || tunnels.length >= 3)) kind = 'flat';
+    if (kind === 'under' && (!G.underground || x < 900 || x > LENGTH - 1500 || tunnels.filter(t => t.depth === 1).length >= 3)) kind = 'flat';
     if (G.underground && !tunnels.length && progress() > 0.4 && x < LENGTH - 1500) kind = 'under'; // подземный ход есть всегда
     if (!secrets.length && progress() > 0.6) kind = 'wall'; // тайник есть на каждом участке
     if (G.indoor) { // здание: этажи ровные, стены — только переходы на этаж выше
@@ -417,7 +424,7 @@ function generateLevel(s) {
         if (R() < 0.1) helmet(p2.x + p2.w / 2, p2.y, 0.15); else blueprints(p2.x, p2.w, p2.y);
         const o = x > 700 && R() < 0.55 + progress() * 0.3 ? pickType(['upper']) : null;
         if (o) spawnEnemy(o.type, p2.x + p2.w * 0.6, p2.y, { minX: p2.x, maxX: p2.x + p2.w, groundY: p2.y, upper: true });
-      } else blueprints(px, pw, gy - 72);
+      } else blueprints(px, pw, gy - 72, G.indoor ? 62 : 95); // в здании над настилом — перекрытие
       enemiesOn(x, len, gy, -0.1);
       x += len;
     } else if (kind === 'step') { // перепад высот
@@ -496,7 +503,9 @@ function generateLevel(s) {
   let gpsSpot = null;
   if (mid.length) { gpsSpot = pick(mid); spawnEnemy('gps', gpsSpot.x0 + gpsSpot.w * 0.6, gpsSpot.y, { groundY: gpsSpot.y, variant: GPS_VARIANTS[levelIdx % GPS_VARIANTS.length] }); }
   if (G.foreman) { // разгневанный прораб — 1–2 на участок
-    const fs = spots.filter(o => o !== gpsSpot && o.p > 0.12 && o.p < 0.9 && o.w > 200);
+    let fs = spots.filter(o => o !== gpsSpot && o.p > 0.12 && o.p < 0.9 && o.w > 200);
+    if (!fs.length) fs = spots.filter(o => o !== gpsSpot && o.p > 0.05 && o.w > 150);
+    if (!fs.length && gpsSpot) fs = [{ ...gpsSpot, x0: gpsSpot.x0 - gpsSpot.w * 0.35 }]; // в крайнем случае — рядом с халтурщиком
     for (let k = ri(1, 2); k > 0 && fs.length; k--) { const o = fs.splice(Math.floor(R() * fs.length), 1)[0]; spawnEnemy('angryForeman', o.x0 + o.w * 0.5, o.y, { groundY: o.y }); }
   }
   if (G.boss) { // финальная арена: ровная площадка, закрывается, пока босс жив
@@ -642,7 +651,7 @@ const ENGINE_ENEMIES = {
       const level = Math.abs(P.y + P.h - (e.y + e.h)) < 34;
       if (e.state === 'lurk') { e.dir = toP; if (adx < 320 && Math.abs(P.y - e.y) < 160) e.state = 'chase'; } // «меряет точку», пока герой не подойдёт
       else if (e.state === 'chase') {
-        want = toP;
+        want = adx < 12 && !level ? 0 : toP; // герой прямо над ним — не дёргается туда-сюда
         if (adx < 42 && level && e.onG) { e.state = 'windup'; e.st = 0.42; e.dir = toP; Sound.play('gps'); }
         else if (adx > 900) e.state = 'lurk';
       } else if (e.state === 'windup') {
@@ -659,7 +668,7 @@ const ENGINE_ENEMIES = {
           }
         }
       } else if (e.state === 'flee') { want = -toP; speed *= 1.3; if (e.st <= 0) { e.state = 'turn'; e.st = 0.45; } }
-      else if (e.state === 'turn') { e.dir = toP; if (e.st <= 0) e.state = 'chase'; } // оглядывается — и снова в погоню
+      else if (e.state === 'turn') { if (adx > 12) e.dir = toP; if (e.st <= 0) e.state = 'chase'; } // оглядывается — и снова в погоню
       if (want) e.dir = want;
       const vx = walkerStep(e, dt, want, speed, e.state !== 'flee'); // удирая, через провалы не прыгает
       if (want && !vx && e.onG && e.state === 'flee') { e.state = 'turn'; e.st = 0.45; } // упёрся — разворачивается
@@ -719,16 +728,17 @@ const ENGINE_ENEMIES = {
       e.st -= dt; e.sayT -= dt;
       const shout = (list, t = 1.6) => { e.say = pickLine(list, e); e.sayT = t; Sound.play('shout'); };
       let want = 0, speed = 270;
-      if (e.state === 'wait') { e.dir = toP; if (adx < 380 && Math.abs(P.y - e.y) < 120) { e.state = 'runby'; e.dir = toP; shout(FOREMAN_SHOUT); } }
+      if (e.state === 'wait') { if (adx > 12) e.dir = toP; if (e.st <= 0 && adx < 380 && Math.abs(P.y - e.y) < 120) { e.state = 'runby'; e.dir = toP; shout(FOREMAN_SHOUT); } }
+      else if (e.state === 'fume') { if (adx > 12) e.dir = toP; if (e.st <= 0) { e.state = 'wait'; e.st = 1.5; } } // упёрся — стоит и пыхтит, потом снова ждёт
       else if (e.state === 'runby') { // бежит на героя и мимо него, ругается
         want = e.dir;
         if (e.sayT < 0.2) shout(FOREMAN_SHOUT);
-        if (Math.sign(dx) === -e.dir && adx > (e.roll ? 300 : 440)) { e.state = 'turn'; e.st = e.roll ? 0.8 : 1; if (!e.roll) { e.roll = true; e.say = 'Сейчас я тебе покажу проект!'; e.sayT = 1.2; } } // за чертежами
-      } else if (e.state === 'turn') { e.dir = toP; if (e.st <= 0) { e.state = 'return'; shout(FOREMAN_RETURN); } }
+        if (e.onG && Math.sign(dx) === -e.dir && adx > (e.roll ? 300 : 440)) { e.state = 'turn'; e.st = e.roll ? 0.8 : 1; if (!e.roll) { e.roll = true; e.say = 'Сейчас я тебе покажу проект!'; e.sayT = 1.2; } } // за чертежами
+      } else if (e.state === 'turn') { if (adx > 12) e.dir = toP; if (e.st <= 0) { e.state = 'return'; shout(FOREMAN_RETURN); } }
       else if (e.state === 'return') { // возвращается с рулоном
-        want = toP; speed = 240;
+        want = adx < 12 && !level ? 0 : toP; speed = 240; // герой прямо над ним — стоит и орёт вверх
         if (adx < 34 && level && e.onG) { e.state = 'swing'; e.st = 0.34; e.hitDone = false; Sound.play('swing'); }
-        else if (adx > 900) e.state = 'wait';
+        else if (adx > 900 && e.onG) { e.state = 'wait'; e.st = 0; }
       } else if (e.state === 'swing') {
         const hb = { x: e.dir > 0 ? e.x + e.w / 2 : e.x + e.w / 2 - 40, y: e.y - 24, w: 40, h: e.h + 24 };
         if (!e.hitDone && e.st < 0.16 && overlap(hb, P)) {
@@ -741,7 +751,7 @@ const ENGINE_ENEMIES = {
       }
       if (want) e.dir = want;
       const vx = walkerStep(e, dt, want, speed, true);
-      if (want && !vx && e.onG && (e.state === 'runby' || e.state === 'return')) { e.state = 'turn'; e.st = 0.4; e.roll = true; } // упёрся в стену — разворот
+      if (want && !vx && e.onG && (e.state === 'runby' || e.state === 'return')) { e.state = 'fume'; e.st = 2.5; e.roll = true; e.say = 'Ну я тебе устрою!'; e.sayT = 1.2; } // упёрся в стену или провал — стоит и пыхтит
       if (Math.random() < dt * (e.state === 'wait' ? 0.6 : 2.5)) particles.push({ x: e.x + e.w / 2 + rand(-4, 4), y: e.y - 6, vx: rand(-15, 15), vy: -rand(30, 60), life: 0.7, max: 0.7, color: 'rgba(235,235,235,.7)', grav: -20, size: rand(2, 4) }); // пар из ушей
       if (e.y > deathLimit(e)) e.dead = true;
     },
@@ -771,7 +781,9 @@ const ENGINE_ENEMIES = {
       if (e.state === 'swing' && e.st < 0.2) { ctx.strokeStyle = 'rgba(207,230,255,.5)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(6, -34, 40, -2, 0.4); ctx.stroke(); }
       if (e.sayT > 0 && e.say) { // облачко с руганью (текст не зеркалим)
         ctx.save(); ctx.scale(e.dir || 1, 1);
-        ctx.font = 'bold 10px system-ui, sans-serif'; const w = Math.min(190, ctx.measureText(e.say).width + 12), y = -84;
+        let fs = 10; ctx.font = `bold ${fs}px system-ui, sans-serif`;
+        const tw = ctx.measureText(e.say).width; if (tw > 210) { fs = 10 * 210 / tw; ctx.font = `bold ${fs}px system-ui, sans-serif`; } // длинная фраза — мельче шрифт, но целиком в облачке
+        const w = Math.min(tw, 210) + 12, y = -84;
         ctx.fillStyle = 'rgba(255,255,255,.95)'; ctx.strokeStyle = '#c62828'; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.rect(-w / 2, y - 14, w, 20); ctx.fill(); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(-4, y + 6); ctx.lineTo(2, y + 16); ctx.lineTo(6, y + 6); ctx.fill();
@@ -1080,6 +1092,7 @@ function update(dt) {
   for (const s of solids) {
     if (s.kind !== 'breakable' || Math.abs(s.x - P.x) > 170 || Math.abs(s.y - P.y) > 120) continue;
     const key = s.sort === 'crack' || s.sort === 'rubble' ? s.sort : 'crate';
+    if (key === 'rubble' && Math.abs(s.y + s.h - (P.y + P.h)) > 10) continue; // подсказка про завал — только на его ярусе
     if (hintsShown.has(key) || (key === 'crate' && levelIdx > 0)) continue;
     hintsShown.add(key);
     popup(s.x + s.w / 2, s.y - 24, key === 'crack' ? 'Трещина! Ударь рейкой' : key === 'rubble' ? 'Завал! За ним что-то блестит — 5–10 ударов' : 'Ящики, бочки и прочее ломаются рейкой', key === 'crate' ? '#f1e6d6' : '#ffd24a');
@@ -1131,7 +1144,9 @@ function updateCrumble(dt) { // неустойчивые леса и мостк�
       if (p.t <= 0) { p.state = 'fall'; p.vy = 0; p.rot = 0; Sound.play('collapse'); debris(p.x + p.w / 2, p.y, ['#8a5a2b', '#c49a6c', '#9aa4b0'], 8, 160); }
     } else if (p.state === 'fall') {
       p.vy = Math.min(p.vy + GRAVITY * dt, 900); p.y += p.vy * dt; p.rot += dt * (p.v - 0.5) * 2;
-      if (p.y > p.y0 + 600) { p.state = 'gone'; p.t = 6; }
+      const floorY = p.walk ? null : (p.base ?? groundBelow(p.x + p.w / 2, p.y0 + 1)); // леса падают на свой этаж, мостки — в шахту
+      if (floorY != null && p.y >= floorY - 6) { p.state = 'gone'; p.t = 6; debris(p.x + p.w / 2, floorY - 4, ['#8a5a2b', '#c49a6c', '#9aa4b0'], 10, 150); Sound.play('thud'); }
+      else if (p.y > p.y0 + 600) { p.state = 'gone'; p.t = 6; }
     } else if (p.state === 'gone') { p.t -= dt; if (p.t <= 0 && Math.abs(P.x + P.w / 2 - (p.x + p.w / 2)) > 280) { p.state = 'idle'; p.y = p.y0; p.rot = 0; } } // потом снова ставят
   }
 }
@@ -1624,6 +1639,8 @@ function updateAmbient(dt) {
     for (let i = 0; i < n; i++) birds.push({ dx: -dir * i * rand(10, 18), dy: (i % 2 ? 1 : -1) * Math.ceil(i / 2) * rand(4, 8), ph: rand(0, 6) });
     amb.flocks.push({ x: dir > 0 ? -60 : W + 60, y: rand(28, 130), vx: dir * rand(45, 80), dir, birds, kind: A.birds });
   }
+  if (ambOf().special && ambOf().special.type === 'drunks' && Math.random() < dt * 0.6) // храп спящих шахтёров — когда герой рядом
+    for (const c of crowds) if (c.type === 'drunks' && Math.abs(player.x - c.x) < 120 && Math.abs(player.y + player.h - c.y) < 60) { Sound.play('snore'); break; }
   for (const f of amb.flocks) { f.x += f.vx * dt - dc * 0.3; f.y += Math.sin(performance.now() / 700 + f.dir) * 4 * dt; }
   amb.flocks = amb.flocks.filter(f => f.x > -250 && f.x < W + 250);
   if (A.plane && !amb.plane && (amb.planeT -= dt) <= 0) { const d = Math.random() < 0.5 ? -1 : 1; amb.plane = { x: d > 0 ? -40 : W + 40, y: rand(22, 55), vx: d * rand(22, 34), trail: [] }; amb.planeT = rand(22, 38); }
@@ -1651,7 +1668,7 @@ function updateAmbient(dt) {
   if (A.bats && (amb.batT -= dt) <= 0) { amb.batT = rand(5, 10); const d = Math.random() < 0.5 ? -1 : 1; for (let i = 0; i < 1 + Math.floor(rand(0, 3)); i++) amb.bats.push({ x: d > 0 ? -20 - i * 25 : W + 20 + i * 25, y: rand(40, 120), vx: d * rand(80, 120), ph: rand(0, 6) }); }
   for (const b of amb.bats) { b.x += b.vx * dt - dc * 0.5; b.ph += dt * 3; }
   amb.bats = amb.bats.filter(b => b.x > -80 && b.x < W + 80);
-  if (A.drips && (amb.dripT -= dt) <= 0) { amb.dripT = rand(0.4, 1.1); const x = camX + rand(0, W), g = groundBelow(x, player.y - 40); if (g !== null) { const c = solids.find(q => x >= q.x && x <= q.x + q.w && q.y + q.h <= g - 40 && q.y + q.h > g - 300); amb.drips.push({ x, y: c ? c.y + c.h : Math.max(camY - 10, g - 300), vy: 0, g }); } }
+  if (A.drips && (amb.dripT -= dt) <= 0) { amb.dripT = rand(0.4, 1.1); const x = camX + rand(0, W), g = groundBelow(x, player.y - 40); if (g !== null) { let c = null; for (const q of solids) if (q.kind !== 'breakable' && x >= q.x && x <= q.x + q.w && q.y + q.h <= g - 40 && q.y + q.h > g - 300 && (!c || q.y + q.h > c.y + c.h)) c = q; amb.drips.push({ x, y: c ? c.y + c.h : Math.max(camY - 10, g - 300), vy: 0, g }); } } // капает с ближайшего свода
   for (const d of amb.drips) { d.vy += 900 * dt; d.y += d.vy * dt; if (d.y >= d.g) { d.done = true; burst(d.x, d.g - 1, 'rgba(160,200,230,.8)', 3, 50, 400); } }
   amb.drips = amb.drips.filter(d => !d.done);
 }
@@ -1718,8 +1735,8 @@ function drawKids(c) { // хулиганят: рисуют граффити, к�
     const act = acts[(i + c.seed) % acts.length], h = hash(c.seed + i * 13);
     let x = c.x + 12 + i * 22, y = c.y, dir = 1;
     if (act === 'spray') x = wx + 60;
-    if (act === 'climb') { x = sx + 13; y = c.y - 8 - Math.abs(Math.sin(now * 0.8 + h * 6)) * 34; }
-    if (run > 0) { x += run * (i % 2 ? 1 : -1); dir = i % 2 ? 1 : -1; }
+    if (act === 'climb') { x = sx + 13; y = c.y - (8 + Math.abs(Math.sin(now * 0.8 + h * 6)) * 34) * (1 - c.off); } // убегая, сначала слезает
+    if (run > 0) { x += run * (i % 2 ? 1 : -1); dir = i % 2 ? 1 : -1; if (c.x0 != null) x = clamp(x, c.x0 + 8, c.x1 - 8); } // не дальше своего куска земли
     ctx.save(); ctx.translate(x, y); ctx.scale(0.62 * (act === 'spray' && !run ? -1 : dir), 0.62);
     const hood = ['#e53935', '#3949ab', '#43a047', '#8e24aa', '#fb8c00'][(c.seed + i) % 5], sw = run ? Math.sin(now * 18 + i) * 0.8 : 0;
     ctx.strokeStyle = '#263238'; ctx.lineWidth = 5; ctx.lineCap = 'round';
@@ -1757,7 +1774,6 @@ function drawDrunks(c) { // уставшие шахтёры спят в обни
     for (let k = 0; k < 3; k++) { const t = (now * 0.35 + k / 3 + i * 0.5) % 1; ctx.globalAlpha = 1 - t; text('z', x - 20 + t * 14 + Math.sin(t * 8) * 3, c.y - 22 - t * 30, 8 + t * 6, '#cfd8dc'); ctx.globalAlpha = 1; }
   }
   ctx.fillStyle = 'rgba(210,235,245,.7)'; ctx.save(); ctx.translate(c.x + 62, c.y - 3); ctx.rotate(1.4); ctx.fillRect(-3, -8, 6, 14); ctx.restore(); ctx.fillRect(c.x + 70, c.y - 13, 5, 13); // пустая тара
-  if (Math.abs(player.x - c.x) < 120 && Math.abs(player.y + player.h - c.y) < 60 && Math.random() < 0.01) Sound.play('snore');
 }
 
 function drawCrowd(c) { // бригада на заднем плане: мельче и темнее героя, каждый занят своим делом
