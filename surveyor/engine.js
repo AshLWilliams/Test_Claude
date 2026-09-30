@@ -832,7 +832,7 @@ function bossDrop() {
 function domeSnowFall() { // сугроб с купола приёмника слетает от удара и потом снова намерзает
   const P = player;
   if (!heroOf().domeSnow || P.domeSnow < 0.15) return;
-  const hx = P.x + P.w / 2 - P.face * 22, hy = P.y + P.h - 104;
+  const hx = P.x + P.w / 2 - P.face * 13, hy = P.y + P.h - 80; // купол приёмника над плечом
   debris(hx, hy, ['#ffffff', '#eef6ff', '#d8e8f8'], Math.round(6 + P.domeSnow * 10), 150);
   burst(hx, hy, '#f4faff', 8, 90, 400);
   Sound.play('snowFall'); P.domeSnow = 0;
@@ -1044,13 +1044,14 @@ function drawStaff(len) { // нивелирная рейка: белая, шаш
 // ---------- снаряжение героя: на каждом участке свой геодезический инструмент (theme.hero.weapon) ----------
 // Инструмент рисуется вдоль оси x (от руки наружу); голова инструмента — на конце, «вверх» у неё — наружу по оси.
 const WEAPONS = {
-  staff:     { name: 'Нивелирная рейка', reach: 78 },
-  gnss:      { name: 'GNSS-приёмник на вешке', reach: 80 },
-  prism:     { name: 'Вешка с отражателем', reach: 80 },
-  slam:      { name: 'SLAM-сканер на вешке', reach: 80 },
-  prism360:  { name: 'Вешка с отражателем 360°', reach: 82 },
-  prismMark: { name: 'Большой отражатель с маркой', reach: 88 },
-  invar:     { name: 'Инварная рейка', reach: 86 },
+  // len — длина в игровых единицах (герой — 40 единиц ≈ 1,8 м), reach — дальность удара
+  staff:     { name: 'Нивелирная рейка', len: 52, reach: 64 },
+  gnss:      { name: 'GNSS-приёмник на вешке', len: 42, reach: 64 },
+  prism:     { name: 'Вешка с отражателем', len: 42, reach: 64 },
+  slam:      { name: 'SLAM-сканер на вешке', len: 40, reach: 64 },
+  prism360:  { name: 'Вешка с отражателем 360°', len: 40, reach: 66 },
+  prismMark: { name: 'Большой отражатель с маркой', len: 42, reach: 70 },
+  invar:     { name: 'Инварная рейка', len: 56, reach: 68 },
 };
 const heroOf = () => (theme && theme.hero) || {};
 const weaponOf = () => WEAPONS[heroOf().weapon] ? heroOf().weapon : 'staff';
@@ -1060,28 +1061,28 @@ function drawPole(len, color = '#f2c230') { // вешка: секции, рез�
   ctx.fillStyle = color; ctx.fillRect(-10, -1.7, len + 10, 3.4);
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(len * 0.45, -1.7, 1.5, 3.4);
   ctx.fillStyle = '#263238'; ctx.fillRect(-4, -2.2, 12, 4.4);
-  ctx.fillStyle = '#7cc47c'; ctx.beginPath(); ctx.arc(14, -3.5, 2.2, 0, 7); ctx.fill();
+  ctx.fillStyle = '#7cc47c'; ctx.beginPath(); ctx.arc(12, -3.5, 2.2, 0, 7); ctx.fill();
 }
 
 function drawWeapon(kind, len) {
   const now = performance.now() / 1000, h = heroOf();
   if (kind === 'staff') { drawStaff(len); return; }
   if (kind === 'invar') { // инварная рейка: алюминиевый профиль, в пазу — штрихкод, ручки и круглый уровень
-    const L = len + 8;
+    const L = len;
     ctx.fillStyle = '#b8c2ca'; ctx.fillRect(-12, -4, L, 8);
     ctx.fillStyle = '#f4f4f0'; ctx.fillRect(-9, -2.6, L - 6, 5.2);
     ctx.fillStyle = '#111';
     for (let x = -8, i = 0; x < L - 16; i++) { const w = 1 + Math.floor(hash(i * 13 + 7) * 3); if (i % 2 === 0) ctx.fillRect(x, -2.6, w, 5.2); x += w; }
-    ctx.fillStyle = '#6d7880'; ctx.fillRect(-12, -4, 3, 8); ctx.fillRect(L - 15, -4, 3, 8); ctx.fillRect(18, 3.5, 8, 3); ctx.fillRect(40, 3.5, 8, 3);
-    ctx.fillStyle = '#7cc47c'; ctx.beginPath(); ctx.arc(22, -6, 2.3, 0, 7); ctx.fill();
+    ctx.fillStyle = '#6d7880'; ctx.fillRect(-12, -4, 3, 8); ctx.fillRect(L - 15, -4, 3, 8); ctx.fillRect(10, 3.5, 7, 3); ctx.fillRect(28, 3.5, 7, 3);
+    ctx.fillStyle = '#7cc47c'; ctx.beginPath(); ctx.arc(14, -6, 2.3, 0, 7); ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1; ctx.strokeRect(-12, -4, L, 8);
     return;
   }
   const big = kind === 'prismMark';
-  drawPole(big ? len + 6 : len, kind === 'slam' ? '#37474f' : kind === 'gnss' ? '#263238' : '#f2c230');
+  drawPole(len, kind === 'slam' ? '#37474f' : kind === 'gnss' ? '#263238' : '#f2c230');
   if (kind === 'gnss') { ctx.fillStyle = '#263238'; ctx.fillRect(len * 0.5, 2, 8, 6); ctx.fillStyle = '#7cffb2'; ctx.fillRect(len * 0.5 + 1, 3, 6, 4); } // контроллер на кронштейне
-  ctx.save(); ctx.translate(big ? len + 6 : len, 0); ctx.rotate(Math.PI / 2); // дальше «вверх» = наружу по вешке
-  if (big) ctx.scale(1.4, 1.4);
+  ctx.save(); ctx.translate(len, 0); ctx.rotate(Math.PI / 2); // дальше «вверх» = наружу по вешке
+  if (big) ctx.scale(1.3, 1.3); // на мосту отражатель крупнее
   if (kind === 'gnss') { // приёмник: корпус и купол антенны; на снежном участке на куполе растёт сугроб
     ctx.fillStyle = '#607d8b'; ctx.fillRect(-7, -5, 14, 5);
     ctx.fillStyle = '#f5f5f5'; ctx.beginPath(); ctx.ellipse(0, -5, 8, 6, 0, Math.PI, 0); ctx.fill();
@@ -1182,9 +1183,9 @@ function drawPlayer() {
     const ph = 1 - P.attackT / 0.26, e = ph < 0.6 ? ph / 0.6 : 1;
     ang = -2.4 + (2.4 + 0.35) * (1 - Math.pow(1 - e, 3));
     ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 10;
-    ctx.beginPath(); ctx.arc(4, -26, 62, -2.2, ang); ctx.stroke();
+    ctx.beginPath(); ctx.arc(4, -26, WEAPONS[weaponOf()].reach - 12, -2.2, ang); ctx.stroke();
   }
-  ctx.save(); ctx.translate(4, -26); ctx.rotate(ang); drawWeapon(weaponOf(), 76); ctx.restore();
+  ctx.save(); ctx.translate(4, -26); ctx.rotate(ang); drawWeapon(weaponOf(), WEAPONS[weaponOf()].len); ctx.restore();
   // рука, держащая инструмент
   ctx.strokeStyle = dirty ? '#252c38' : '#2f4a7a'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, -32); ctx.lineTo(4, -26); ctx.stroke();
   ctx.fillStyle = '#f1c27d'; ctx.beginPath(); ctx.arc(4, -26, 2.5, 0, 7); ctx.fill();
