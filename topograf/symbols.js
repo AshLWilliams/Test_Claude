@@ -24,7 +24,7 @@ const Sym = (() => {
   'use strict';
   const TAU = Math.PI * 2, PI = Math.PI, SQ = Math.SQRT1_2;
   const TEX = 2;            // текселей на единицу в кэшированных текстурах
-  const TS = 96;            // размер плитки текстуры, ед.
+  const TS = 128;           // размер плитки текстуры, ед.
   const TSZ = TS * TEX;     // размер плитки текстуры, px
   const HAS_DOM = typeof document !== 'undefined';
 
@@ -333,9 +333,10 @@ const Sym = (() => {
     });
   }
   function organic(seed, base, light, dark, amp, nBlades, styles, bw) {
-    const S = TSZ, big = fbm(S, seed, [[3, 1], [6, 0.7], [12, 0.45]]), mid = vnoise(S, 32, seed + 5), wn = wnoise(seed + 9);
+    const S = TSZ, big = fbm(S, seed, [[8, 1], [16, 0.7], [32, 0.4]]), mid = vnoise(S, 64, seed + 5), wn = wnoise(seed + 9);
+    nBlades = Math.round(nBlades * S * S / 36864);
     const r = texPix(S, (x, y, o, i) => {
-      let t = (big[i] - 0.5) * 2.2 * amp + (mid[i] - 0.5) * 0.7 * amp;
+      let t = (big[i] - 0.5) * 1.5 * amp + (mid[i] - 0.5) * 0.8 * amp;
       const c = t > 0 ? light : dark; t = Math.min(1, Math.abs(t));
       const n = (wn() - 0.5) * 16;
       o[0] = base[0] + (c[0] - base[0]) * t + n;
@@ -364,19 +365,19 @@ const Sym = (() => {
     meadow: () => {
       const r = organic(303, [124, 154, 76], [176, 180, 92], [84, 118, 54], 1.05, 2800,
         ['rgba(190,196,112,.5)', 'rgba(150,176,86,.45)', 'rgba(60,92,40,.5)', 'rgba(110,140,60,.45)'], 0.8);
-      dotsBatch(r.g, TSZ, rng(304), 230, 0.6, 1.1, ['#f6f3ea', '#f3d23a', '#c39be0', '#8fb1ea', '#f3f0e6', '#e9c43a']);
+      dotsBatch(r.g, TSZ, rng(304), 380, 0.55, 1.0, ['#f6f3ea', '#f3d23a', '#c39be0', '#8fb1ea', '#f3f0e6', '#e9c43a']);
       return r.c;
     },
     dirt: () => {
       const r = organic(404, [136, 106, 74], [164, 134, 98], [100, 76, 52], 0.85, 500, ['rgba(80,58,38,.35)', 'rgba(184,154,116,.35)']);
-      pebbles(r.g, TSZ, rng(405), 150, 0.6, 1.4, ['#8f877a', '#6f604d', '#a59c8a', '#7d6a55']);
+      pebbles(r.g, TSZ, rng(405), 260, 0.5, 1.2, ['#8f877a', '#6f604d', '#a59c8a', '#7d6a55']);
       return r.c;
     },
     sand: () => {
       const r = organic(505, [218, 197, 146], [236, 218, 174], [196, 170, 122], 0.6, 0, []), g = r.g, R = rng(506), S = TSZ;
       g.lineWidth = 1;
       for (let j = 0; j < 16; j++) {
-        const y0 = j * 12 + R() * 3, k = 1 + ((R() * 3) | 0), ph = R() * TAU, A = 1.5 + R() * 2;
+        const y0 = j * S / 16 + R() * 3, k = 1 + ((R() * 3) | 0), ph = R() * TAU, A = 1.5 + R() * 2;
         for (const oy of [-S, 0, S]) for (const [dy, st] of [[0, 'rgba(255,248,226,.32)'], [1.2, 'rgba(160,126,82,.16)']]) {
           g.strokeStyle = st; g.beginPath();
           for (let x = 0; x <= S; x += 2) { const y = y0 + oy + dy + Math.sin(x / S * TAU * k + ph) * A; if (x) g.lineTo(x, y); else g.moveTo(x, y); }
@@ -387,18 +388,18 @@ const Sym = (() => {
       return r.c;
     },
     gravel: () => {
-      const S = TSZ, W = worley(S, 3.2, 606), wn = wnoise(607), R = rng(608);
+      const S = TSZ, W = worley(S, 2.3, 606), wn = wnoise(607), R = rng(608);
       const tone = new Float32Array(W.n * W.n), tint = new Float32Array(W.n * W.n);
-      for (let i = 0; i < tone.length; i++) { tone[i] = 118 + R() * 82; tint[i] = (R() - 0.5) * 24; }
+      for (let i = 0; i < tone.length; i++) { tone[i] = 128 + R() * 62; tint[i] = (R() - 0.5) * 20; }
       return texPix(S, (x, y, o, i) => {
         const id = W.id[i], e = W.f2[i] - W.f1[i];
-        let v = tone[id] - (W.vx[i] + W.vy[i]) / W.cell * 26 + (wn() - 0.5) * 10;
-        if (e < 0.9) v *= 0.42 + e * 0.32;
+        let v = tone[id] - (W.vx[i] + W.vy[i]) / W.cell * 20 + (wn() - 0.5) * 10;
+        if (e < 0.7) v *= 0.6 + e * 0.4;
         o[0] = v + tint[id]; o[1] = v + tint[id] * 0.4; o[2] = v - tint[id] * 0.3 - 3;
       }).c;
     },
     asphalt: () => {
-      const S = TSZ, big = fbm(S, 707, [[4, 1], [12, 0.5]]), wn = wnoise(708);
+      const S = TSZ, big = fbm(S, 707, [[8, 1], [24, 0.5]]), wn = wnoise(708);
       return texPix(S, (x, y, o, i) => {
         let v = 90 + (big[i] - 0.5) * 16 + (wn() - 0.5) * 14, t = 0;
         const r = wn();
@@ -407,12 +408,12 @@ const Sym = (() => {
       }).c;
     },
     concrete: () => {
-      const S = TSZ, big = fbm(S, 808, [[4, 1], [16, 0.6]]), wn = wnoise(809), sw = 48, sh = 24;
+      const S = TSZ, big = fbm(S, 808, [[8, 1], [32, 0.6]]), wn = wnoise(809), sw = 64, sh = 32;
       const r = texPix(S, (x, y, o, i) => {
-        const sx = (x / sw) | 0, sy = (y / sh) | 0, st = (hash(sx * 31 + sy * 7, 3) - 0.5) * 14;
-        let v = 182 + st + (big[i] - 0.5) * 18 + (wn() - 0.5) * 9;
-        const jx = x % sw, jy = y % sh;
-        if (jx === 0 || jy === 0) v -= 50; else if (jx === 1 || jy === 1) v += 8; else if (jx === sw - 1 || jy === sh - 1) v -= 9;
+        const sy = (y / sh) | 0, xx = x, sx = (xx / sw) | 0, st = (hash(sx * 31 + sy * 7, 3) - 0.5) * 12;
+        let v = 182 + st + (big[i] - 0.5) * 14 + (wn() - 0.5) * 9;
+        const jx = xx % sw, jy = y % sh;
+        if (jx === 0 || jy === 0) v -= 28; else if (jx === 1 || jy === 1) v += 7; else if (jx === sw - 1 || jy === sh - 1) v -= 7;
         o[0] = v + 2; o[1] = v; o[2] = v - 6;
       });
       const R = rng(810), g = r.g;
@@ -426,18 +427,18 @@ const Sym = (() => {
       return r.c;
     },
     tiles: () => {
-      const S = TSZ, pw = 8, ph = 4, wn = wnoise(909), big = fbm(S, 910, [[4, 1], [12, 0.5]]);
+      const S = TSZ, pw = 8, ph = 4, wn = wnoise(909), big = fbm(S, 910, [[8, 1], [24, 0.5]]);
       return texPix(S, (x, y, o, i) => {
         const row = (y / ph) | 0, off = (row & 1) ? pw / 2 : 0, xx = (x + off) % S, col = (xx / pw) | 0;
         const h = hash(row * 131 + col, 9);
         let v = 152 + (h - 0.5) * 26 + (big[i] - 0.5) * 16 + (wn() - 0.5) * 8;
-        const red = h > 0.88 ? 1 : 0, jx = xx % pw, jy = y % ph;
+        const red = h > 0.95 ? 1 : 0, jx = xx % pw, jy = y % ph;
         if (jx === 0 || jy === 0) v -= 34; else if (jx === 1 || jy === 1) v += 9; else if (jx === pw - 1 || jy === ph - 1) v -= 8;
         o[0] = v + 4 + red * 22; o[1] = v + 1 - red * 6; o[2] = v - 4 - red * 14;
       }).c;
     },
     swamp: () => {
-      const S = TSZ, big = fbm(S, 1111, [[4, 1], [8, 0.7], [16, 0.4]]), W = worley(S, 8, 1112), wn = wnoise(1113);
+      const S = TSZ, big = fbm(S, 1111, [[6, 1], [12, 0.7], [24, 0.4]]), W = worley(S, 8, 1112), wn = wnoise(1113);
       const r = texPix(S, (x, y, o, i) => {
         const b = big[i], n = (wn() - 0.5) * 14;
         if (b < 0.4) {
@@ -452,7 +453,7 @@ const Sym = (() => {
       return r.c;
     },
     water: () => {
-      const S = TSZ, big = fbm(S, 1212, [[3, 1], [6, 0.6], [12, 0.4]]), wn = wnoise(1213);
+      const S = TSZ, big = fbm(S, 1212, [[6, 1], [12, 0.6], [24, 0.4]]), wn = wnoise(1213);
       const r = texPix(S, (x, y, o, i) => { const t = (big[i] - 0.5) * 2, n = (wn() - 0.5) * 5; o[0] = 66 + t * 16 + n; o[1] = 118 + t * 18 + n; o[2] = 150 + t * 14 + n; });
       const g = r.g, R = rng(1214);
       g.lineCap = 'round';
@@ -467,28 +468,42 @@ const Sym = (() => {
       return r.c;
     },
     field: () => {
-      const S = TSZ, rowp = 6, big = fbm(S, 1313, [[4, 1], [12, 0.5]]), clump = vnoise(S, 64, 1314), wn = wnoise(1315);
+      const S = TSZ, rowp = 8, big = fbm(S, 1313, [[8, 1], [16, 0.5]]), clump = vnoise(S, 128, 1314), wn = wnoise(1315);
       return texPix(S, (x, y, o, i) => {
-        const fy = (y % rowp) - rowp / 2 + 0.5, crop = Math.abs(fy) < 1.8 && clump[i] > 0.22;
-        const n = (wn() - 0.5) * 16, b = (big[i] - 0.5) * 22;
-        if (crop) { const sh = fy < 0 ? 14 : -10; o[0] = 100 + b + n + sh * 0.6; o[1] = 136 + b + n + sh; o[2] = 58 + n * 0.5; }
-        else { o[0] = 136 + b + n; o[1] = 110 + b + n; o[2] = 76 + b * 0.5 + n * 0.6; }
+        const row = (y / rowp) | 0, fy = (y % rowp) - rowp / 2 + 0.5, rv = (hash(row, 13) - 0.5) * 16;
+        const crop = Math.abs(fy) < 2.6 + (clump[i] - 0.5) * 2 && clump[i] > 0.18;
+        const n = (wn() - 0.5) * 18, b = (big[i] - 0.5) * 16;
+        if (crop) { const sh = fy < -0.5 ? 16 : fy > 1.5 ? -14 : 0; o[0] = 92 + b + n + sh * 0.6 + rv * 0.4; o[1] = 132 + b + n + sh + rv; o[2] = 52 + n * 0.5; }
+        else { o[0] = 122 + b + n; o[1] = 96 + b + n; o[2] = 66 + b * 0.5 + n * 0.6; }
       }).c;
     },
+    fieldV: () => { // те же грядки, повёрнутые на 90°
+      const src = texCanvas('field'), c = mkCanvas(src.width, src.height), g = c.getContext('2d');
+      g.translate(src.width, 0); g.rotate(PI / 2); g.drawImage(src, 0, 0);
+      return c;
+    },
     forestFloor: () => {
-      const S = TSZ, W = worley(S, 2.4, 1414), big = fbm(S, 1415, [[4, 1], [8, 0.6]]), R0 = rng(1416), wn = wnoise(1417);
-      const pal = [[104, 84, 52], [92, 96, 54], [58, 60, 36], [132, 112, 62], [78, 70, 44]];
+      const S = TSZ, W = worley(S, 2.4, 1414), big = fbm(S, 1415, [[8, 1], [16, 0.6]]), R0 = rng(1416), wn = wnoise(1417);
+      const pal = [[98, 82, 52], [90, 94, 56], [66, 66, 42], [118, 104, 64], [80, 74, 48]];
       const ci = new Uint8Array(W.n * W.n);
       for (let i = 0; i < ci.length; i++) ci[i] = (R0() * pal.length) | 0;
       const r = texPix(S, (x, y, o, i) => {
         const c = pal[ci[W.id[i]]], e = W.f2[i] - W.f1[i];
-        let k = e < 0.6 ? 0.62 : 1; k += (wn() - 0.5) * 0.12;
-        const m = clamp((big[i] - 0.55) * 4, 0, 1);
-        o[0] = (c[0] * (1 - m) + 84 * m) * k; o[1] = (c[1] * (1 - m) + 118 * m) * k; o[2] = (c[2] * (1 - m) + 50 * m) * k;
+        let k = e < 0.6 ? 0.72 : 1; k += (wn() - 0.5) * 0.12;
+        const m = clamp((big[i] - 0.6) * 2.5, 0, 0.7);
+        o[0] = (c[0] * (1 - m) + 84 * m) * k; o[1] = (c[1] * (1 - m) + 112 * m) * k; o[2] = (c[2] * (1 - m) + 52 * m) * k;
       });
       strokesBatch(r.g, S, rng(1418), 800, 1.8, 3.2, ['rgba(64,44,26,.55)', 'rgba(150,120,70,.45)'], 0.55);
       strokesBatch(r.g, S, rng(1419), 30, 6, 12, ['rgba(92,70,44,.8)'], 0.9);
       return r.c;
+    },
+    // штриховка огнестойких зданий на плане (45°, шаг 1,6 ед.)
+    hatch: () => {
+      const n = 32, c = mkCanvas(n, n), g = c.getContext('2d');
+      g.strokeStyle = 'rgba(196,84,58,.55)'; g.lineWidth = 0.6; g.beginPath();
+      for (let t = -n; t <= 2 * n; t += n / 10) { g.moveTo(t, n); g.lineTo(t + n, 0); }
+      g.stroke();
+      return c;
     },
     // полупрозрачное «зерно» для крыш, резины и т. п.
     grain: () => {
@@ -514,47 +529,89 @@ const Sym = (() => {
       return r.c;
     },
   };
-  const GROUND_MACRO = { grass: 0.55, lawn: 0.3, meadow: 0.6, dirt: 0.5, sand: 0.4, gravel: 0.35, asphalt: 0.35, concrete: 0.35, tiles: 0.25, swamp: 0.55, water: 0.45, field: 0.45, forestFloor: 0.55 };
-  const _pats = {};
+  const GROUND_MACRO = { grass: 0.5, lawn: 0.28, meadow: 0.55, dirt: 0.5, sand: 0.4, gravel: 0.3, asphalt: 0.3, concrete: 0.28, tiles: 0.22, swamp: 0.5, water: 0.4, field: 0.35, forestFloor: 0.45 };
+  const _pats = {}, _texc = {};
+  function texCanvas(name) { return _texc[name] || (_texc[name] = GEN[name]()); }
   function pat(name) {
     let p = _pats[name];
-    if (!p) p = _pats[name] = hc().createPattern(GEN[name](), 'repeat');
+    if (!p) p = _pats[name] = hc().createPattern(texCanvas(name), 'repeat');
     return p;
   }
-  // паттерн с привязкой к мировым координатам: сдвиг (ox, oy) ед., поворот rot, масштаб scale ед./тексель
-  function patT(name, ox, oy, rot, scale) {
+  // копия текстуры, пересэмплированная в f раз (для попиксельного совпадения с экраном)
+  function patRes(name, f) {
+    if (f === 1) return pat(name);
+    const key = name + '@' + f;
+    if (key in _pats) return _pats[key];
+    const src = texCanvas(name), n = Math.round(src.width * f);
+    if (n > 1100 || Math.abs(n - src.width * f) > 1e-6) return (_pats[key] = null);
+    const c = mkCanvas(n, n), g = c.getContext('2d');
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    // три копии по краям — чтобы сглаживание на швах учитывало соседнюю плитку
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) g.drawImage(src, ox * n, oy * n, n, n);
+    return (_pats[key] = hc().createPattern(c, 'repeat'));
+  }
+  // паттерн с привязкой к мировым координатам: сдвиг (ox, oy) ед., поворот rot, масштаб scale ед./тексель.
+  // Если передан ctx без поворота и масштаб экрана кратен текселю — текстура ложится пиксель в пиксель
+  // (в программном растеризаторе это в ~10 раз быстрее фильтрованной заливки).
+  function patT(name, ox, oy, rot, scale, ctx) {
+    const sc = scale || 1 / TEX;
+    if (ctx && !rot && ctx.getTransform && typeof DOMMatrix !== 'undefined') {
+      const m = ctx.getTransform();
+      if (m.b === 0 && m.c === 0 && m.a > 0 && Math.abs(m.a - m.d) < 1e-9) {
+        const f = sc * m.a, fq = Math.round(f * 4) / 4;
+        if (fq >= 0.5 && fq <= 24 && Math.abs(f - fq) < 1e-6) {
+          const p = patRes(name, fq);
+          if (p && p.setTransform) {
+            const k = m.a, dx = Math.round(k * (ox || 0) + m.e) - m.e, dy = Math.round(k * (oy || 0) + m.f) - m.f;
+            p.setTransform(new DOMMatrix([1 / k, 0, 0, 1 / k, dx / k, dy / k]));
+            return p;
+          }
+        }
+      }
+    }
     const p = pat(name);
     if (p.setTransform && typeof DOMMatrix !== 'undefined') {
       const m = new DOMMatrix();
       m.translateSelf(ox || 0, oy || 0);
       if (rot) m.rotateSelf(rot * 180 / PI);
-      const s = scale || 1 / TEX;
-      m.scaleSelf(s, s);
+      m.scaleSelf(sc, sc);
       p.setTransform(m);
     }
     return p;
   }
   function grainOver(ctx, x, y, w, h, a, s) {
     ctx.globalAlpha = a;
-    ctx.fillStyle = patT('grain', (s || 0) % 64, 0);
+    ctx.fillStyle = patT('grain', Math.abs(s || 0) % 64, 0, 0, 0, ctx);
     ctx.fillRect(x, y, w, h);
     ctx.globalAlpha = 1;
   }
 
   /* ================================================================ GROUND */
-  function ground(ctx, x, y, w, h, kind, seed) {
+  // opt (необязательно): { poly: pts — залить не прямоугольник, а сглаженный контур (x,y,w,h — его габарит),
+  //                       edge: ширина мягкого края в ед. (для poly, по умолчанию 3) }
+  function ground(ctx, x, y, w, h, kind, seed, opt) {
     if (!(kind in GROUND_MACRO)) kind = 'grass';
     const s = toSeed(seed, x, y);
+    const poly = opt && opt.poly ? openRing(P(opt.poly)) : null;
+    if (poly && poly.length >= 3 && !(w > 0 && h > 0)) { const b = bbox(poly); x = b.x0; y = b.y0; w = b.x1 - x; h = b.y1 - y; }
     ctx.save();
-    let rot = 0;
-    if (kind === 'field') rot = (hash(s, 5) < 0.5 ? 0 : PI / 2) + (hash(s, 6) - 0.5) * 0.3;
-    ctx.fillStyle = patT(kind, hash(s, 1) * TS, hash(s, 2) * TS, rot);
-    ctx.fillRect(x, y, w, h);
+    const tex = kind === 'field' && hash(s, 5) < 0.5 ? 'fieldV' : kind;
+    const shape = () => { ctx.beginPath(); if (poly && poly.length >= 3) smoothPath(ctx, poly, true); else ctx.rect(x, y, w, h); };
+    const base = patT(tex, Math.round(hash(s, 1) * TS), Math.round(hash(s, 2) * TS), 0, 0, ctx);
+    const macro = patT('macro', Math.round(hash(s, 3) * 512), Math.round(hash(s, 4) * 512), 0, 8, ctx);
+    if (poly && poly.length >= 3) {
+      const e = opt.edge != null ? opt.edge : 3;
+      shape();
+      if (e > 0) { ctx.lineJoin = 'round'; ctx.strokeStyle = base; ctx.globalAlpha = 0.35; ctx.lineWidth = e * 2; ctx.stroke(); ctx.globalAlpha = 0.5; ctx.lineWidth = e; ctx.stroke(); ctx.globalAlpha = 1; }
+      ctx.fillStyle = base; ctx.fill();
+      ctx.clip();
+    } else {
+      ctx.fillStyle = base; ctx.fillRect(x, y, w, h);
+      ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    }
     ctx.globalAlpha = GROUND_MACRO[kind];
-    ctx.fillStyle = patT('macro', hash(s, 3) * 512, hash(s, 4) * 512, 0, 8);
-    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = macro; ctx.fillRect(x, y, w, h);
     ctx.globalAlpha = 1;
-    ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
     const R = rng(s + 17);
     if (kind === 'lawn') {
       const vert = hash(s, 7) < 0.5, bw = 12;
@@ -567,9 +624,9 @@ const Sym = (() => {
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       if (kind === 'asphalt') {
         ctx.beginPath();
-        for (let k = 0; k < n * 0.3; k++) { const px = x + R() * w, py = y + R() * h, pw = 6 + R() * 14, ph = 4 + R() * 9; ctx.rect(px, py, pw, ph); }
-        ctx.fillStyle = 'rgba(30,32,36,.22)'; ctx.fill();
-        ctx.strokeStyle = 'rgba(20,20,22,.18)'; ctx.lineWidth = 0.4; ctx.stroke();
+        for (let k = 0; k < n * 0.2; k++) patchPath(ctx, R, x + R() * w, y + R() * h, 5 + R() * 12, 3 + R() * 8, 0);
+        ctx.fillStyle = 'rgba(30,32,36,.16)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(20,20,22,.14)'; ctx.lineWidth = 0.4; ctx.stroke();
       }
       crackPath(ctx, R, n, () => [x + R() * w, y + R() * h, R() * TAU]);
       ctx.strokeStyle = kind === 'asphalt' ? 'rgba(28,28,30,.55)' : 'rgba(80,76,68,.45)'; ctx.lineWidth = 0.35; ctx.stroke();
@@ -580,6 +637,15 @@ const Sym = (() => {
       ctx.strokeStyle = 'rgba(230,245,255,.35)'; ctx.lineWidth = 0.5; ctx.stroke();
     }
     ctx.restore();
+  }
+  function patchPath(ctx, R, cx, cy, l, w, a) {
+    const ca = Math.cos(a), sa = Math.sin(a), n = 7;
+    for (let i = 0; i < n; i++) {
+      const t = i / n * TAU, rx = Math.cos(t) * l / 2 * (0.8 + R() * 0.3), ry = Math.sin(t) * w / 2 * (0.8 + R() * 0.3);
+      const px = cx + rx * ca - ry * sa, py = cy + rx * sa + ry * ca;
+      if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+    }
+    ctx.closePath();
   }
   function crackPath(ctx, R, n, start) {
     ctx.beginPath();
@@ -609,7 +675,7 @@ const Sym = (() => {
     ctx.save();
     ctx.lineJoin = 'round'; ctx.lineCap = closed ? 'butt' : (opt.cap || 'butt');
     const line = pp => { ctx.beginPath(); polyPath(ctx, pp, closed); };
-    const ox = hash(s, 1) * TS, oy = hash(s, 2) * TS;
+    const ox = Math.round(hash(s, 1) * TS), oy = Math.round(hash(s, 2) * TS);
     const c = cum(q), Ltot = c[c.length - 1];
     const band = () => { const a = offsetLine(q, width / 2, closed), b = offsetLine(q, -width / 2, closed); ctx.beginPath(); polyPath(ctx, a, closed); if (closed) { polyPath(ctx, b.slice().reverse(), true); } else { for (let i = b.length - 1; i >= 0; i--) ctx.lineTo(b[i].x, b[i].y); ctx.closePath(); } };
     const R = rng(s + 3);
@@ -622,23 +688,22 @@ const Sym = (() => {
         ctx.setLineDash([0.35, 3.65]); ctx.strokeStyle = 'rgba(80,78,72,.55)'; ctx.stroke(); ctx.setLineDash([]);
       }
       if (stage !== 'base') {
-        line(q); ctx.lineWidth = width; ctx.strokeStyle = patT('asphalt', ox, oy); ctx.stroke();
+        line(q); ctx.lineWidth = width; ctx.strokeStyle = patT('asphalt', ox, oy, 0, 0, ctx); ctx.stroke();
         ctx.save(); band(); ctx.clip();
         for (const sd of [-1, 1]) { line(offsetLine(q, sd * (width / 2), closed)); ctx.lineWidth = 2.4; ctx.strokeStyle = 'rgba(24,24,26,.16)'; ctx.stroke(); }
         if (width >= 14) for (const sd of [-1, 1]) for (const k of [0.12, 0.36]) {
           line(offsetLine(q, sd * width * k, closed)); ctx.lineWidth = width * 0.07; ctx.strokeStyle = 'rgba(16,16,20,.08)'; ctx.stroke();
         }
-        // заплатки
+        // заплатки ямочного ремонта
         ctx.beginPath();
-        const np = Math.floor(Ltot / 70 * (0.4 + hash(s, 4)));
+        const np = Math.floor(Ltot / 150 * (0.3 + hash(s, 4)));
         for (let k = 0; k < np; k++) {
-          const a = along(q, c, R() * Ltot), lat = (R() - 0.5) * width * 0.6, pl = 5 + R() * 12, pw = 3 + R() * width * 0.25;
-          const cx = a.x - Math.sin(a.a) * lat, cy = a.y + Math.cos(a.a) * lat, ca = Math.cos(a.a), sa = Math.sin(a.a);
-          const hx = pl / 2, hy = pw / 2;
-          ctx.moveTo(cx - ca * hx + sa * hy, cy - sa * hx - ca * hy); ctx.lineTo(cx + ca * hx + sa * hy, cy + sa * hx - ca * hy);
-          ctx.lineTo(cx + ca * hx - sa * hy, cy + sa * hx + ca * hy); ctx.lineTo(cx - ca * hx - sa * hy, cy - sa * hx + ca * hy); ctx.closePath();
+          const a = along(q, c, R() * Ltot), lat = (R() - 0.5) * width * 0.55;
+          patchPath(ctx, R, a.x - Math.sin(a.a) * lat, a.y + Math.cos(a.a) * lat, 5 + R() * 10, 3 + R() * width * 0.2, a.a);
         }
-        ctx.fillStyle = 'rgba(28,30,34,.28)'; ctx.fill(); ctx.strokeStyle = 'rgba(18,18,20,.25)'; ctx.lineWidth = 0.35; ctx.stroke();
+        ctx.fillStyle = 'rgba(26,28,32,.2)'; ctx.fill(); ctx.strokeStyle = 'rgba(16,16,18,.18)'; ctx.lineWidth = 0.35; ctx.stroke();
+        // сток к бордюру: светлая пыль/песок у кромки
+        for (const sd of [-1, 1]) { line(offsetLine(q, sd * (width / 2 - 1.6), closed)); ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(190,180,160,.10)'; ctx.stroke(); }
         // трещины
         crackPath(ctx, R, Math.floor(Ltot / 35), () => { const a = along(q, c, R() * Ltot), lat = (R() - 0.5) * width * 0.85; return [a.x - Math.sin(a.a) * lat, a.y + Math.cos(a.a) * lat, a.a + (R() - 0.5) * 1.6]; });
         ctx.strokeStyle = 'rgba(24,24,26,.55)'; ctx.lineWidth = 0.32; ctx.lineCap = 'round'; ctx.stroke();
@@ -654,21 +719,25 @@ const Sym = (() => {
         ctx.lineWidth = width + 2; ctx.strokeStyle = 'rgba(124,102,66,.45)'; ctx.stroke();
       }
       if (stage !== 'base') {
-        line(q); ctx.lineWidth = width; ctx.strokeStyle = patT('dirt', ox, oy); ctx.stroke();
-        line(q); ctx.lineWidth = Math.max(1.2, width * 0.18); ctx.strokeStyle = 'rgba(96,134,56,.6)'; ctx.stroke();
-        ctx.lineWidth = Math.max(0.6, width * 0.08); ctx.strokeStyle = 'rgba(134,166,76,.55)'; ctx.stroke();
+        line(q); ctx.lineWidth = width; ctx.strokeStyle = patT('dirt', ox, oy, 0, 0, ctx); ctx.stroke();
+        // колеи — утоптанные, чуть темнее; между ними — травяная полоса пятнами
         for (const sd of [-1, 1]) {
-          line(offsetLine(q, sd * width * 0.27, closed));
-          ctx.lineWidth = width * 0.15; ctx.strokeStyle = 'rgba(82,58,36,.32)'; ctx.stroke();
-          ctx.lineWidth = width * 0.05; ctx.strokeStyle = 'rgba(58,40,26,.35)'; ctx.stroke();
+          line(offsetLine(q, sd * width * 0.26, closed));
+          ctx.lineWidth = width * 0.2; ctx.strokeStyle = 'rgba(92,66,42,.16)'; ctx.stroke();
+          ctx.lineWidth = width * 0.09; ctx.strokeStyle = 'rgba(70,50,32,.14)'; ctx.stroke();
         }
-        const np = Math.floor(Ltot / 60 * (0.3 + hash(s, 5)));
+        line(q); ctx.setLineDash([5 + hash(s, 6) * 6, 2, 9, 3, 4, 2]);
+        ctx.lineWidth = Math.max(1, width * 0.16); ctx.strokeStyle = 'rgba(104,138,62,.45)'; ctx.stroke();
+        ctx.setLineDash([3, 4, 6, 2]); ctx.lineWidth = Math.max(0.6, width * 0.08); ctx.strokeStyle = 'rgba(132,164,80,.4)'; ctx.stroke();
+        ctx.setLineDash([]);
+        for (const sd of [-1, 1]) { line(offsetLine(q, sd * width / 2, closed)); ctx.lineWidth = 1.6; ctx.strokeStyle = 'rgba(100,128,60,.35)'; ctx.stroke(); }
+        const np = Math.floor(Ltot / 90 * (0.2 + hash(s, 5)));
         for (let k = 0; k < np; k++) {
-          const a = along(q, c, R() * Ltot), lat = (R() < 0.5 ? -1 : 1) * width * 0.27, rx = 2.5 + R() * 4, ry = Math.min(width * 0.14, 1.2 + R() * 1.2);
+          const a = along(q, c, R() * Ltot), lat = (R() < 0.5 ? -1 : 1) * width * 0.26, rx = 2 + R() * 3.5, ry = Math.min(width * 0.12, 1 + R());
           const cx = a.x - Math.sin(a.a) * lat, cy = a.y + Math.cos(a.a) * lat;
-          ctx.beginPath(); ctx.ellipse(cx, cy, rx + 0.6, ry + 0.5, a.a, 0, TAU); ctx.fillStyle = 'rgba(70,52,34,.45)'; ctx.fill();
-          ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, a.a, 0, TAU); ctx.fillStyle = '#6f8790'; ctx.fill();
-          ctx.beginPath(); ctx.ellipse(cx - 0.4, cy - 0.4, rx * 0.55, ry * 0.4, a.a, 0, TAU); ctx.fillStyle = 'rgba(214,232,240,.45)'; ctx.fill();
+          ctx.beginPath(); ctx.ellipse(cx, cy, rx + 0.7, ry + 0.5, a.a, 0, TAU); ctx.fillStyle = 'rgba(66,48,30,.35)'; ctx.fill();
+          ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, a.a, 0, TAU); ctx.fillStyle = 'rgba(96,104,98,.85)'; ctx.fill();
+          ctx.beginPath(); ctx.ellipse(cx - 0.3, cy - 0.3, rx * 0.5, ry * 0.35, a.a, 0, TAU); ctx.fillStyle = 'rgba(200,214,222,.35)'; ctx.fill();
         }
       }
     } else if (kind === 'path') {
@@ -678,8 +747,9 @@ const Sym = (() => {
       }
       if (stage !== 'base') {
         const a = Math.atan2(q[q.length - 1].y - q[0].y, q[q.length - 1].x - q[0].x);
-        line(q); ctx.lineWidth = width; ctx.strokeStyle = patT('tiles', ox, oy, a); ctx.stroke();
-        ctx.globalAlpha = 0.25; ctx.strokeStyle = patT('macro', ox, oy, 0, 8); ctx.stroke(); ctx.globalAlpha = 1;
+        const ax = Math.abs(Math.cos(a)) > 0.92 ? 0 : Math.abs(Math.sin(a)) > 0.92 ? PI / 2 : a;
+        line(q); ctx.lineWidth = width; ctx.strokeStyle = ax ? patT('tiles', ox, oy, ax) : patT('tiles', ox, oy, 0, 0, ctx); ctx.stroke();
+        ctx.globalAlpha = 0.25; ctx.strokeStyle = patT('macro', ox, oy, 0, 8, ctx); ctx.stroke(); ctx.globalAlpha = 1;
       }
     } else { // gravel
       if (stage !== 'top') {
@@ -687,19 +757,16 @@ const Sym = (() => {
         ctx.lineWidth = width + 1.5; ctx.strokeStyle = 'rgba(150,144,128,.7)'; ctx.stroke();
       }
       if (stage !== 'base') {
-        line(q); ctx.lineWidth = width; ctx.strokeStyle = patT('gravel', ox, oy); ctx.stroke();
+        line(q); ctx.lineWidth = width; ctx.strokeStyle = patT('gravel', ox, oy, 0, 0, ctx); ctx.stroke();
         for (const sd of [-1, 1]) { line(offsetLine(q, sd * width * 0.26, closed)); ctx.lineWidth = width * 0.14; ctx.strokeStyle = 'rgba(70,64,56,.2)'; ctx.stroke(); }
         line(q); ctx.lineWidth = width * 0.12; ctx.strokeStyle = 'rgba(230,226,214,.12)'; ctx.stroke();
       }
     }
     ctx.restore();
   }
-  function roads(ctx, list) {
-    for (const r of list) road(ctx, r.pts, r.width, r.kind, Object.assign({}, r.opt, { stage: 'base', seed: r.seed }));
-    for (const r of list) road(ctx, r.pts, r.width, r.kind, Object.assign({}, r.opt, { stage: 'top', seed: r.seed }));
-  }
 
   /* ================================================================ ROOFS */
+  const FLATH = ['#7d8085', '#8e9196', '#6f6a64', '#9a958c', '#5e6266', '#857a70'];
   const ROOF = ['#a8503a', '#8e3f30', '#7b4a36', '#4f7458', '#4b6584', '#7a7f86', '#56595f', '#b7653d', '#6d3b2e', '#8c5a3c', '#a0472f', '#5d6b73'];
   function planeLines(ctx, poly, nx, ny, step, alongN, style, w, off) {
     const ux = -ny, uy = nx;
@@ -832,11 +899,11 @@ const Sym = (() => {
     opt = opt || {};
     const s = toSeed(opt.seed, x * 3 + w, y * 3 + h);
     const roof = opt.roof || (hash(s, 1) < 0.55 ? 'gable' : 'hip');
-    const color = opt.color || ROOF[(hash(s, 2) * ROOF.length) | 0];
+    const color = opt.color || (roof === 'flat' ? FLATH : ROOF)[(hash(s, 2) * (roof === 'flat' ? FLATH : ROOF).length) | 0];
     let rot = opt.rot || 0, L = w, D = h;
     if (h > w) { L = h; D = w; rot += PI / 2; }
     const cx = x + w / 2, cy = y + h / 2, ca = Math.cos(rot), sa = Math.sin(rot), hl = L / 2, hd = D / 2;
-    const ht = opt.height != null ? opt.height : (roof === 'flat' ? 3 + D * 0.05 : 3.4 + D * 0.12);
+    const ht = opt.height != null ? opt.height : (roof === 'flat' ? 3 + D * 0.05 : 2.8 + D * 0.1);
     const wc = rectPts(-hl, -hd, hl, hd).map(q => ({ x: cx + q.x * ca - q.y * sa, y: cy + q.x * sa + q.y * ca }));
     ctx.save();
     shadowPoly(ctx, wc, ht, ht);
@@ -861,6 +928,12 @@ const Sym = (() => {
       ctx.lineCap = 'round';
       ctx.strokeStyle = shade(color, 0.16); ctx.lineWidth = 1.0; ctx.stroke();
       ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.lineWidth = 0.28; ctx.stroke();
+      // водостоки по свесам и торцевые доски
+      ctx.strokeStyle = 'rgba(232,230,220,.4)'; ctx.lineWidth = 0.45;
+      ctx.beginPath(); ctx.moveTo(-hl + 0.3, -hd + 0.3); ctx.lineTo(hl - 0.3, -hd + 0.3); ctx.moveTo(-hl + 0.3, hd - 0.3); ctx.lineTo(hl - 0.3, hd - 0.3);
+      if (roof === 'hip') { ctx.moveTo(-hl + 0.3, -hd + 0.3); ctx.lineTo(-hl + 0.3, hd - 0.3); ctx.moveTo(hl - 0.3, -hd + 0.3); ctx.lineTo(hl - 0.3, hd - 0.3); }
+      ctx.stroke();
+      if (roof !== 'hip') { ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.fillRect(-hl, -hd, 0.6, D); ctx.fillRect(hl - 0.6, -hd, 0.6, D); }
       ctx.strokeStyle = 'rgba(25,18,14,.5)'; ctx.lineWidth = 0.35; ctx.strokeRect(-hl, -hd, L, D);
       // южный скат: солнечные панели; другие скаты — мансардные окна
       const southNy = ca >= 0 ? 1 : -1; // нормаль (0,1) в мире = (-sin, cos): смотрит на юг, если cos ≥ 0
@@ -891,7 +964,7 @@ const Sym = (() => {
       }
       const wantChim = opt.chimney != null ? opt.chimney : hash(s, 10) < 0.7;
       if (wantChim) {
-        const sz = clamp(D * 0.085, 1.8, 3.2), lim = Math.max(0, (roof === 'hip' ? r : hl) - sz);
+        const sz = clamp(D * 0.095, 2, 3.4), lim = Math.max(0, (roof === 'hip' ? r : hl) - sz);
         const px = (hash(s, 11) < 0.5 ? -1 : 1) * Math.min(lim, hl * (0.2 + hash(s, 12) * 0.35));
         const py = (hash(s, 13) - 0.5) * hd * 0.5;
         chimney(ctx, px, py, sz, lox, loy, hash(s, 14) < 0.7 ? '#8b4636' : '#a59f94', hash(s, 15) < 0.3);
@@ -960,8 +1033,8 @@ const Sym = (() => {
       grainOver(ctx, -hl, -hd, L, D, 0.45, s);
       // ржавчина и грязь
       ctx.beginPath();
-      for (let k = 0; k < 3 + L * D / 1200; k++) { const px = (R() - 0.5) * L, py = (R() - 0.5) * D; ctx.ellipse(px, py, 2 + R() * 7, 1 + R() * 3, R() * 0.4, 0, TAU); }
-      ctx.fillStyle = 'rgba(120,76,44,.10)'; ctx.fill();
+      for (let k = 0; k < 2 + L * D / 2500; k++) { const px = (R() - 0.5) * L * 0.9, py = (R() - 0.5) * D * 0.9, rr = 2 + R() * 5; ctx.moveTo(px + rr, py); ctx.ellipse(px, py, rr, rr * (0.5 + R() * 0.4), 0, 0, TAU); }
+      ctx.fillStyle = 'rgba(120,80,48,.07)'; ctx.fill();
       ctx.restore();
       ctx.beginPath(); ctx.moveTo(-hl, 0); ctx.lineTo(hl, 0); ctx.strokeStyle = shade(color, 0.2); ctx.lineWidth = 0.9; ctx.stroke();
       ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 0.25; ctx.stroke();
@@ -1064,7 +1137,7 @@ const Sym = (() => {
     ctx.save();
     ctx.translate(cx, cy); ctx.rotate(rot);
     if (opt.apron) {
-      ctx.fillStyle = patT('concrete', 0, 0); ctx.fillRect(-hw - 1, hd, W + 2, 6);
+      ctx.fillStyle = patT('concrete', 0, 0, 0, 0, rot ? null : ctx); ctx.fillRect(-hw - 1, hd, W + 2, 6);
       ctx.fillStyle = 'rgba(40,40,30,.12)'; ctx.fillRect(-hw - 1, hd + 5, W + 2, 1);
     }
     ctx.rotate(-rot); ctx.translate(-cx, -cy);
@@ -1114,11 +1187,12 @@ const Sym = (() => {
     for (const side of [-1, 1]) for (let t = -hl + 2; t < hl - 1; t += 3.1) circ(ctx, t + (R() - 0.5), side * hd * 0.5 + (R() - 0.5) * hd * 0.3, 0.5 + R() * 0.4);
     ctx.fillStyle = R() < 0.5 ? '#d8452f' : '#8cc152'; ctx.fill();
     // поликарбонат
-    ctx.fillStyle = 'rgba(232,242,248,.55)'; ctx.fillRect(-hl, -hd, L, D);
+    ctx.fillStyle = 'rgba(218,236,246,.42)'; ctx.fillRect(-hl, -hd, L, D);
     const k1 = lit(0, -1, ca, sa), k2 = lit(0, 1, ca, sa);
     ctx.beginPath(); ctx.rect(-hl, -hd, L, hd); shadeFill(ctx, k1, 0.8);
     ctx.beginPath(); ctx.rect(-hl, 0, L, hd); shadeFill(ctx, k2, 0.8);
-    ctx.fillStyle = 'rgba(255,255,255,.28)'; ctx.fillRect(-hl, (k1 > k2 ? -hd * 0.45 : hd * 0.15), L, hd * 0.3);
+    ctx.fillStyle = 'rgba(255,255,255,.34)'; ctx.fillRect(-hl, (k1 > k2 ? -hd * 0.55 : hd * 0.2), L, hd * 0.32);
+    ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(-hl, (k1 > k2 ? -hd * 0.2 : hd * 0.55), L, hd * 0.12);
     ctx.beginPath(); for (let t = -hl; t <= hl + 0.01; t += Math.max(2.5, L / Math.round(L / 3.5))) { ctx.moveTo(t, -hd); ctx.lineTo(t, hd); }
     ctx.moveTo(-hl, 0); ctx.lineTo(hl, 0);
     ctx.strokeStyle = 'rgba(250,252,255,.85)'; ctx.lineWidth = 0.35; ctx.stroke();
@@ -1128,9 +1202,9 @@ const Sym = (() => {
 
   /* ========================================================= FENCES, GATE */
   const FENCE = {
-    wood: { w: 0.75, color: '#8a6845', hi: '#b68f62', post: 1.0, pc: '#5e4630', step: 10, sh: 1.5, sa: 0.14, dash: [0.8, 0.25] },
-    metal: { w: 0.55, color: '#3f6b52', hi: '#79a58a', post: 0.9, pc: '#2b3530', step: 10, sh: 1.7, sa: 0.24 },
-    chain: { w: 0.35, color: 'rgba(160,166,170,.9)', hi: null, post: 0.5, pc: '#7d8489', step: 10, sh: 1.6, sa: 0.08, dash: [0.35, 0.35], round: true },
+    wood: { w: 0.95, color: '#8a6845', hi: '#c49c6c', post: 1.1, pc: '#5e4630', step: 10, sh: 1.6, sa: 0.15, dash: [0.8, 0.25] },
+    metal: { w: 0.7, color: '#3f6b52', hi: '#84b095', post: 1.0, pc: '#2b3530', step: 10, sh: 1.8, sa: 0.24 },
+    chain: { w: 0.4, color: 'rgba(176,182,186,.95)', hi: null, post: 0.55, pc: '#7d8489', step: 10, sh: 1.6, sa: 0.08, dash: [0.35, 0.35], round: true },
     concrete: { w: 1.1, color: '#bdb8ad', hi: '#dcd8ce', post: 1.5, pc: '#a29d92', step: 8, sh: 2.3, sa: 0.24 },
   };
   function fence(ctx, pts, kind) {
@@ -1244,11 +1318,11 @@ const Sym = (() => {
     ctx.fillStyle = pal[2]; ctx.fill();
     // листва: светлые и тёмные кластеры
     ctx.beginPath();
-    for (let k = 0; k < n * 2 + 4; k++) {
-      const l = L[(R() * L.length) | 0], a = PI * 1.25 + (R() - 0.5) * 2, d = l[2] * (0.25 + R() * 0.55), rr = r * (0.06 + R() * 0.06);
+    for (let k = 0; k < n * 3 + 6; k++) {
+      const l = L[(R() * L.length) | 0], a = PI * 1.25 + (R() - 0.5) * 2.2, d = l[2] * (0.2 + R() * 0.65), rr = Math.max(0.3, r * (0.035 + R() * 0.05));
       circ(ctx, l[0] + Math.cos(a) * d - r * 0.06, l[1] + Math.sin(a) * d - r * 0.06, rr);
     }
-    ctx.fillStyle = pal[3]; ctx.globalAlpha = 0.85; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = pal[3]; ctx.globalAlpha = 0.75; ctx.fill(); ctx.globalAlpha = 1;
     ctx.beginPath();
     for (let k = 0; k < n + 3; k++) {
       const l = L[(R() * L.length) | 0], a = PI * 0.25 + (R() - 0.5) * 1.8, d = l[2] * (0.45 + R() * 0.35), rr = r * (0.045 + R() * 0.045);
@@ -1266,35 +1340,48 @@ const Sym = (() => {
       ctx.fillStyle = 'rgba(255,240,220,.8)'; ctx.fill();
     }
   }
+  // тень конуса: касательные из точки тени вершины к кругу основания
+  function coneShadow(ctx, cx, cy, r, L) {
+    const d = L * Math.SQRT2, be = Math.acos(Math.min(0.99, r / d)), th = PI / 4;
+    ctx.beginPath(); ctx.arc(cx, cy, r, th + be, th - be + TAU); ctx.lineTo(cx + L, cy + L); ctx.closePath();
+  }
   function conifer(ctx, x, y, r, R, pal) {
-    const n = 10 + ((R() * 4) | 0), a0 = R() * TAU, jr = [];
-    for (let i = 0; i < n * 2; i++) jr.push(R());
-    const star = (cx, cy, ro, ri, off, jit) => {
-      ctx.beginPath();
-      for (let i = 0; i < n * 2; i++) {
-        const a = a0 + off + i / (n * 2) * TAU, rr = (i & 1 ? ri : ro) * (1 + (jr[i] - 0.5) * jit);
-        const px = cx + Math.cos(a) * rr, py = cy + Math.sin(a) * rr;
-        if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+    const n = 11 + ((R() * 5) | 0), a0 = R() * TAU, jr = [];
+    for (let i = 0; i < 64; i++) jr.push(R());
+    ctx.fillStyle = SHA + '0.08)'; coneShadow(ctx, x + 0.5, y + 0.5, r * 1.02, r * 1.55); ctx.fill();
+    ctx.fillStyle = SHA + '0.15)'; coneShadow(ctx, x + r * 0.12, y + r * 0.12, r * 0.88, r * 1.3); ctx.fill();
+    // основа кроны — неровный тёмный круг
+    ctx.fillStyle = pal[0]; ctx.beginPath();
+    for (let i = 0; i < 36; i++) { const a = a0 + i / 36 * TAU, rr = r * (0.86 + jr[i] * 0.14 - (i & 1) * 0.08); const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr; if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); }
+    ctx.closePath(); ctx.fill();
+    // ярусы ветвей: радиальные пучки хвои
+    const tier = (rad, off, col, colLit, sc) => {
+      const dark = [], lite = [];
+      for (let i = 0; i < n; i++) {
+        const a = a0 + off + (i + (jr[i + 36] - 0.5) * 0.4) / n * TAU, kk = -(Math.cos(a) + Math.sin(a)) * SQ;
+        const len = rad * (0.42 + jr[(i * 3) % 64] * 0.12) * sc, cx = x - r * 0.06 + Math.cos(a) * rad * 0.52, cy = y - r * 0.06 + Math.sin(a) * rad * 0.52;
+        (kk > -0.15 ? lite : dark).push([cx, cy, len, a]);
       }
-      ctx.closePath();
+      for (const [arr, c] of [[dark, col], [lite, colLit]]) {
+        ctx.fillStyle = c; ctx.beginPath();
+        for (const [cx, cy, len, a] of arr) { ctx.moveTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len); ctx.ellipse(cx, cy, len, len * 0.36, a, 0, TAU); }
+        ctx.fill();
+      }
     };
-    const sd = r * 0.7;
-    ctx.fillStyle = SHA + '0.10)'; star(x + sd * 1.35, y + sd * 1.35, r * 0.7, r * 0.45, 0, 0.3); ctx.fill();
-    ctx.fillStyle = SHA + '0.16)'; star(x + sd, y + sd, r * 1.0, r * 0.66, 0, 0.3); ctx.fill();
-    ctx.lineJoin = 'round';
-    ctx.fillStyle = pal[0]; star(x, y, r, r * 0.66, 0, 0.28); ctx.fill();
-    ctx.fillStyle = pal[1]; star(x - r * 0.05, y - r * 0.05, r * 0.8, r * 0.5, PI / n, 0.3); ctx.fill();
-    ctx.fillStyle = pal[2]; star(x - r * 0.1, y - r * 0.1, r * 0.55, r * 0.32, 0, 0.3); ctx.fill();
-    ctx.strokeStyle = pal[3]; ctx.lineWidth = Math.max(0.25, r * 0.04); ctx.lineCap = 'round'; ctx.globalAlpha = 0.75;
+    tier(r, 0, pal[1], pal[2], 1);
+    tier(r * 0.62, PI / n, pal[1], pal[2], 1.05);
+    // хвоя: светлые штрихи на освещённой стороне
+    ctx.strokeStyle = pal[3]; ctx.lineWidth = Math.max(0.2, r * 0.03); ctx.lineCap = 'round'; ctx.globalAlpha = 0.65;
     ctx.beginPath();
     for (let i = 0; i < n * 2; i++) {
-      const a = a0 + (i + 0.5) / (n * 2) * TAU + PI / n, k = -(Math.cos(a) + Math.sin(a)) * SQ;
-      if (k < -0.3) continue;
-      const d1 = r * 0.18, d2 = r * (0.5 + jr[i] * 0.25);
+      const a = a0 + (i + 0.5) / (n * 2) * TAU, kk = -(Math.cos(a) + Math.sin(a)) * SQ;
+      if (kk < 0) continue;
+      const d1 = r * 0.2, d2 = r * (0.45 + jr[i % 64] * 0.3);
       ctx.moveTo(x - r * 0.08 + Math.cos(a) * d1, y - r * 0.08 + Math.sin(a) * d1); ctx.lineTo(x - r * 0.08 + Math.cos(a) * d2, y - r * 0.08 + Math.sin(a) * d2);
     }
     ctx.stroke(); ctx.globalAlpha = 1;
-    ctx.fillStyle = pal[3]; ctx.beginPath(); ctx.arc(x - r * 0.1, y - r * 0.1, Math.max(0.4, r * 0.1), 0, TAU); ctx.fill();
+    ctx.fillStyle = pal[2]; ctx.beginPath(); ctx.arc(x - r * 0.08, y - r * 0.08, Math.max(0.5, r * 0.16), 0, TAU); ctx.fill();
+    ctx.fillStyle = pal[3]; ctx.beginPath(); ctx.arc(x - r * 0.11, y - r * 0.11, Math.max(0.3, r * 0.07), 0, TAU); ctx.fill();
   }
   function bush(ctx, x, y, r, seed) {
     r = r > 0 ? r : 4;
@@ -1552,7 +1639,10 @@ const Sym = (() => {
     ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(r1 + 0.5, -gw + 0.4, c1 - r1 - 1, gw * 0.6);
     if (tn === 'suv') { ctx.strokeStyle = '#2b2d30'; ctx.lineWidth = 0.35; ctx.beginPath(); ctx.moveTo(r1 + 0.6, -gw * 0.75); ctx.lineTo(c1 - 0.6, -gw * 0.75); ctx.moveTo(r1 + 0.6, gw * 0.75); ctx.lineTo(c1 - 0.6, gw * 0.75); ctx.stroke(); }
     if (tn === 'van') { ctx.beginPath(); for (let t = r1 + 2; t < c1 - 1; t += 2) { ctx.moveTo(t, -gw + 0.6); ctx.lineTo(t, gw - 0.6); } ctx.strokeStyle = 'rgba(0,0,0,.12)'; ctx.lineWidth = 0.4; ctx.stroke(); }
-    if ((tn === 'sedan' || tn === 'hatch') && hash(s, 3) < 0.3) { ctx.fillStyle = '#20262e'; ctx.beginPath(); rrect(ctx, c1 - 4, -gw * 0.5, 3, gw, 0.5); ctx.fill(); }
+    if ((tn === 'sedan' || tn === 'hatch' || tn === 'suv') && hash(s, 3) < 0.3) {
+      ctx.fillStyle = '#1d2a38'; ctx.beginPath(); rrect(ctx, c1 - 3.6, -gw * 0.42, 2.8, gw * 0.84, 0.5); ctx.fill();
+      ctx.fillStyle = 'rgba(200,225,255,.25)'; ctx.fillRect(c1 - 3.4, -gw * 0.38, 1.0, gw * 0.4);
+    }
     // капот
     ctx.strokeStyle = 'rgba(0,0,0,.15)'; ctx.lineWidth = 0.22;
     ctx.beginPath(); ctx.moveTo(c1 + ws + 0.8, -hw * 0.45); ctx.lineTo(hl - 1, -hw * 0.38); ctx.moveTo(c1 + ws + 0.8, hw * 0.45); ctx.lineTo(hl - 1, hw * 0.38); ctx.stroke();
@@ -1628,7 +1718,7 @@ const Sym = (() => {
     } else if (kind === 'sandbox') {
       const a = sz * 0.62;
       ctx.fillStyle = '#b98a55'; ctx.fillRect(cx - a / 2, cy - a / 2, a, a);
-      ctx.fillStyle = patT('sand', 0, 0); ctx.fillRect(cx - a / 2 + 0.9, cy - a / 2 + 0.9, a - 1.8, a - 1.8);
+      ctx.fillStyle = patT('sand', 0, 0, 0, 0, ctx); ctx.fillRect(cx - a / 2 + 0.9, cy - a / 2 + 0.9, a - 1.8, a - 1.8);
       ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.fillRect(cx - a / 2 + 0.9, cy - a / 2 + 0.9, a - 1.8, 0.7);
       ctx.fillStyle = c1; ctx.beginPath(); ctx.arc(cx + a * 0.15, cy - a * 0.1, 0.6, 0, TAU); ctx.fill();
       ctx.fillStyle = c2; ctx.fillRect(cx - a * 0.25, cy + a * 0.1, 1.4, 0.8);
@@ -1705,7 +1795,7 @@ const Sym = (() => {
     ctx.fillStyle = g; ctx.fill();
     ctx.save(); ctx.clip();
     const b = bbox(p);
-    ctx.globalAlpha = 0.35; ctx.fillStyle = patT('water', hash(s, 1) * TS, 0); ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.35; ctx.fillStyle = patT('water', Math.round(hash(s, 1) * TS), 0, 0, 0, ctx); ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); ctx.globalAlpha = 1;
     ctx.beginPath(); smoothPath(ctx, p, true);
     ctx.strokeStyle = 'rgba(160,190,150,.35)'; ctx.lineWidth = 6; ctx.stroke();
     ctx.strokeStyle = 'rgba(40,52,30,.3)'; ctx.lineWidth = 1.6; ctx.stroke();
@@ -1765,14 +1855,19 @@ const Sym = (() => {
     ctx.strokeStyle = 'rgba(88,98,52,.35)'; ctx.lineWidth = width + 5; ctx.stroke();
     ctx.strokeStyle = '#7d6e4c'; ctx.lineWidth = width + 2; ctx.stroke();
     ctx.strokeStyle = '#4f88a2'; ctx.lineWidth = width; ctx.stroke();
-    ctx.globalAlpha = 0.35; ctx.strokeStyle = patT('water', hash(s, 1) * TS, 0); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.35; ctx.strokeStyle = patT('water', Math.round(hash(s, 1) * TS), 0, 0, 0, ctx); ctx.stroke(); ctx.globalAlpha = 1;
     ctx.strokeStyle = 'rgba(28,70,96,.35)'; ctx.lineWidth = width * 0.45; ctx.stroke();
     for (const sd of [-1, 1]) { line(offsetLine(q, sd * width * 0.42, false)); ctx.strokeStyle = 'rgba(150,180,150,.35)'; ctx.lineWidth = width * 0.16; ctx.stroke(); }
-    line(offsetLine(q, -width * 0.15, false));
-    ctx.setLineDash([2 + width * 0.3, 3 + width * 0.4]); ctx.lineDashOffset = -hash(s, 2) * 10;
-    ctx.strokeStyle = 'rgba(230,245,255,.4)'; ctx.lineWidth = Math.max(0.3, width * 0.06); ctx.stroke(); ctx.setLineDash([]);
-    // камни и тростник по берегам
+    // блики на воде — редкие короткие дуги по течению
     const c = cum(q), L = c[c.length - 1];
+    ctx.beginPath();
+    for (let k = 0; k < L / 9; k++) {
+      const a = along(q, c, R() * L), lat = (R() - 0.5) * width * 0.6, l = 0.8 + R() * Math.min(3, width * 0.4);
+      const cx = a.x - Math.sin(a.a) * lat, cy = a.y + Math.cos(a.a) * lat, ca = Math.cos(a.a), sa = Math.sin(a.a);
+      ctx.moveTo(cx - ca * l, cy - sa * l); ctx.quadraticCurveTo(cx + sa * 0.5, cy - ca * 0.5, cx + ca * l, cy + sa * l);
+    }
+    ctx.strokeStyle = 'rgba(228,244,255,.45)'; ctx.lineWidth = Math.max(0.25, Math.min(0.5, width * 0.06)); ctx.stroke();
+    // камни и тростник по берегам
     ctx.fillStyle = '#8f8c82'; ctx.beginPath();
     const stones = [];
     for (let k = 0; k < L / 25; k++) { const a = along(q, c, R() * L), lat = (R() - 0.5) * width * 1.1; stones.push([a.x - Math.sin(a.a) * lat, a.y + Math.cos(a.a) * lat, 0.4 + R() * 0.7]); }
@@ -1791,13 +1886,13 @@ const Sym = (() => {
   function swamp(ctx, pts, seed) {
     const p = openRing(P(pts));
     if (p.length < 3) return;
-    const s = toSeed(seed, p[0].x, p[0].y), R = rng(s), b = bbox(p), c = centroid(p);
+    const s = toSeed(seed, p[0].x, p[0].y), R = rng(s), b = bbox(p);
     ctx.save();
     ctx.beginPath(); smoothPath(ctx, p, true);
     ctx.strokeStyle = 'rgba(110,124,66,.45)'; ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.stroke();
-    ctx.fillStyle = patT('swamp', hash(s, 1) * TS, hash(s, 2) * TS); ctx.fill();
+    ctx.fillStyle = patT('swamp', Math.round(hash(s, 1) * TS), Math.round(hash(s, 2) * TS), 0, 0, ctx); ctx.fill();
     ctx.save(); ctx.clip();
-    ctx.globalAlpha = 0.5; ctx.fillStyle = patT('macro', hash(s, 3) * 512, 0, 0, 8); ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.5; ctx.fillStyle = patT('macro', Math.round(hash(s, 3) * 512), 0, 0, 8, ctx); ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); ctx.globalAlpha = 1;
     const area = (b.x1 - b.x0) * (b.y1 - b.y0);
     for (let k = 0; k < 2 + area / 2500; k++) {
       const px = lerp(b.x0, b.x1, 0.15 + R() * 0.7), py = lerp(b.y0, b.y1, 0.15 + R() * 0.7), rx = 2 + R() * 6, ry = 1.5 + R() * 4, a = R() * PI;
@@ -1821,41 +1916,56 @@ const Sym = (() => {
     if (T.length < 2 || B.length < 2) return;
     const tq = densify(T, false, 2), bq = densify(B, false, 2), ct = cum(tq), cb = cum(bq), Lt = ct[ct.length - 1], Lb = cb[cb.length - 1];
     let mtx = 0, mty = 0, mbx = 0, mby = 0;
-    for (const q of tq) { mtx += q.x; mty += q.y; } for (const q of bq) { mbx += q.x; mby += q.y; }
+    for (const q of tq) { mtx += q.x; mty += q.y; }
+    for (const q of bq) { mbx += q.x; mby += q.y; }
     mtx /= tq.length; mty /= tq.length; mbx /= bq.length; mby /= bq.length;
     let dx = mbx - mtx, dy = mby - mty;
     const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
-    const k = -(dx + dy) * SQ;
+    const k = -(dx + dy) * SQ; // >0 — склон обращён к свету
+    const s = toSeed(null, T[0].x + B[B.length - 1].x, T[0].y + B[B.length - 1].y), R = rng(s);
+    const band = () => { ctx.beginPath(); polyPath(ctx, tq, false); for (let i = bq.length - 1; i >= 0; i--) ctx.lineTo(bq[i].x, bq[i].y); ctx.closePath(); };
     ctx.save();
-    ctx.beginPath(); polyPath(ctx, tq, false); for (let i = bq.length - 1; i >= 0; i--) ctx.lineTo(bq[i].x, bq[i].y); ctx.closePath();
-    ctx.fillStyle = k > 0 ? 'rgba(255,250,210,' + (0.06 + k * 0.16).toFixed(3) + ')' : 'rgba(18,32,14,' + (0.08 - k * 0.24).toFixed(3) + ')';
-    ctx.fill();
+    band();
+    // тон склона: освещённый — светлее к бровке, теневой — темнее к подошве
+    const g = ctx.createLinearGradient(mtx, mty, mbx, mby);
+    if (k > 0) { g.addColorStop(0, 'rgba(255,248,205,' + (0.10 + k * 0.16).toFixed(3) + ')'); g.addColorStop(1, 'rgba(255,248,205,' + (0.02 + k * 0.05).toFixed(3) + ')'); }
+    else { g.addColorStop(0, 'rgba(16,30,14,' + (0.06 - k * 0.12).toFixed(3) + ')'); g.addColorStop(1, 'rgba(16,30,14,' + (0.12 - k * 0.26).toFixed(3) + ')'); }
+    ctx.fillStyle = g; ctx.fill();
     ctx.save(); ctx.clip();
-    const m = Math.max(4, Math.ceil(Math.max(Lt, Lb) / 2.2)), s = toSeed(null, T[0].x, T[0].y), R = rng(s);
-    const dark = [], light = [];
-    for (let i = 0; i <= m; i++) {
-      const t = i / m, a = along(tq, ct, t * Lt), b = along(bq, cb, t * Lb);
-      const f = (i % 2 ? 0.45 : 0.85) * (0.85 + R() * 0.15), jx = (R() - 0.5) * 0.8;
-      dark.push(a.x + jx, a.y, lerp(a.x, b.x, f) + jx, lerp(a.y, b.y, f));
-      if (i % 3 === 0) light.push(a.x + jx + 0.5, a.y, lerp(a.x, b.x, f * 0.7) + jx + 0.5, lerp(a.y, b.y, f * 0.7));
+    // промоины: редкие извилистые борозды от бровки вниз (тень + освещённый гребень), кочки и кусты травы
+    const m = Math.max(2, Math.round(Math.max(Lt, Lb) / 8));
+    const dark = new Path2D(), lite = new Path2D(), tufts = new Path2D();
+    for (let i = 0; i < m; i++) {
+      const t = clamp((i + 0.5 + (R() - 0.5) * 0.9) / m, 0, 1), a = along(tq, ct, t * Lt), b = along(bq, cb, clamp(t + (R() - 0.5) * 0.03, 0, 1) * Lb);
+      const f = 0.2 + R() * R() * 0.75, vx = b.x - a.x, vy = b.y - a.y, vl = Math.hypot(vx, vy) || 1, nx = -vy / vl, ny = vx / vl;
+      const w1 = (R() - 0.5) * 2.4, w2 = (R() - 0.5) * 2.4;
+      const p1x = a.x + vx * f * 0.33 + nx * w1, p1y = a.y + vy * f * 0.33 + ny * w1, p2x = a.x + vx * f * 0.66 + nx * w2, p2y = a.y + vy * f * 0.66 + ny * w2;
+      dark.moveTo(a.x, a.y); dark.bezierCurveTo(p1x, p1y, p2x, p2y, a.x + vx * f, a.y + vy * f);
+      lite.moveTo(a.x - 0.7, a.y - 0.7); lite.bezierCurveTo(p1x - 0.7, p1y - 0.7, p2x - 0.7, p2y - 0.7, a.x + vx * f * 0.8 - 0.7, a.y + vy * f * 0.8 - 0.7);
+    }
+    for (let i = 0; i < Lt / 6; i++) {
+      const t = R(), a = along(tq, ct, t * Lt), b = along(bq, cb, t * Lb), tf = 0.1 + R() * 0.85;
+      const tx = lerp(a.x, b.x, tf) + (R() - 0.5) * 3, ty = lerp(a.y, b.y, tf) + (R() - 0.5) * 3, tr = 0.6 + R() * 1.2;
+      tufts.moveTo(tx + tr, ty); tufts.arc(tx, ty, tr, 0, TAU);
     }
     ctx.lineCap = 'round';
-    ctx.strokeStyle = 'rgba(36,48,22,.24)'; ctx.lineWidth = 0.5; ctx.beginPath();
-    for (let j = 0; j < dark.length; j += 4) { ctx.moveTo(dark[j], dark[j + 1]); ctx.lineTo(dark[j + 2], dark[j + 3]); }
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,250,220,.12)'; ctx.lineWidth = 0.4; ctx.beginPath();
-    for (let j = 0; j < light.length; j += 4) { ctx.moveTo(light[j], light[j + 1]); ctx.lineTo(light[j + 2], light[j + 3]); }
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(138,102,66,.38)'; ctx.beginPath();
-    for (let i = 0; i < Lt / 30; i++) { const a = along(tq, ct, R() * Lt); ctx.ellipse(a.x + dx * 1.5, a.y + dy * 1.5, 1.5 + R() * 3.5, 0.8 + R() * 1.4, a.a, 0, TAU); }
+    ctx.strokeStyle = 'rgba(34,46,20,.13)'; ctx.lineWidth = 1.4; ctx.stroke(dark);
+    ctx.strokeStyle = 'rgba(30,40,18,.2)'; ctx.lineWidth = 0.5; ctx.stroke(dark);
+    ctx.strokeStyle = 'rgba(255,250,220,.12)'; ctx.lineWidth = 0.6; ctx.stroke(lite);
+    ctx.fillStyle = 'rgba(46,80,32,.26)'; ctx.fill(tufts);
+    // пятна оголённого грунта у бровки
+    ctx.fillStyle = 'rgba(146,108,70,.24)'; ctx.beginPath();
+    for (let i = 0; i < Lt / 26; i++) { const a = along(tq, ct, R() * Lt), rr = 1.2 + R() * 3.5; ctx.moveTo(a.x + dx * 1.8 + rr, a.y + dy * 1.8); ctx.ellipse(a.x + dx * 1.8, a.y + dy * 1.8, rr, 0.6 + R() * 1.2, a.a, 0, TAU); }
     ctx.fill();
+    // сырая подошва
+    ctx.beginPath(); polyPath(ctx, bq, false); ctx.strokeStyle = 'rgba(30,46,24,.22)'; ctx.lineWidth = 3; ctx.stroke();
     ctx.restore();
+    // бровка: светлая кромка и тень под ней
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     ctx.beginPath(); polyPath(ctx, tq, false);
-    ctx.strokeStyle = 'rgba(255,248,214,.4)'; ctx.lineWidth = 1.1; ctx.stroke();
-    ctx.beginPath(); polyPath(ctx, offsetLine(tq, 0, false).map(q => ({ x: q.x + dx * 0.7, y: q.y + dy * 0.7 })), false);
-    ctx.strokeStyle = 'rgba(40,50,24,.35)'; ctx.lineWidth = 0.45; ctx.stroke();
-    ctx.beginPath(); polyPath(ctx, bq, false); ctx.strokeStyle = 'rgba(30,40,20,.2)'; ctx.lineWidth = 0.8; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,246,206,' + (0.25 + Math.max(0, k) * 0.25).toFixed(3) + ')'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.beginPath(); polyPath(ctx, tq.map(q => ({ x: q.x + dx * 0.9, y: q.y + dy * 0.9 })), false);
+    ctx.strokeStyle = 'rgba(34,46,22,.32)'; ctx.lineWidth = 0.5; ctx.stroke();
     ctx.restore();
   }
   const _hsCache = new WeakMap();
@@ -1874,8 +1984,8 @@ const Sym = (() => {
         const gx = (H[j * nx + i1] - H[j * nx + i0]) / (mpu * (i1 - i0) / 2) * z, gy = (H[j1 * nx + i] - H[j0 * nx + i]) / (mpu * (j1 - j0) / 2) * z;
         const L = Math.sqrt(gx * gx + gy * gy + 1), sh = (gx * 0.5 + gy * 0.5 + 0.7071) / L - 0.7071;
         const o = (j * nx + i) * 4;
-        if (sh >= 0) { d[o] = 255; d[o + 1] = 250; d[o + 2] = 225; d[o + 3] = Math.min(255, sh * 255 * 2.6); }
-        else { d[o] = 16; d[o + 1] = 26; d[o + 2] = 38; d[o + 3] = Math.min(255, -sh * 255 * 1.5); }
+        if (sh >= 0) { d[o] = 255; d[o + 1] = 248; d[o + 2] = 214; d[o + 3] = Math.min(150, sh * 255 * 1.5); }
+        else { d[o] = 14; d[o + 1] = 30; d[o + 2] = 30; d[o + 3] = Math.min(255, -sh * 255 * 1.6); }
       }
       g.putImageData(im, 0, 0);
       e = { key, c, nx, ny };
@@ -1965,7 +2075,7 @@ const Sym = (() => {
   }
   function personTop(ctx, x, y, dir, t, seed) {
     dir = dir || 0;
-    const s = toSeed(seed, x, y), ph = Math.sin((t || 0) * 9);
+    const s = toSeed(seed == null ? 7 : seed), ph = Math.sin((t || 0) * 9);
     const shirts = ['#d94b3d', '#3f7bd1', '#4a9a5c', '#e2b23a', '#8a5bb8', '#e8e4da', '#2f3640', '#e07a2f', '#6aa3c8'];
     const hairs = ['#2a1d14', '#5a3b22', '#a4733e', '#d8b46a', '#8c8c88', '#1a1a1a'];
     const shirt = shirts[(hash(s, 1) * shirts.length) | 0], hair = hairs[(hash(s, 2) * hairs.length) | 0], hat = hash(s, 3) < 0.25, bag = hash(s, 4) < 0.3;
@@ -2057,28 +2167,36 @@ const Sym = (() => {
     ctx.fillStyle = color || INK; ctx.fillText(String(str), 0, 0);
     ctx.restore();
   }
+  const _tw = new Map();
+  function textW(str, size, weight) {
+    const key = str + '|' + size + '|' + weight;
+    let w = _tw.get(key);
+    if (w == null) { const g = hc(); g.font = 'italic ' + weight + ' ' + size + 'px ' + PFONT; w = g.measureText(str).width; if (_tw.size > 2000) _tw.clear(); _tw.set(key, w); }
+    return w;
+  }
   function upright(a) { a = ((a % TAU) + TAU) % TAU; return (a > PI / 2 && a < PI * 1.5) ? a - PI : a; }
-  // штрих линии с разрывами под подписи: gaps = [{x,y,a,w,h}]
-  function strokeWithGaps(ctx, pathFn, gaps, b) {
-    ctx.save();
-    if (gaps.length) {
-      ctx.beginPath(); ctx.rect(b.x0 - 50, b.y0 - 50, b.x1 - b.x0 + 100, b.y1 - b.y0 + 100);
-      for (const g of gaps) {
-        const ca = Math.cos(g.a), sa = Math.sin(g.a), hw = g.w / 2, hh = g.h / 2;
-        ctx.moveTo(g.x - ca * hw + sa * hh, g.y - sa * hw - ca * hh); ctx.lineTo(g.x + ca * hw + sa * hh, g.y + sa * hw - ca * hh);
-        ctx.lineTo(g.x + ca * hw - sa * hh, g.y + sa * hw + ca * hh); ctx.lineTo(g.x - ca * hw - sa * hh, g.y - sa * hw + ca * hh); ctx.closePath();
-      }
-      ctx.clip('evenodd');
+  // путь по ломаной q (c — накопленные длины) с пропусками на интервалах длины gaps = [[d0, d1], …]
+  function gapPath(ctx, q, c, gaps) {
+    const L = c[c.length - 1], vis = [];
+    let s0 = 0;
+    for (const g of gaps.slice().sort((u, v) => u[0] - v[0])) { if (g[0] > s0) vis.push([s0, Math.min(g[0], L)]); s0 = Math.max(s0, g[1]); }
+    if (s0 < L) vis.push([s0, L]);
+    let i = 1;
+    for (const [a0, a1] of vis) {
+      if (a1 - a0 < 1e-6) continue;
+      const a = along(q, c, a0), e = along(q, c, a1);
+      ctx.moveTo(a.x, a.y);
+      while (i < q.length && c[i] <= a0) i++;
+      while (i < q.length && c[i] < a1) { ctx.lineTo(q[i].x, q[i].y); i++; }
+      ctx.lineTo(e.x, e.y);
     }
-    ctx.beginPath(); pathFn(); ctx.stroke();
-    ctx.restore();
   }
   function paper(ctx, x, y, w, h, opt) {
     opt = opt || {};
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(x + 1.5, y + 2, w, h);
     ctx.fillStyle = 'rgba(0,0,0,.1)'; ctx.fillRect(x + 0.5, y + 3.5, w + 2.5, h);
-    ctx.fillStyle = patT('paper', 0, 0); ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = patT('paper', 0, 0, 0, 0, ctx); ctx.fillRect(x, y, w, h);
     const m = opt.margin != null ? opt.margin : 6;
     ctx.strokeStyle = INK; ctx.lineWidth = 0.9; ctx.strokeRect(x + m, y + m, w - 2 * m, h - 2 * m);
     ctx.lineWidth = 0.3; ctx.strokeRect(x + m + 1.6, y + m + 1.6, w - 2 * m - 3.2, h - 2 * m - 3.2);
@@ -2118,20 +2236,12 @@ const Sym = (() => {
     ctx.save();
     ctx.beginPath(); polyPath(ctx, p, true);
     ctx.fillStyle = fire ? 'rgba(236,150,112,.28)' : 'rgba(246,214,110,.38)'; ctx.fill();
-    if (fire) {
-      ctx.save(); ctx.clip();
-      const b = bbox(p);
-      ctx.beginPath();
-      for (let t = b.x0 - (b.y1 - b.y0); t < b.x1; t += 1.6) { ctx.moveTo(t, b.y1); ctx.lineTo(t + (b.y1 - b.y0), b.y0); }
-      ctx.strokeStyle = 'rgba(196,84,58,.5)'; ctx.lineWidth = 0.25; ctx.stroke();
-      ctx.restore();
-    }
+    if (fire) { ctx.fillStyle = patT('hatch', 0, 0, 0, 0, ctx); ctx.fill(); }
     ctx.beginPath(); polyPath(ctx, p, true);
     ctx.strokeStyle = INK; ctx.lineWidth = 0.6; ctx.lineJoin = 'miter'; ctx.stroke();
     if (lab) {
-      const c = centroid(p), b = bbox(p), size = clamp(Math.min(b.x1 - b.x0, b.y1 - b.y0) * 0.3, 2.8, 5.4);
-      ctx.font = 'italic 600 ' + size + 'px ' + PFONT;
-      const tw = ctx.measureText(lab).width;
+      const c = centroid(p), b = bbox(p), size = Math.round(clamp(Math.min(b.x1 - b.x0, b.y1 - b.y0) * 0.3, 2.8, 5.4) * 4) / 4;
+      const tw = textW(lab, size, 600);
       ctx.fillStyle = fire ? 'rgba(250,236,226,.85)' : 'rgba(252,244,214,.85)';
       ctx.fillRect(c.x - tw / 2 - 0.6, c.y - size * 0.55, tw + 1.2, size * 1.1);
       label(ctx, c.x, c.y, lab, size, INK, 0, 600);
@@ -2268,26 +2378,29 @@ const Sym = (() => {
     const p0 = P(pts);
     if (p0.length < 2) return;
     const closed = isClosed(p0), p = closed ? p0.slice(0, -1) : p0;
-    const b = bbox(p);
     ctx.save();
-    ctx.strokeStyle = BROWN; ctx.lineWidth = main ? 0.55 : 0.28; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    const gaps = [];
-    let txt = null, size = 3.4;
+    ctx.strokeStyle = BROWN; ctx.lineWidth = main ? 0.48 : 0.26; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    const labs = [];
+    let txt = null, q = null, c = null;
+    const size = 3.4;
     if (main && h != null && isFinite(h)) {
       txt = Number.isInteger(h) ? String(h) : fmtH(h, Math.abs(h * 10 - Math.round(h * 10)) < 1e-6 ? 1 : 2);
-      const q = densify(p, closed, 2), c = cum(q), L = c[c.length - 1];
-      ctx.font = 'italic 600 ' + size + 'px ' + PFONT;
-      const tw = ctx.measureText(txt).width;
+      q = densify(p, closed, 3);
+      if (closed) q.push({ x: q[0].x, y: q[0].y });
+      c = cum(q);
+      const L = c[c.length - 1], tw = textW(txt, size, 600);
       if (L > tw * 3) {
-        const step = Math.max(L, 260), n = Math.max(1, Math.floor(L / step + 0.5));
+        const n = Math.max(1, Math.floor(L / Math.max(L, 260) + 0.5));
         for (let k = 0; k < n; k++) {
           const d = L * (k + 0.5) / n, a = along(q, c, d - tw / 2), e = along(q, c, d + tw / 2);
-          gaps.push({ x: (a.x + e.x) / 2, y: (a.y + e.y) / 2, a: Math.atan2(e.y - a.y, e.x - a.x), w: tw + 1.4, h: size + 0.6 });
+          labs.push({ x: (a.x + e.x) / 2, y: (a.y + e.y) / 2, a: Math.atan2(e.y - a.y, e.x - a.x), d0: d - tw / 2 - 0.8, d1: d + tw / 2 + 0.8 });
         }
       }
     }
-    strokeWithGaps(ctx, () => smoothPath(ctx, p, closed), gaps, b);
-    for (const g of gaps) label(ctx, g.x, g.y, txt, size, BROWN, upright(g.a), 600);
+    ctx.beginPath();
+    if (labs.length) gapPath(ctx, q, c, labs.map(g => [g.d0, g.d1])); else smoothPath(ctx, p, closed);
+    ctx.stroke();
+    for (const g of labs) label(ctx, g.x, g.y, txt, size, BROWN, upright(g.a), 600);
     ctx.restore();
   }
   function pspot(ctx, x, y, h) {
@@ -2300,36 +2413,189 @@ const Sym = (() => {
     const p0 = P(pts);
     if (p0.length < 2) return;
     kind = netKind(kind) || 'water';
-    const col = UTIL[kind], letter = NET[kind].l, q = densify(p0, false, 4), c = cum(q), L = c[c.length - 1], b = bbox(q);
+    const col = UTIL[kind], letter = NET[kind].l, q = densify(p0, false, 4), c = cum(q), L = c[c.length - 1];
     const size = 3.3, gaps = [];
-    for (let d = Math.min(18, L / 2); d < L - 4; d += 40) { const a = along(q, c, d); gaps.push({ x: a.x, y: a.y, a: a.a, w: size + 1.2, h: size + 1 }); }
+    for (let d = Math.min(18, L / 2); d < L - 4; d += 40) { const a = along(q, c, d); gaps.push({ x: a.x, y: a.y, a: a.a, d0: d - size * 0.6 - 0.4, d1: d + size * 0.6 + 0.4 }); }
     ctx.save();
-    ctx.strokeStyle = col; ctx.lineWidth = 0.55; ctx.lineJoin = 'round';
+    ctx.strokeStyle = col; ctx.lineWidth = 0.48; ctx.lineJoin = 'round';
     if (kind === 'storm') ctx.setLineDash([3, 1.2]);
-    strokeWithGaps(ctx, () => polyPath(ctx, q, false), gaps, b);
+    ctx.beginPath(); gapPath(ctx, q, c, gaps.map(g => [g.d0, g.d1])); ctx.stroke();
     ctx.setLineDash([]);
     for (const g of gaps) label(ctx, g.x, g.y, letter, size, col, upright(g.a), 700);
     ctx.restore();
   }
 
-  /* ================================================================= EXPORT */
-  const API = {
-    ground, road, roads, house, building, shed, garages, greenhouse, fence, gate,
-    tree, bush, flowerbed, manhole, hydrant, pole, wires, car, bench, playground, well,
-    pond, stream, swamp, slope, hillshade, marker,
-    surveyorTop, tripodTop, dogTop, personTop,
+  /* ========================================================== SPRITE CACHE */
+  // Статичные «тяжёлые» объекты рисуются один раз в offscreen-спрайт (в разрешении экрана)
+  // и дальше выводятся одним drawImage, выровненным по пикселям. LRU по числу пикселей.
+  const SPR = new Map();
+  let sprPx = 0, sprMiss = 0, sprWin = 0;
+  const SPR_BUDGET = 8e6, SPR_MAX = 2.5e6;
+  const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  // local: объект рисуется относительно (x0, y0) без привязки к сетке мира (подвижные объекты: ключ без координат)
+  function cached(ctx, key, x0, y0, x1, y1, draw, opaque, local) {
+    if (!out.cache || !ctx.getTransform) return draw(ctx);
+    const m = ctx.getTransform(), k = Math.hypot(m.a, m.b);
+    if (!(k > 0.01) || !isFinite(x0 + y0 + x1 + y1)) return draw(ctx);
+    if (!local) { x0 = Math.floor(x0); y0 = Math.floor(y0); x1 = Math.ceil(x1); y1 = Math.ceil(y1); }
+    const pw = Math.ceil((x1 - x0) * k), ph = Math.ceil((y1 - y0) * k);
+    if (pw < 1 || ph < 1) return;
+    if (pw * ph > SPR_MAX) return draw(ctx);
+    if (opaque && (Math.abs(pw - (x1 - x0) * k) > 1e-6 || Math.abs(ph - (y1 - y0) * k) > 1e-6 || m.b !== 0 || m.c !== 0)) opaque = false; // край не по пикселю — нужна прозрачность
+    if (opaque) key += '#o';
+    const fk = key + '@' + k.toFixed(4) + (local ? '' : '/' + x0 + ',' + y0);
+    let e = SPR.get(fk), ret;
+    if (e) { SPR.delete(fk); SPR.set(fk, e); }
+    else {
+      const t = now();
+      if (t - sprWin > 250) { sprWin = t; sprMiss = 0; }
+      if (++sprMiss > 150) return draw(ctx);            // защита от «пробуксовки» (анимация масштаба и т. п.)
+      const c = mkCanvas(pw, ph), g = c.getContext('2d', opaque ? { alpha: false } : undefined);
+      g.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
+      ret = draw(g);
+      e = { c, w: pw / k, h: ph / k, px: pw * ph, ret };
+      SPR.set(fk, e); sprPx += e.px;
+      for (const [kk, v] of SPR) { if (sprPx <= SPR_BUDGET) break; SPR.delete(kk); sprPx -= v.px; }
+    }
+    let dx = x0, dy = y0;
+    if (m.b === 0 && m.c === 0 && Math.abs(m.a - m.d) < 1e-9) { dx = (Math.round(m.a * x0 + m.e) - m.e) / m.a; dy = (Math.round(m.d * y0 + m.f) - m.f) / m.d; }
+    ctx.drawImage(e.c, dx, dy, e.w, e.h);
+    return e.ret;
+  }
+  const CK = function () { return Array.prototype.join.call(arguments, '|'); };
+  const OK = o => (o ? JSON.stringify(o) : '');
+  function ptsKey(p) { let k = ''; for (const q of p) k += Math.round(q.x * 64) + ',' + Math.round(q.y * 64) + ';'; return k; }
+  function rectBox(x, y, w, h, rot, pad, sh) {
+    const cx = x + w / 2, cy = y + h / 2, ca = Math.abs(Math.cos(rot || 0)), sa = Math.abs(Math.sin(rot || 0));
+    const hw = (w * ca + h * sa) / 2, hh = (w * sa + h * ca) / 2;
+    return [cx - hw - pad, cy - hh - pad, cx + hw + pad + sh, cy + hh + pad + sh];
+  }
+  // габарит сглаженной кривой: точки + контрольные точки Безье (кривая лежит в их выпуклой оболочке)
+  function ptsBox(p, pad, closed) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const n = p.length, add = (x, y) => { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; };
+    for (let i = 0; i < n; i++) {
+      const a = p[closed ? (i - 1 + n) % n : Math.max(0, i - 1)], b = p[i], c = p[closed ? (i + 1) % n : Math.min(n - 1, i + 1)];
+      add(b.x, b.y); add(b.x + (c.x - a.x) / 6, b.y + (c.y - a.y) / 6); add(b.x - (c.x - a.x) / 6, b.y - (c.y - a.y) / 6);
+    }
+    return [x0 - pad, y0 - pad, x1 + pad, y1 + pad];
+  }
+  const _fnId = new WeakMap();
+  let _fnN = 0;
+  const C = {
+    ground(ctx, x, y, w, h, kind, seed, opt) {
+      if (opt && opt.poly) {
+        const p = openRing(P(opt.poly)); if (p.length < 3) return;
+        const e = opt.edge != null ? opt.edge : 3, b = ptsBox(p, e + 1, true);
+        return cached(ctx, CK('GP', ptsKey(p), kind, seed, e), b[0], b[1], b[2], b[3], g => ground(g, x, y, w, h, kind, seed, opt));
+      }
+      if (!(w > 0 && h > 0)) return;
+      const whole = x === Math.round(x) && y === Math.round(y) && w === Math.round(w) && h === Math.round(h);
+      return cached(ctx, CK('GD', x, y, w, h, kind, seed), x, y, x + w, y + h, g => ground(g, x, y, w, h, kind, seed), whole);
+    },
+    car(ctx, x, y, rot, color, seed) {
+      const q = ((Math.round((rot || 0) * 180 / PI) % 360) + 360) % 360, rq = q * PI / 180;
+      const sd = seed == null ? (color ? toSeed(String(color)) : 1) : seed;
+      return cached(ctx, CK('CAR', q, color, sd), x - 12, y - 12, x + 14, y + 14, g => car(g, x, y, rq, color, sd), false, true);
+    },
+    tree(ctx, x, y, r, kind, seed) {
+      r = r > 0 ? r : 10;
+      return cached(ctx, CK('T', x, y, r, kind, seed), x - r * 1.3 - 1, y - r * 1.3 - 1, x + r * 2.5 + 1, y + r * 2.5 + 1, g => tree(g, x, y, r, kind, seed));
+    },
+    bush(ctx, x, y, r, seed) {
+      r = r > 0 ? r : 4;
+      return cached(ctx, CK('B', x, y, r, seed), x - r * 1.3 - 1, y - r * 1.3 - 1, x + r * 2 + 1, y + r * 2 + 1, g => bush(g, x, y, r, seed));
+    },
+    flowerbed(ctx, x, y, w, h, seed) { return cached(ctx, CK('F', x, y, w, h, seed), x - 1, y - 1, x + w + 2, y + h + 2, g => flowerbed(g, x, y, w, h, seed)); },
+    house(ctx, x, y, w, h, opt) {
+      const o = opt || {}, b = rectBox(x, y, w, h, o.rot, 2.5, (o.height || 0) + 5 + Math.min(w, h) * 0.12);
+      return cached(ctx, CK('H', x, y, w, h, OK(opt)), b[0], b[1], b[2], b[3], g => house(g, x, y, w, h, opt));
+    },
+    building(ctx, x, y, w, h, opt) {
+      const o = opt || {}, fl = o.floors > 0 ? o.floors : (o.kind === 'industrial' ? 2 : 5), b = rectBox(x, y, w, h, o.rot, 3, Math.max(10, Math.min(44, 2.5 + fl * 1.8)) + 3);
+      return cached(ctx, CK('BL', x, y, w, h, OK(opt)), b[0], b[1], b[2], b[3], g => building(g, x, y, w, h, opt));
+    },
+    shed(ctx, x, y, w, h, opt) {
+      const b = rectBox(x, y, w, h, opt && opt.rot, 2, 5);
+      return cached(ctx, CK('S', x, y, w, h, OK(opt)), b[0], b[1], b[2], b[3], g => shed(g, x, y, w, h, opt));
+    },
+    greenhouse(ctx, x, y, w, h, opt) {
+      const b = rectBox(x, y, w, h, opt && opt.rot, 2, 4);
+      return cached(ctx, CK('G', x, y, w, h, OK(opt)), b[0], b[1], b[2], b[3], g => greenhouse(g, x, y, w, h, opt));
+    },
+    garages(ctx, x, y, n, opt) {
+      const o = opt || {}, W = Math.max(1, n | 0) * (o.w || 13), D = o.h || 24, b = rectBox(x, y, W, D, o.rot, 2 + (o.apron ? 8 : 0), 5);
+      return cached(ctx, CK('GR', x, y, n, OK(opt)), b[0], b[1], b[2], b[3], g => garages(g, x, y, n, opt));
+    },
+    playground(ctx, x, y, w, h, seed) { return cached(ctx, CK('PG', x, y, w, h, seed), x - 1, y - 1, x + w + 6, y + h + 6, g => playground(g, x, y, w, h, seed)); },
+    well(ctx, x, y) { return cached(ctx, CK('W', x, y), x - 6, y - 5, x + 8, y + 8, g => well(g, x, y)); },
+    road(ctx, pts, width, kind, opt) {
+      const p = P(pts); if (p.length < 2) return;
+      const w = width > 0 ? width : 24, b = ptsBox(p, w / 2 + 4, isClosed(p));
+      return cached(ctx, CK('R', ptsKey(p), w, kind, OK(opt)), b[0], b[1], b[2], b[3], g => road(g, p, width, kind, opt));
+    },
+    fence(ctx, pts, kind) {
+      const p = P(pts); if (p.length < 2) return;
+      const b = bbox(p);
+      return cached(ctx, CK('FE', ptsKey(p), kind), b.x0 - 3, b.y0 - 3, b.x1 + 5, b.y1 + 5, g => fence(g, p, kind));
+    },
+    pond(ctx, pts, seed) {
+      const p = P(pts); if (p.length < 3) return;
+      const b = ptsBox(openRing(p), 6, true);
+      return cached(ctx, CK('PO', ptsKey(p), seed), b[0], b[1], b[2], b[3], g => pond(g, p, seed));
+    },
+    stream(ctx, pts, width, seed) {
+      const p = P(pts); if (p.length < 2) return;
+      const b = ptsBox(p, (width > 0 ? width : 6) / 2 + 6);
+      return cached(ctx, CK('ST', ptsKey(p), width, seed), b[0], b[1], b[2], b[3], g => stream(g, p, width, seed));
+    },
+    swamp(ctx, pts, seed) {
+      const p = P(pts); if (p.length < 3) return;
+      const b = ptsBox(openRing(p), 4, true);
+      return cached(ctx, CK('SW', ptsKey(p), seed), b[0], b[1], b[2], b[3], g => swamp(g, p, seed));
+    },
+    slope(ctx, topPts, bottomPts) {
+      const T = P(topPts), B = P(bottomPts); if (T.length < 2 || B.length < 2) return;
+      const b1 = ptsBox(T, 3), b2 = ptsBox(B, 3), b = [Math.min(b1[0], b2[0]), Math.min(b1[1], b2[1]), Math.max(b1[2], b2[2]), Math.max(b1[3], b2[3])];
+      return cached(ctx, CK('SL', ptsKey(T), ptsKey(B)), b[0], b[1], b[2], b[3], g => slope(g, T, B));
+    },
+    gate(ctx, x, y, w, rot, open) { return cached(ctx, CK('GA', x, y, w, rot, open), x - (w || 14) / 2 - 4, y - (w || 14) / 2 - 4, x + (w || 14) / 2 + 6, y + (w || 14) / 2 + 6, g => gate(g, x, y, w, rot, open)); },
+    paper(ctx, x, y, w, h, opt) { return cached(ctx, CK('PP', x, y, w, h, OK(opt)), x, y, x + w + 3.5, y + h + 4, g => paper(g, x, y, w, h, opt)); },
+    hillshade(ctx, x, y, w, h, heightFn, opt) {
+      if (typeof heightFn !== 'function') return;
+      let id = opt && opt.key;
+      if (id == null) { id = _fnId.get(heightFn); if (!id) _fnId.set(heightFn, id = ++_fnN); }
+      return cached(ctx, CK('HS', x, y, w, h, id, OK(opt)), x, y, x + w, y + h, g => hillshade(g, x, y, w, h, heightFn, opt));
+    },
   };
+  function roads(ctx, list) {
+    for (const r of list) C.road(ctx, r.pts, r.width, r.kind, Object.assign({}, r.opt, { stage: 'base', seed: r.seed }));
+    for (const r of list) C.road(ctx, r.pts, r.width, r.kind, Object.assign({}, r.opt, { stage: 'top', seed: r.seed }));
+  }
+
+  /* ================================================================= EXPORT */
+  const API = Object.assign({
+    roads, manhole, hydrant, pole, wires, bench, marker,
+    surveyorTop, tripodTop, dogTop, personTop,
+  }, C);
+  const NAMES = ['ground', 'road', 'roads', 'house', 'building', 'shed', 'garages', 'greenhouse', 'fence', 'gate', 'tree', 'bush', 'flowerbed',
+    'manhole', 'hydrant', 'pole', 'wires', 'car', 'bench', 'playground', 'well', 'pond', 'stream', 'swamp', 'slope', 'hillshade', 'marker',
+    'surveyorTop', 'tripodTop', 'dogTop', 'personTop'];
+  const ORDER = (a, b) => NAMES.indexOf(a) - NAMES.indexOf(b);
   const plan = {
-    paper, house: phouse, tree: ptree, manhole: pmanhole, pole: ppole, fence: pfence, road: proad,
+    paper: C.paper, house: phouse, tree: ptree, manhole: pmanhole, pole: ppole, fence: pfence, road: proad,
     water: pwater, slope: pslope, contour: pcontour, spot: pspot, utility: putility, label,
   };
   const out = Object.assign({
     version: 1,
+    cache: true,                       // false — рисовать всё напрямую, без спрайтов
+    clearCache() { SPR.clear(); sprPx = 0; },
+    cacheInfo() { return { sprites: SPR.size, pixels: sprPx }; },
     plan,
     hash: (s, i) => hash(toSeed(s), i || 0),
     rng: s => rng(toSeed(s)),
     colors: { ink: INK, brown: BROWN, blue: BLUE, green: GREEN, paper: PAPER, util: UTIL },
-    list() { return Object.keys(API).concat(Object.keys(plan).map(k => 'plan.' + k)); },
+    list() { return Object.keys(API).sort(ORDER).concat(Object.keys(plan).map(k => 'plan.' + k)); },
   }, API);
   return out;
 })();
