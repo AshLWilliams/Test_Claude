@@ -74,9 +74,10 @@
         if (!inb(c, r)) continue;
         const i = r * COLS + c, o = step(i, d);
         if (g.blk[i] || g.res[i] >= 0 || o < 0 || g.blk[o] || g.res[o] >= 0) continue;
-        let near = false;
-        for (let k = 0; k < N && !near; k++) if (g.res[k] >= 0 && cheb(k, i) <= 1) near = true;
-        if (near) continue;
+        let near = false; // соседние вводы — не вплотную, ввод — не в узком проходе
+        for (let k = 0; k < N && !near; k++) if (g.res[k] >= 0 && (Math.abs(cOf(k) - c) + Math.abs(rOf(k) - r) <= 1 || k === o)) near = true;
+        let walls = 0; for (let e = 0; e < 4; e++) { const q = step(i, e); if (q >= 0 && g.blk[q]) walls++; }
+        if (near || walls > 1) continue;
         let busy = false; for (const n of g.nets) if (n.links[i] || n.links[o]) busy = true;
         if (busy) continue;
         cand.push({ cell: i, dir: d, w: (pref ? pref(d, c, r) : 1) * (0.5 + R()) });
@@ -374,7 +375,7 @@
       { kind: 'shop', name: 'Цех №1', label: 'кн2', w: 6 + ((R() * 3) | 0), h: 3 },
       { kind: 'shop', name: 'Цех №2', label: 'кн1', w: 5 + ((R() * 3) | 0), h: 2 + ((R() * 2) | 0) },
       { kind: 'store', name: 'Склад', label: 'мн1', w: 4 + ((R() * 3) | 0), h: 2 },
-      { kind: 'boiler', name: 'Котельная', label: 'кн', w: 2, h: 2 },
+      { kind: 'boiler', name: 'Котельная', label: 'кн', w: R() < 0.5 ? 3 : 2, h: 2 },
       { kind: 'tp', name: 'ТП', label: 'ТП', w: R() < 0.5 ? 2 : 1, h: 1 },
       { kind: 'grp', name: 'ГРП', label: 'ГРП', w: 1, h: 1 },
     ];
@@ -462,6 +463,10 @@
     // --- сети ---
     const shops = g.blds.filter(b => b.kind === 'shop'), store = B('Склад'), boiler = B('Котельная'), tp = B('ТП'), grp = B('ГРП');
     const sh = arr => { for (let i = arr.length - 1; i > 0; i--) { const j = (R() * (i + 1)) | 0; [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; };
+    // магистрали водопровода и канализации — первыми, через всю площадку
+    const o1 = R() < 0.5 ? 'h' : 'v';
+    if (!routeMain(g, 0, o1, null, R)) return null;
+    if (!routeMain(g, 1, o1 === 'h' ? 'v' : 'h', null, R)) return null;
     // выпуски источников
     const oHeat = pickEnd(g, 2, boiler, R, null), oGas = pickEnd(g, 3, grp, R, null), oPow = pickEnd(g, 4, tp, R, null);
     if (!oHeat || !oGas || !oPow) return null;
@@ -473,9 +478,6 @@
     if (!pickEnd(g, 3, boiler, R, null)) return null;
     if (R() < 0.5 && !pickEnd(g, 3, shops[(R() * shops.length) | 0], R, null)) return null;
     for (const b of sh([...shops, store]).slice(0, 2 + ((R() * 2) | 0))) if (!pickEnd(g, 4, b, R, null)) return null;
-    const o1 = R() < 0.5 ? 'h' : 'v';
-    if (!routeMain(g, 0, o1, null, R)) return null;
-    if (!routeMain(g, 1, o1 === 'h' ? 'v' : 'h', null, R)) return null;
     for (const ni of [2, 3, 4]) {
       const net = g.nets[ni], src = net.ends.find(e => e.outlet), ins = net.ends.filter(e => !e.outlet);
       if (!routeBranch(g, ni, ins[0], src, R)) return null;
