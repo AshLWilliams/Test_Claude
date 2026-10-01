@@ -1,151 +1,332 @@
 {
-  "version": 1,
-  "generated": "2026-10-01",
-  "engine": "ACE-Step 1.5",
-  "tracks": {
-    "menu": {
-      "ogg": "menu.ogg",
-      "mp3": "menu.mp3",
-      "duration": 55.3837,
-      "loop_start": 0,
-      "loop_end": 55.3837,
+  "about": "Музыка игры от локального Claude (раздел «Музыка для игр» в CLAUDE.md). Каждый файл — готовая бесшовная петля (джинглы — без петли); не перекодировать и не обрезать.",
+  "updated": "2026-10-01",
+  "loudness_lufs": -16,
+  "true_peak_max_dbtp": -1,
+  "formats": [
+    "ogg",
+    "mp3"
+  ],
+  "tracks": [
+    {
+      "id": "menu",
+      "use": "menu",
+      "title": "Меню: утро, собираемся на объект",
+      "files": {
+        "ogg": "menu.ogg",
+        "mp3": "menu.mp3"
+      },
+      "duration_s": 55.3837,
+      "loop_start_s": 0,
+      "loop_end_s": 55.3837,
       "bpm": 104.0,
       "bars": 24,
       "lufs": -16.0,
-      "seed": 2004354720,
-      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, bright early morning, getting ready to head out, light and optimistic, acoustic guitar, light percussion, glockenspiel"
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 2004354720,
+        "caption": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, bright early morning, getting ready to head out, light and optimistic, acoustic guitar, light percussion, glockenspiel"
+      }
     },
-    "piket/village": {
-      "ogg": "piket-village.ogg",
-      "mp3": "piket-village.mp3",
-      "duration": 57.6,
-      "loop_start": 0,
-      "loop_end": 57.6,
+    {
+      "id": "piket-village",
+      "use": "level",
+      "key": "piket/village",
+      "title": "Тахеометрическая съёмка: частный сектор",
+      "files": {
+        "ogg": "piket-village.ogg",
+        "mp3": "piket-village.mp3"
+      },
+      "duration_s": 57.6,
+      "loop_start_s": 0,
+      "loop_end_s": 57.6,
       "bpm": 100.0,
       "bars": 24,
       "lufs": -16.0,
-      "seed": 1364568629,
-      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, rural houses with yards, dogs and vegetable gardens, cheerful and homely, accordion lead, balalaika and mandolin plucking, light beat"
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 1364568629,
+        "caption": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, rural houses with yards, dogs and vegetable gardens, cheerful and homely, accordion lead, balalaika and mandolin plucking, light beat"
+      }
     },
-    "piket/park": {
-      "ogg": "piket-park.ogg",
-      "mp3": "piket-park.mp3",
-      "duration": 65.4506,
-      "loop_start": 0,
-      "loop_end": 65.4506,
+    {
+      "id": "piket-park",
+      "use": "level",
+      "key": "piket/park",
+      "title": "Съёмка парка с прудом и оврагом",
+      "files": {
+        "ogg": "piket-park.ogg",
+        "mp3": "piket-park.mp3"
+      },
+      "duration_s": 65.4506,
+      "loop_start_s": 0,
+      "loop_end_s": 65.4506,
       "bpm": 88.0,
       "bars": 24,
       "lufs": -16.0,
-      "seed": 2044032313,
-      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, calm city park with a pond, peaceful, dreamy lydian mode, harp, flute, soft pad"
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 2044032313,
+        "caption": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, calm city park with a pond, peaceful, dreamy lydian mode, harp, flute, soft pad"
+      }
     },
-    "traverse/block": {
-      "ogg": "traverse-block.ogg",
-      "mp3": "traverse-block.mp3",
-      "duration": 59.9999,
-      "loop_start": 0,
-      "loop_end": 59.9999,
+    {
+      "id": "traverse-block",
+      "use": "level",
+      "key": "traverse/block",
+      "title": "Теодолитный ход по кварталу",
+      "files": {
+        "ogg": "traverse-block.ogg",
+        "mp3": "traverse-block.mp3"
+      },
+      "duration_s": 59.9999,
+      "loop_start_s": 0,
+      "loop_end_s": 59.9999,
       "bpm": 96.0,
       "bars": 24,
       "lufs": -16.0,
-      "seed": 926339316,
-      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, focused and precise city walk, piano ostinato, pizzicato strings, quiet urban beat"
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 926339316,
+        "caption": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, focused and precise city walk, piano ostinato, pizzicato strings, quiet urban beat"
+      }
     },
-    "traverse/forest": {
-      "ogg": "traverse-forest.ogg",
-      "mp3": "traverse-forest.mp3",
-      "duration": 53.3303,
-      "loop_start": 0,
-      "loop_end": 53.3303,
+    {
+      "id": "traverse-forest",
+      "use": "level",
+      "key": "traverse/forest",
+      "title": "Ход через лес и болото",
+      "files": {
+        "ogg": "traverse-forest.ogg",
+        "mp3": "traverse-forest.mp3"
+      },
+      "duration_s": 53.3303,
+      "loop_start_s": 0,
+      "loop_end_s": 53.3303,
       "bpm": 72.0,
       "bars": 16,
       "lufs": -16.13,
-      "seed": 972381931,
-      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, mysterious damp forest and swamp, dorian mode, marimba, low flutes, dark ambient pad"
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 972381931,
+        "caption": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, mysterious damp forest and swamp, dorian mode, marimba, low flutes, dark ambient pad"
+      }
     },
-    "staffman/road": {
-      "ogg": "staffman-road.ogg",
-      "mp3": "staffman-road.mp3",
-      "duration": 58.1809,
-      "loop_start": 0,
-      "loop_end": 58.1809,
+    {
+      "id": "staffman-road",
+      "use": "level",
+      "key": "staffman/road",
+      "title": "Реечник на трассе будущей дороги",
+      "files": {
+        "ogg": "staffman-road.ogg",
+        "mp3": "staffman-road.mp3"
+      },
+      "duration_s": 58.1809,
+      "loop_start_s": 0,
+      "loop_end_s": 58.1809,
       "bpm": 132.0,
       "bars": 32,
       "lufs": -16.1,
-      "seed": 933738642,
-      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, upbeat and on the move, mixolydian folk rock instrumental, acoustic guitar, bass, live drums"
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 933738642,
+        "caption": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, upbeat and on the move, mixolydian folk rock instrumental, acoustic guitar, bass, live drums"
+      }
     },
-    "staffman/river": {
-      "ogg": "staffman-river.ogg",
-      "mp3": "staffman-river.mp3",
-      "duration": 70.1283,
-      "loop_start": 0,
-      "loop_end": 70.1283,
+    {
+      "id": "staffman-river",
+      "use": "level",
+      "key": "staffman/river",
+      "title": "Реечник на берегу реки",
+      "files": {
+        "ogg": "staffman-river.ogg",
+        "mp3": "staffman-river.mp3"
+      },
+      "duration_s": 70.1283,
+      "loop_start_s": 0,
+      "loop_end_s": 70.1283,
       "bpm": 110.0,
       "bars": 32,
       "lufs": -16.0,
-      "seed": 1711240431,
-      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, rippling river water, bright and light, major pentatonic melody, ukulele, koto, bottle percussion, soft pad"
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 1711240431,
+        "caption": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, rippling river water, bright and light, major pentatonic melody, ukulele, koto, bottle percussion, soft pad"
+      }
     },
-    "locator/yard": {
-      "ogg": "locator-yard.ogg",
-      "mp3": "locator-yard.mp3",
-      "duration": 55.3808,
-      "loop_start": 0,
-      "loop_end": 55.3808,
+    {
+      "id": "locator-yard",
+      "use": "level",
+      "key": "locator/yard",
+      "title": "Поиск подземных сетей во дворе",
+      "files": {
+        "ogg": "locator-yard.ogg",
+        "mp3": "locator-yard.mp3"
+      },
+      "duration_s": 55.3808,
+      "loop_start_s": 0,
+      "loop_end_s": 55.3808,
       "bpm": 104.0,
       "bars": 24,
       "lufs": -16.0,
-      "seed": 2017260433,
-      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, detective mood, steady pulse, synth bass, pulsing arpeggios, sparse sonar-like pings"
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 2017260433,
+        "caption": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, detective mood, steady pulse, synth bass, pulsing arpeggios, sparse sonar-like pings"
+      }
     },
-    "locator/industrial": {
-      "ogg": "locator-industrial.ogg",
-      "mp3": "locator-industrial.mp3",
-      "duration": 50.0873,
-      "loop_start": 0,
-      "loop_end": 50.0873,
+    {
+      "id": "locator-industrial",
+      "use": "level",
+      "key": "locator/industrial",
+      "title": "Промзона, пять сетей",
+      "files": {
+        "ogg": "locator-industrial.ogg",
+        "mp3": "locator-industrial.mp3"
+      },
+      "duration_s": 50.0873,
+      "loop_start_s": 0,
+      "loop_end_s": 50.0873,
       "bpm": 116.0,
       "bars": 24,
       "lufs": -16.0,
-      "seed": 1484676646,
-      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, mechanical and metallic, light industrial, metallic percussion, bass, phrygian mode, not aggressive"
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 1484676646,
+        "caption": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, mechanical and metallic, light industrial, metallic percussion, bass, phrygian mode, not aggressive"
+      }
     },
-    "contours/hill": {
-      "ogg": "contours-hill.ogg",
-      "mp3": "contours-hill.mp3",
-      "duration": 48.0,
-      "loop_start": 0,
-      "loop_end": 48.0,
+    {
+      "id": "contours-hill",
+      "use": "level",
+      "key": "contours/hill",
+      "title": "Горизонтали холма: камеральная обработка",
+      "files": {
+        "ogg": "contours-hill.ogg",
+        "mp3": "contours-hill.mp3"
+      },
+      "duration_s": 48.0,
+      "loop_start_s": 0,
+      "loop_end_s": 48.0,
       "bpm": 80.0,
       "bars": 16,
       "lufs": -18.86,
-      "seed": 1560255883,
-      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, thoughtful and quiet, solo piano, warm strings"
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 1560255883,
+        "caption": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, thoughtful and quiet, solo piano, warm strings"
+      }
     },
-    "contours/ravine": {
-      "ogg": "contours-ravine.ogg",
-      "mp3": "contours-ravine.mp3",
-      "duration": 67.7712,
-      "loop_start": 0,
-      "loop_end": 67.7712,
+    {
+      "id": "contours-ravine",
+      "use": "level",
+      "key": "contours/ravine",
+      "title": "Последний уровень: овраг и речка",
+      "files": {
+        "ogg": "contours-ravine.ogg",
+        "mp3": "contours-ravine.mp3"
+      },
+      "duration_s": 67.7712,
+      "loop_start_s": 0,
+      "loop_end_s": 67.7712,
       "bpm": 84.0,
       "bars": 24,
       "lufs": -17.47,
-      "seed": 806670197,
-      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, final level, hopeful finale, gradual uplifting rise, minor pentatonic melody, piano and strings"
-    }
-  },
-  "jingles": {
-    "clear": {
-      "ogg": "jingle-clear.ogg",
-      "mp3": "jingle-clear.mp3",
-      "duration": 4.89
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 806670197,
+        "caption": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, final level, hopeful finale, gradual uplifting rise, minor pentatonic melody, piano and strings"
+      }
     },
-    "win": {
-      "ogg": "jingle-win.ogg",
-      "mp3": "jingle-win.mp3",
-      "duration": 6.1
+    {
+      "id": "jingle-clear",
+      "use": "jingle",
+      "key": "clear",
+      "title": "Участок сдан",
+      "files": {
+        "ogg": "jingle-clear.ogg",
+        "mp3": "jingle-clear.mp3"
+      },
+      "duration_s": 4.89
+    },
+    {
+      "id": "jingle-win",
+      "use": "jingle",
+      "key": "win",
+      "title": "Кампания пройдена",
+      "files": {
+        "ogg": "jingle-win.ogg",
+        "mp3": "jingle-win.mp3"
+      },
+      "duration_s": 6.1
+    },
+    {
+      "id": "slam-parking",
+      "use": "level",
+      "key": "slam/parking",
+      "title": "SLAM: подземный паркинг",
+      "files": {
+        "ogg": "slam-parking.ogg",
+        "mp3": "slam-parking.mp3"
+      },
+      "duration_s": 63.3066,
+      "loop_start_s": 0,
+      "loop_end_s": 63.3066,
+      "samplerate": 48000,
+      "bpm": 92.0,
+      "beats_per_bar": 4,
+      "bars": 24,
+      "keyscale": "D minor",
+      "lufs": -17.24,
+      "true_peak_dbtp": -1.0,
+      "seam_similarity": 0.9,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 1096155084,
+        "caption": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, underground parking garage, echoing and dusky, focused, steady hypnotic pulse, repeating four-bar synth arpeggio motif, warm synth pad, soft pulsing bass, light sonar-like pings, long reverb",
+        "variant": "12",
+        "sound_reference": false,
+        "source_file": "slam-parking-12-213259-v1.flac",
+        "made_by": "music-generator 0.3.0 (локальный Claude)",
+        "loop_from_s": [
+          33.5733,
+          96.8799
+        ]
+      }
+    },
+    {
+      "id": "slam-yard",
+      "use": "level",
+      "key": "slam/yard",
+      "title": "SLAM: двор и арка в центре города",
+      "files": {
+        "ogg": "slam-yard.ogg",
+        "mp3": "slam-yard.mp3"
+      },
+      "duration_s": 40.0,
+      "loop_start_s": 0,
+      "loop_end_s": 40.0,
+      "samplerate": 48000,
+      "bpm": 96.0,
+      "beats_per_bar": 4,
+      "bars": 16,
+      "keyscale": "F major",
+      "lufs": -16.0,
+      "true_peak_dbtp": -2.79,
+      "seam_similarity": 0.991,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 247183163,
+        "caption": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, city courtyard with an archway, bright and calm urban mood, electric piano, soft lo-fi beat, gentle guitar harmonics",
+        "variant": "1",
+        "sound_reference": false,
+        "source_file": "slam-yard-1-212009-v1.flac",
+        "made_by": "music-generator 0.3.0 (локальный Claude)",
+        "loop_from_s": [
+          31.9733,
+          71.9733
+        ]
+      }
     }
-  }
+  ]
 }
