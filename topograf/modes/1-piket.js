@@ -13,6 +13,7 @@
   const SPEED = 74;          // шаг реечника, ед./с
   const MPU = 0.25;          // метров в единице
   const HI = 1.6, HV = 2.0;  // высота инструмента и отражателя, м
+  const RANGE = 240;         // предельное расстояние до пикета: 60 м для контуров при съёмке М 1:500
   const TAU = Math.PI * 2, hyp = Math.hypot;
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -100,17 +101,17 @@
     title: 'Пикет',
     subtitle: 'Тахеометрическая съёмка участка',
     howto: [
-      'Вы — реечник с вехой: тап или удержание по карте — идти (стрелки/WASD тоже).',
-      'Встаньте у характерной точки — угол дома, опора, дерево, бровка — и жмите ПИКЕТ.',
-      'Тахеометр снимет точку, если видит отражатель. Дому хватит 3 углов. Пикет в пустоте — лишний.',
-      'Не видно — СТАНЦИЯ и тап по месту: перенос 5 с, новая станция должна видеть прежнюю.',
-      'Снимите всё за 2 минуты — остаток времени пойдёт в премию.',
+      'За 2 минуты снимите участок: тап по карте — реечник идёт.',
+      'У характерной точки (угол, опора, дерево) жмите ПИКЕТ.',
+      'Тахеометр должен видеть веху, а до неё — не больше 60 м.',
+      'Иначе СТАНЦИЯ и тап по месту; новая должна видеть прежнюю.',
+      'Дому хватит 3 углов. Пикет в пустоте — лишний, штраф.',
     ],
     variants: [
       { id: 'village', title: 'Частный сектор', subtitle: 'Усадьбы ИЖС вдоль грунтовой улицы — топоплан 1:500',
-        howto: ['Помехи: собака во дворе лает и не пускает, проезжая машина перекрывает луч.'] },
+        howto: ['Собака во дворе мешает пройти, машина перекрывает луч.'] },
       { id: 'park', title: 'Парк с оврагом', subtitle: 'Дорожки, пруд, холм, овраг и роща — ситуация и рельеф',
-        howto: ['Рельеф: вершина и подошва холма, бровки и тальвег оврага, урез пруда; холм и овраг тоже закрывают луч. Бегуны и велосипедист пересекают его.'] },
+        howto: ['Рельеф: холм, бровки и тальвег оврага, урез пруда.', 'Холм и овраг закрывают луч, бегуны и велосипед — тоже.'] },
     ],
     create(api, variant, seed) { return createLevel(api, variant, seed); },
   });
@@ -180,7 +181,7 @@
       H0 = rr(141, 168);
       hAt = (x, y) => H0 + x * 0.0016 - y * 0.001;
       WW = Math.round(rr(860, 960));
-      const nP = R() < 0.2 ? 4 : 3, mL = Math.round(rr(34, 80)), mR = Math.round(rr(34, 80));
+      const nP = R() < 0.45 ? 4 : 3, mL = Math.round(rr(34, 80)), mR = Math.round(rr(34, 80));
       const gaps = []; for (let k = 0; k < nP - 1; k++) gaps.push(R() < 0.5 ? 0 : Math.round(rr(34, 60)));
       const usable = WW - mL - mR - gaps.reduce((a, b) => a + b, 0), ws = [];
       for (let k = 0; k < nP; k++) ws.push(rr(0.9, 1.1));
@@ -206,11 +207,18 @@
       const plots = [];
       let x = mL;
       for (let k = 0; k < nP; k++) { plots.push({ x0: x, x1: x + ws[k], w: ws[k], yF: yN, depth: yN, k }); x += ws[k] + (gaps[k] || 0); }
-      const kinds = shuffle(['shed', 'greenhouse', 'bath', 'toilet']);
-      plots.forEach((pl, k) => fillPlot(pl, k === 0 ? 'shed' : k === 1 ? 'greenhouse' : kinds[k], k, nP > 3));
+      const kinds = shuffle(['shed', 'greenhouse', 'bath', 'toilet']), vacant = nP > 3 ? Math.floor(R() * nP) : -1;
+      let fk = 0;
+      plots.forEach((pl, k) => { if (k === vacant) { pl.vacant = true; fillVacant(pl); } else { fillPlot(pl, fk === 0 ? 'shed' : fk === 1 ? 'greenhouse' : kinds[fk], fk); fk++; } });
       // заборы: передний с калиткой и воротами, боковые — за край съёмки
       const sideDone = new Set();
       for (const pl of plots) {
+        if (pl.vacant) { // межевые знаки по передним углам незастроенного участка
+          const ms = [pt(pl.x0 + 3, pl.yF - 3, 'межевой знак'), pt(pl.x1 - 3, pl.yF - 3, 'межевой знак')];
+          S(24, c => { for (const q of ms) Sym.marker(c, q.x, q.y, 'boundary'); });
+          obj('marker', 'Межевые знаки', ms, 2, { pts: ms.map(q => ({ x: q.x, y: q.y })) });
+          continue;
+        }
         const y = pl.yF, a = pl.x0, b = pl.x1, g0 = pl.gu - 7, g1 = pl.gu + 7, v0 = pl.vu - 11, v1 = pl.vu + 11, edge = -10;
         const kF = pickR(['metal', 'wood', 'wood']), kS = R() < 0.6 ? 'chain' : 'wood';
         const cuts = [[g0, g1], [v0, v1]].sort((p, q) => p[0] - q[0]);
@@ -308,13 +316,25 @@
       }
       for (let k = 0; k < 8; k++) { const x = rr(10, WW - 10), y = roadY(x) + rr(23, 34), r = rr(2.5, 4.5); if (y < WH - 2 && occFree(x - r, y - r, x + r, y + r, 2)) bush(x, y, r); }
       // собака — в одной из усадеб
-      const dp = plots[Math.floor(R() * plots.length)];
+      const built = plots.filter(q => !q.vacant), dp = built[Math.floor(R() * built.length)];
       dogHome = { x0: dp.x0 + 6, x1: dp.x1 - 6, y0: 8, y1: dp.yF - 6 };
       heroStart = { x: rr(40, 60), y: 0 }; heroStart.y = roadY(heroStart.x);
       S(0, c => Sym.ground(c, 0, 0, WW, WH, 'grass', 11));
       S(10, c => Sym.roads(c, streets));
     }
 
+    function fillVacant(pl) { // незастроенный участок под ИЖС: забор, бурьян, бытовка, межевые знаки
+      const { x0, w, yF } = pl, gateLeft = R() < 0.5;
+      pl.vu = Math.round(x0 + (gateLeft ? rr(22, 40) : w - rr(22, 40))); pl.gu = pl.vu + (gateLeft ? 22 : -22);
+      const ms = sdx(); S(2, c => Sym.ground(c, x0, 0, w, yF, 'meadow', ms));
+      for (let k = 0; k < 2; k++) { const fx = x0 + rr(16, w - 60), fy = rr(14, yF - 50), fw = rr(24, 40), fh = rr(16, 28), ds = sdx(); if (occFree(fx, fy, fx + fw, fy + fh, 2)) S(3, c => { c.globalAlpha = 0.55; Sym.ground(c, fx, fy, fw, fh, k ? 'sand' : 'dirt', ds, { poly: ellipsePts(fx + fw / 2, fy + fh / 2, fw / 2, fh / 2, rr(0, 3), 9), edge: 7 }); c.globalAlpha = 1; }); }
+      const L = 20, D = 10, bx = Math.round(x0 + (gateLeft ? w - 40 : 18)), by = Math.round(yF - 30 - D);
+      if (R() < 0.6 && occFree(bx, by, bx + L, by + D, 8)) {
+        const so = { material: 'metal', color: pickR(['#4f7a9a', '#8a8f86', '#3f6b52']), seed: sdx() };
+        addBuilding('shed', bx, by, L, D, ['Бытовка', 'бытовки', 'бытовка'], 'мн', (c, x, y, ww, hh) => Sym.shed(c, x, y, ww, hh, so));
+      }
+      for (let n = 0; n < 10; n++) { const x = x0 + rr(8, w - 8), y = rr(8, yF - 8), r = rr(2.5, 5); if (occFree(x - r, y - r, x + r, y + r, 2)) bush(x, y, r); }
+    }
     function fillPlot(pl, forced, k, lean) {
       const { x0, w, yF, depth } = pl;
       const Pp = (u, v) => ({ x: x0 + u, y: yF - v });
@@ -365,7 +385,7 @@
         return null;
       };
       const list = [forced];
-      if (!lean && R() < 0.3) list.push(pickR(['shed', 'greenhouse', 'bath', 'toilet'].filter(q => q !== forced)));
+      if (!lean && R() < 0.15) list.push(pickR(['shed', 'greenhouse', 'bath', 'toilet'].filter(q => q !== forced)));
       const outs = [];
       for (const kind of list) {
         const rot = R() < 0.5;
@@ -628,7 +648,7 @@
       };
       pond.level = hAt(pond.x, pond.y) - 0.6;
       S(0, c => Sym.ground(c, 0, 0, WW, WH, 'grass', 21));
-      S(5, c => Sym.hillshade(c, 0, 0, WW, WH, hAt, { cell: 3, z: 3, alpha: 0.7 }));
+      S(5, c => Sym.hillshade(c, 0, 0, WW, WH, hAt, { cell: 3, z: 2.2, alpha: 0.5 }));
       S(10, c => Sym.roads(c, streets));
       heroStart = { x: rr(36, 56), y: 0 }; heroStart.y = alleyY(heroStart.x);
     }
@@ -787,7 +807,8 @@
       const c = cellOf(x, y); if (!stationOk(cx(c), cy(c))) continue;
       cands.push({ x: cx(c), y: cy(c), vis: [], ok: false, i: cands.length, adj: null });
     }
-    const visFrom = (sx, sy, p) => { for (let k = 0; k < Math.min(3, p.stand.length); k++) if (!sight(sx, sy, cx(p.stand[k]), cy(p.stand[k]))) return true; return false; };
+    const shoot = (sx, sy, x, y) => hyp(x - sx, y - sy) <= RANGE - 1 && !sight(sx, sy, x, y);
+    const visFrom = (sx, sy, p) => { for (let k = 0; k < Math.min(3, p.stand.length); k++) if (shoot(sx, sy, cx(p.stand[k]), cy(p.stand[k]))) return true; return false; };
     const livePts = pts.filter(p => !p.dead);
     for (const cd of cands) for (const p of livePts) if (visFrom(cd.x, cd.y, p)) cd.vis.push(p.i);
     const adjOf = a => a.adj || (a.adj = cands.filter(b => b !== a && !sight(a.x, a.y, b.x, b.y, false, HI)));
@@ -873,7 +894,16 @@
     const mmUnder = mr => { const sx = (hero.x - camX) * Z, sy = TOP + hero.y * Z; return sx > mr.x - 14 && sx < mr.x + mr.w + 14 && sy < mr.y + mr.h + 30; };
     const toScreen = (x, y) => ({ x: (x - camX) * Z, y: TOP + y * Z });
     const toWorld = p => ({ x: p.x / Z + camX, y: clamp((p.y - TOP) / Z, 0, WH) });
-    const popW = (x, y, t, col) => { const s = toScreen(x, y); api.popup(clamp(s.x, 70, W() - 70), clamp(s.y - 16, TOP + 16, api.H - 20), t, col); };
+    const MC = document.createElement('canvas').getContext('2d');   // мерить ширину всплывающих надписей
+    MC.font = 'bold 13px system-ui, sans-serif';
+    const pops = [];   // недавние надписи — чтобы новые не ложились поверх
+    const popW = (x, y, t, col) => {
+      const s = toScreen(x, y), hw = MC.measureText(t).width / 2 + 6, px = clamp(s.x, hw, W() - hw);
+      let py = clamp(s.y - 16, TOP + 30, api.H - 20);
+      for (let k = 0; k < 4; k++) { if (!pops.some(q => api.now - q.t < 1 && Math.abs(q.y - py) < 14 && Math.abs(q.x - px) < q.hw + hw)) break; py -= 15; }
+      pops.push({ t: api.now, x: px, y: py, hw }); if (pops.length > 8) pops.shift();
+      api.popup(px, py, t, col);
+    };
     function walkTo(x, y) {
       let gc = cellOf(x, y), exact = true;
       if (blocked[gc] || !reach[gc]) { gc = nearestFree(x, y); exact = false; if (gc < 0) return false; }
@@ -899,6 +929,8 @@
       if (over) return;
       if (moving) { api.sfx('warn'); popW(hero.x, hero.y, 'Станция ещё в пути…', api.theme.accent); return; }
       if (placing) { placing = false; preview = null; }
+      const dist = hyp(hero.x - st.x, hero.y - st.y);
+      if (dist > RANGE) { api.sfx('bad'); failFx = 1.1; popW(hero.x, hero.y, `Далеко: ${fmt(dist * MPU, 1)} м — норма до 60 м`, api.theme.bad); return; }
       const blk = sight(st.x, st.y, hero.x, hero.y, true);
       if (blk) {
         api.sfx('bad'); failFx = 1.1;
@@ -964,7 +996,7 @@
       stations[stations.length - 1].left = true;
       placing = false; preview = null;
       api.sfx('select');
-      popW(x, y, 'Переносим станцию' + (inf.n ? ' · отсюда видно точек: ' + inf.n : ''), api.theme.accent);
+      popW(x, y, 'Перенос станции' + (inf.n ? ' · видно точек: ' + inf.n : ''), api.theme.accent);
       return true;
     }
 
@@ -981,7 +1013,7 @@
       if (over) return; over = true;
       const c = NEED ? got / NEED : 1, full = got >= NEED;
       const tLeft = full ? Math.max(0, T_LEVEL - doneAt) : 0, bonus = full ? Math.round(200 * tLeft / T_LEVEL) : 0;
-      const pen = Math.min(150, extra * 15) + Math.max(0, stNo - 5) * 10;
+      const pen = Math.min(150, extra * 15) + Math.max(0, stNo - 6) * 10;
       const score = clamp(Math.round(800 * c + bonus - pen), 0, 1000);
       const stars = score >= 820 ? 3 : score >= 600 ? 2 : score >= 380 ? 1 : 0;
       const doneObjs = liveObjs.filter(o => o.done).length;
@@ -1109,7 +1141,7 @@
         if (f >= 1) {
           st = { x: moving.to.x, y: moving.to.y }; stNo++; moving = null;
           stations.push({ x: st.x, y: st.y, n: stNo, left: false });
-          api.sfx('station'); popW(st.x, st.y, 'Станция ' + stNo + ' готова', api.theme.good);
+          api.sfx('station'); setTimeout(() => api.sfx('measure'), 260); popW(st.x, st.y, 'Станция ' + stNo + ' готова', api.theme.good);
         }
       }
       if (!moving) {
@@ -1117,16 +1149,15 @@
         partner.x = st.x - Math.cos(aim) * 7; partner.y = st.y - Math.sin(aim) * 7; partner.dir = aim;
       }
       nearPt = moving ? null : nearestUntaken(hero.x, hero.y, SNAP);
-      nearVis = moving ? null : sight(st.x, st.y, hero.x, hero.y, true);
+      if (moving) nearVis = null;
+      else { const d = hyp(hero.x - st.x, hero.y - st.y); nearVis = d > RANGE ? { t: RANGE / d, what: 'далеко', far: true } : sight(st.x, st.y, hero.x, hero.y, true); }
       if (time >= T_LEVEL) finish();
       else if (finT >= 0 && time >= finT) finish();
     }
 
     // ---------- отрисовка ----------
     const poly = (ctx, p, close) => { ctx.beginPath(); p.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); if (close) ctx.closePath(); };
-    const PROF = { ui: 0, world: 0, mm: 0 };
     function draw(ctx) {
-      const T0 = performance.now();
       const t = api.now, m = ctx.getTransform(), k = m.a * Z;
       if (layer && Math.abs(layer.k - k) / k > 0.04 && layerFail < 3 && k > 0.5) { layerFail++; buildLayer(Math.min(3 * Z, k)); }
       ctx.save();
@@ -1152,8 +1183,8 @@
         else if (pl.poly && o.kind !== 'pond') { poly(ctx, pl.poly, true); ctx.stroke(); }
         else if (o.kind === 'fence') {
           ctx.beginPath();
-          for (const ln of pl.lines.slice(0, 2)) {
-            const a = ln.pts[0], b = ln.pts[1], pa = o.pts.find(p => hyp(p.x - a.x, p.y - a.y) < 1), pb = o.pts.find(p => hyp(p.x - b.x, p.y - b.y) < 1);
+          for (let i = 0; i < 2; i++) {
+            const a = pl.lines[i].pts[0], b = pl.lines[i].pts[1], pa = pts.find(p => hyp(p.x - a.x, p.y - a.y) < 1), pb = pts.find(p => hyp(p.x - b.x, p.y - b.y) < 1);
             if (pa && pb && pa.taken && pb.taken) { ctx.moveTo(a.x, a.y - 1.2); ctx.lineTo(b.x, b.y - 1.2); }
           }
           ctx.stroke();
@@ -1162,6 +1193,8 @@
         else if (o.kind === 'pond') { if (!fl) ctx.strokeStyle = 'rgba(140,210,255,.95)'; poly(ctx, pond.ring, true); ctx.stroke(); }
         else if (o.kind === 'hill') { if (!fl) ctx.strokeStyle = 'rgba(255,190,110,.7)'; for (const e of hillContours()) { poly(ctx, e.pts, true); ctx.stroke(); } }
       }
+      // зона съёмки со станции: 60 м
+      if (!moving) { ctx.setLineDash([5, 5]); ctx.lineDashOffset = -t * 4; ctx.strokeStyle = 'rgba(255,250,220,.35)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(st.x, st.y, RANGE, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
       // прежние станции (колышки)
       for (const s of stations) if (s.left && vis(s.x)) { Sym.marker(ctx, s.x, s.y, 'boundary'); api.text(ctx, 'Ст' + s.n, s.x + 2.5, s.y - 2.5, 5, '#fff4d0', 'left'); }
       // лишние пикеты
@@ -1231,6 +1264,13 @@
           ctx.strokeStyle = okFx > 0 ? `rgba(255,255,200,${0.5 + okFx})` : 'rgba(120,255,170,.55)'; ctx.lineWidth = okFx > 0 ? 1.2 : 0.6;
           ctx.beginPath(); ctx.moveTo(ix, iy); ctx.lineTo(rx, ry); ctx.stroke();
           ctx.setLineDash([2.5, 7]); ctx.lineDashOffset = -t * 30; ctx.strokeStyle = 'rgba(220,255,230,.85)'; ctx.stroke(); ctx.setLineDash([]);
+        } else if (nearVis.far) {
+          const hx = lerp(st.x, hero.x, nearVis.t), hy = lerp(st.y, hero.y, nearVis.t);
+          ctx.strokeStyle = 'rgba(255,190,80,.8)'; ctx.lineWidth = failFx > 0 ? 1.3 : 0.8; ctx.setLineDash([3, 3]);
+          ctx.beginPath(); ctx.moveTo(ix, iy); ctx.lineTo(hx, hy); ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,190,80,.3)'; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(rx, ry); ctx.stroke(); ctx.setLineDash([]);
+          ctx.fillStyle = '#ffbe50'; ctx.beginPath(); ctx.arc(hx, hy, 1.6, 0, TAU); ctx.fill();
+          pill(ctx, hx, hy - 6, '60 м', '#ffd27a');
         } else {
           const hx = lerp(st.x, hero.x, nearVis.t), hy = lerp(st.y, hero.y, nearVis.t), a = failFx > 0 ? 1 : 0.75;
           ctx.strokeStyle = `rgba(255,90,70,${a})`; ctx.lineWidth = failFx > 0 ? 1.3 : 0.8;
@@ -1245,12 +1285,11 @@
         ctx.setLineDash([2.5, 2.5]); ctx.lineWidth = 0.8; ctx.strokeStyle = inf.ok ? 'rgba(110,255,150,.9)' : 'rgba(255,107,91,.9)';
         ctx.beginPath(); ctx.moveTo(st.x, st.y); ctx.lineTo(inf.hit ? inf.hit.x : preview.x, inf.hit ? inf.hit.y : preview.y); ctx.stroke(); ctx.setLineDash([]);
         ctx.globalAlpha = 0.65; Sym.tripodTop(ctx, preview.x, preview.y, t, { aim: 0, scale: 2 }); ctx.globalAlpha = 1;
+        if (inf.ok) { ctx.setLineDash([3, 4]); ctx.strokeStyle = 'rgba(110,255,150,.45)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(preview.x, preview.y, RANGE, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
         pill(ctx, preview.x, preview.y - 12, inf.ok ? `отсюда видно точек: ${inf.n}` : inf.why, inf.ok ? '#6cff8a' : '#ff9d8f');
       }
       ctx.restore();
-      const T1 = performance.now();
       drawUI(ctx, t);
-      const T2 = performance.now(); PROF.ui = Math.max(PROF.ui, T2 - T1); PROF.world = Math.max(PROF.world, T1 - T0);
     }
     function pill(ctx, x, y, s, col) {
       ctx.font = 'bold 6px system-ui, sans-serif';
@@ -1290,6 +1329,7 @@
       api.text(ctx, l1, px + 7, py + 13, 9, '#9dffc9', 'left');
       let l2, c2 = '#e6fff0';
       if (moving) { l2 = 'Тахеометр в пути — пикеты недоступны'; c2 = '#ffd76a'; }
+      else if (nearVis && nearVis.far) { l2 = `S ${fmt(hyp(hero.x - st.x, hero.y - st.y) * MPU, 1)} м — дальше 60 м!`; c2 = '#ffd27a'; }
       else if (nearVis) { l2 = 'Hz ---°--′  нет отражателя'; c2 = '#ff9d8f'; }
       else { const dx = hero.x - st.x, dy = hero.y - st.y; l2 = `Hz ${dms(Math.atan2(dx, -dy) * 180 / Math.PI)}  S ${fmt(hyp(dx, dy) * MPU, 2)} м  H ${fmt(hAt(hero.x, hero.y), 2)}`; }
       ctx.save(); ctx.font = '600 9px ui-monospace, Menlo, Consolas, monospace'; ctx.fillStyle = c2; ctx.textAlign = 'left'; ctx.fillText(l2, px + 7, py + 26); ctx.restore();
@@ -1309,6 +1349,8 @@
       ctx.strokeStyle = 'rgba(30,30,30,.8)'; ctx.lineWidth = 1; ctx.strokeRect(mr.x + camX * sm, mr.y + 0.5, Math.min(VW(), WW) * sm, mr.h - 1);
       for (const s of stations) if (s.left) { ctx.fillStyle = '#7a4a20'; ctx.fillRect(mr.x + s.x * sm - 1.5, mr.y + s.y * sm - 1.5, 3, 3); }
       const sp = moving ? moving.to : st;
+      ctx.save(); ctx.beginPath(); ctx.rect(mr.x, mr.y, mr.w, mr.h); ctx.clip(); ctx.strokeStyle = 'rgba(29,111,209,.55)'; ctx.lineWidth = 1; ctx.setLineDash([3, 2]);
+      ctx.beginPath(); ctx.arc(mr.x + sp.x * sm, mr.y + sp.y * sm, RANGE * sm, 0, TAU); ctx.stroke(); ctx.restore();
       ctx.fillStyle = '#1d6fd1'; ctx.beginPath(); ctx.moveTo(mr.x + sp.x * sm, mr.y + sp.y * sm - 3.5); ctx.lineTo(mr.x + sp.x * sm + 3, mr.y + sp.y * sm + 2); ctx.lineTo(mr.x + sp.x * sm - 3, mr.y + sp.y * sm + 2); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#ff7a1c'; ctx.beginPath(); ctx.arc(mr.x + hero.x * sm, mr.y + hero.y * sm, 2.4, 0, TAU); ctx.fill();
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.8; ctx.stroke();
@@ -1325,11 +1367,11 @@
       const bp = btnP(), bs = btnS(), ready = !moving && nearPt && !nearVis;
       api.button(ctx, bs, placing ? 'ОТМЕНА' : 'СТАНЦИЯ', { active: placing, color: placing ? '#ffd76a' : '#7ec8ff', size: 13, disabled: !!moving });
       api.button(ctx, bp, 'ПИКЕТ', { active: !!ready, color: ready ? (Math.sin(t * 8) > 0 ? '#6cff8a' : '#9dffb5') : api.theme.accent, size: 17, disabled: !!moving });
-      if (placing) {
-        const s = api.IS_TOUCH ? 'Тап по карте — место новой станции (должна видеть прежнюю)' : 'Клик по карте — место новой станции (должна видеть прежнюю) · Пробел — здесь';
-        ctx.font = 'bold 11px system-ui, sans-serif'; const w = Math.min(Wd - 20, ctx.measureText(s).width + 20);
-        ctx.fillStyle = 'rgba(20,14,10,.85)'; api.roundRect(ctx, Wd / 2 - w / 2, TOP + 40, w, 20, 8); ctx.fill();
-        api.text(ctx, s, Wd / 2, TOP + 54, 11, '#ffd76a');
+      if (placing) { // подсказка внизу слева, не под кнопками
+        const s = api.IS_TOUCH ? 'Тап по карте — место станции (должна видеть прежнюю)' : 'Клик по карте — место станции (должна видеть прежнюю) · Пробел — здесь';
+        ctx.font = 'bold 11px system-ui, sans-serif'; const w = Math.min(Wd - 140, ctx.measureText(s).width + 20);
+        ctx.fillStyle = 'rgba(20,14,10,.86)'; api.roundRect(ctx, 8, api.H - 30, w, 22, 8); ctx.fill();
+        ctx.save(); ctx.beginPath(); ctx.rect(8, api.H - 30, w, 22); ctx.clip(); api.text(ctx, s, 18, api.H - 15, 11, '#ffd76a', 'left'); ctx.restore();
       }
       const left = T_LEVEL - time;
       if (left < 10 && !over) api.text(ctx, String(Math.ceil(left)), Wd / 2, TOP + 34, 18, `rgba(255,107,91,${0.5 + 0.5 * Math.sin(t * 8)})`);
@@ -1352,6 +1394,7 @@
         else if (o.kind === 'tree') { c.fillStyle = '#2e8540'; c.beginPath(); c.arc(pl.x, pl.y, 1.8 * lw, 0, TAU); c.fill(); }
         else if (o.kind === 'manhole' || o.kind === 'well' || o.kind === 'hydrant') { c.strokeStyle = o.kind === 'hydrant' ? '#d0302a' : '#2b6cb0'; c.lineWidth = 0.7 * lw; c.beginPath(); c.arc(pl.x, pl.y, 1.5 * lw, 0, TAU); c.stroke(); }
         else if (o.kind === 'flowerbed') { c.fillStyle = '#e78ab0'; c.beginPath(); c.arc(pl.x, pl.y, 1.6 * lw, 0, TAU); c.fill(); }
+        else if (o.kind === 'marker') { c.strokeStyle = '#c0392b'; c.lineWidth = 0.6 * lw; c.setLineDash([3 * lw, 2 * lw]); poly(c, pl.pts); c.stroke(); c.setLineDash([]); }
         else { c.fillStyle = '#1f1d1a'; c.beginPath(); c.arc(pl.x, pl.y, 1.2 * lw, 0, TAU); c.fill(); }
       }
       c.fillStyle = '#c0392b';
@@ -1372,7 +1415,9 @@
       try {
         Sym.plan.paper(c, 0, 0, w, h, { stamp: false, grid: -1, margin: 4 });
         api.text(c, 'Топографический план М 1:500', w / 2, 16, 10, '#1f1d1a');
-        api.text(c, variant.title + ' · сечение рельефа 0,5 м · система высот Балтийская', w / 2, 26, 6.5, '#4a443c', 'center', '600');
+        let sub = variant.title + ' · сечение рельефа 0,5 м · Балтийская система высот';
+        c.font = '600 6.5px system-ui, sans-serif'; if (c.measureText(sub).width > w - 16) sub = variant.title + ' · сечение 0,5 м · БСВ';
+        api.text(c, sub, w / 2, 26, 6.5, '#4a443c', 'center', '600');
         const half = WW / 2, top = 31, gap = 13, s = Math.min((w - 18) / half, (h - top - 12 - gap) / (2 * WH));
         const pw = half * s, ph = WH * s, ox = (w - pw) / 2;
         const q = 1.8 / s;   // увеличение условных знаков: «единица знака» = 1,8 пикселя листа
@@ -1397,7 +1442,7 @@
     function planContents(c, k) { // мировые координаты × k — координаты знаков
       const P = p => p.map(q => ({ x: q.x * k, y: q.y * k })), at = o => ({ x: o.x * k, y: o.y * k });
       const SP = Sym.plan;
-      const order = ['hill', 'ravine', 'pond', 'road', 'path', 'grove', 'playground', 'flowerbed', 'fence', 'annex', 'house', 'shed', 'bath', 'toilet', 'greenhouse', 'manhole', 'well', 'hydrant', 'bench', 'pole', 'lamp', 'tree'];
+      const order = ['hill', 'ravine', 'pond', 'road', 'path', 'grove', 'playground', 'flowerbed', 'marker', 'fence', 'annex', 'house', 'shed', 'bath', 'toilet', 'greenhouse', 'manhole', 'well', 'hydrant', 'bench', 'pole', 'lamp', 'tree'];
       const list = liveObjs.filter(o => o.done).sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
       for (const o of list) {
         const pl = o.plan;
@@ -1423,6 +1468,11 @@
           case 'manhole': { const m = at(pl); SP.manhole(c, m.x, m.y, pl.kind); break; }
           case 'well': { const m = at(pl); c.beginPath(); c.arc(m.x, m.y, 1.5, 0, TAU); c.strokeStyle = '#2b6cb0'; c.lineWidth = 0.4; c.stroke(); c.beginPath(); c.arc(m.x, m.y, 0.5, 0, TAU); c.fillStyle = '#2b6cb0'; c.fill(); SP.label(c, m.x + 2.2, m.y - 2.2, 'кол.', 2.8, '#2b6cb0', 0, 600, 'left'); break; }
           case 'hydrant': { const m = at(pl); c.beginPath(); c.arc(m.x, m.y, 1.2, 0, TAU); c.fillStyle = '#d0302a'; c.fill(); SP.label(c, m.x + 2, m.y - 2, 'ПГ', 2.8, '#d0302a', 0, 700, 'left'); break; }
+          case 'marker': {
+            const p = P(pl.pts); c.save(); c.setLineDash([2.4, 0.8, 0.4, 0.8]); c.strokeStyle = '#1f1d1a'; c.lineWidth = 0.3; poly(c, p); c.stroke(); c.restore();
+            for (const q of p) { c.beginPath(); c.arc(q.x, q.y, 0.9, 0, TAU); c.fillStyle = '#fff'; c.fill(); c.strokeStyle = '#c0392b'; c.lineWidth = 0.35; c.stroke(); }
+            SP.label(c, (p[0].x + p[1].x) / 2, p[0].y - 1.6, 'граница участка', 2.4, '#4a443c'); break;
+          }
           case 'bench': { const m = at(pl); c.save(); c.translate(m.x, m.y); c.rotate(pl.rot || 0); c.strokeStyle = '#1f1d1a'; c.lineWidth = 0.35; c.strokeRect(-1.8, -0.6, 3.6, 1.2); c.restore(); break; }
         }
       }
@@ -1459,7 +1509,7 @@
       const cand = [];
       for (const p of pts) {
         if (p.taken || p.dead || !objOpen(p) || bot.skip.has(p.i)) continue;
-        for (const c of p.stand) if (!sight(S0.x, S0.y, cx(c), cy(c))) { cand.push({ p, c, d: hyp(cx(c) - hero.x, cy(c) - hero.y) }); break; }
+        for (const c of p.stand) if (shoot(S0.x, S0.y, cx(c), cy(c))) { cand.push({ p, c, d: hyp(cx(c) - hero.x, cy(c) - hero.y) }); break; }
       }
       if (!cand.length) return false;
       cand.sort((a, b) => a.d - b.d);
@@ -1504,7 +1554,7 @@
       if (!atSpot) { if (bot.t > 9) { bot.skip.add(bot.p.i); bot.p = null; } return; }
       if (moving) return;
       const np = nearestUntaken(hero.x, hero.y, SNAP);
-      if (!np || sight(st.x, st.y, hero.x, hero.y, false)) { bot.skip.add(bot.p.i); bot.p = null; return; }
+      if (!np || !shoot(st.x, st.y, hero.x, hero.y)) { bot.skip.add(bot.p.i); bot.p = null; return; }
       if (sight(st.x, st.y, hero.x, hero.y, true) || ducks.some(d => d.state === 'shore' && hyp(d.x - hero.x, d.y - hero.y) < 7)) {
         bot.retry += dt + 0.15; if (bot.retry > 5) { bot.skip.add(bot.p.i); bot.p = null; } bot.wait = 0.15; return;
       }
@@ -1515,7 +1565,7 @@
     // ---------- ввод ----------
     const inst = {
       update, draw,
-      hud() { return { time: Math.max(0, T_LEVEL - time), info: [`Точки ${got}/${NEED}`, `Ст.${stNo}`], progress: NEED ? got / NEED : 1 }; },
+      hud() { return { time: Math.max(0, T_LEVEL - time), info: [api.W >= 700 ? `Точки ${got}/${NEED} · Ст.${stNo}` : `${got}/${NEED}`], progress: NEED ? got / NEED : 1 }; },
       pointerDown(p) {
         if (over) return;
         if (api.hit(btnP(), p)) { picket(); return; }
@@ -1549,7 +1599,7 @@
       },
       bot(dt) { botStep(dt); },
     };
-    inst._dbg = { PROF, get NEED() { return NEED; }, get got() { return got; }, pts, objs, cands, s0, get extra() { return extra; }, get stNo() { return stNo; }, WW };
+    inst._dbg = { get NEED() { return NEED; }, get got() { return got; }, pts, objs, cands, s0, get extra() { return extra; }, get stNo() { return stNo; }, WW, hero, get st() { return st; }, get camX() { return camX; }, set camX(v) { camX = v; }, sight, free, RANGE, Z, toScreen };
     return inst;
   }
 })();
