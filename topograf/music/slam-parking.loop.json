@@ -1,0 +1,24 @@
+{
+  "id": "slam/parking",
+  "file": "slam-parking",
+  "duration": 63.3066,
+  "loop_start": 0,
+  "loop_end": 63.3066,
+  "samplerate": 48000,
+  "bpm": 92.0,
+  "bars": 24,
+  "beats_per_bar": 4,
+  "key": "D minor",
+  "lufs": -17.24,
+  "true_peak_dbtp": -1.0,
+  "seam": 0.9,
+  "crossfade_ms": 652.2,
+  "source_window_s": [
+    33.5733,
+    96.8799
+  ],
+  "seed": 1096155084,
+  "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, underground parking garage, echoing and dusky, focused, steady hypnotic pulse, repeating four-bar synth arpeggio motif, warm synth pad, soft pulsing bass, light sonar-like pings, long reverb",
+  "engine": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+  "made_by": "music-generator 0.3.0 (локальный Claude)"
+}
