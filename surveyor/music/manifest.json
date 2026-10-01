@@ -1,0 +1,427 @@
+{
+  "about": "Музыка игры от локального Claude (раздел «Музыка для игр» в CLAUDE.md). Каждый файл — готовая бесшовная петля; не перекодировать и не обрезать.",
+  "updated": "2026-10-01",
+  "loudness_lufs": -16,
+  "true_peak_max_dbtp": -1,
+  "formats": [
+    "ogg",
+    "mp3"
+  ],
+  "tracks": [
+    {
+      "id": "01-city",
+      "use": "level",
+      "level": 1,
+      "title": "Городская стройка",
+      "files": {
+        "ogg": "01-city.ogg",
+        "mp3": "01-city.mp3"
+      },
+      "duration_s": 25.6,
+      "loop_start_s": 0,
+      "loop_end_s": 25.6,
+      "samplerate": 48000,
+      "bpm": 150.0,
+      "beats_per_bar": 4,
+      "bars": 16,
+      "key": "A minor",
+      "lufs": -16.0,
+      "true_peak_dbtp": -3.34,
+      "seam_similarity": 0.974,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 227541460,
+        "caption": "energetic folk punk rock instrumental, driving distorted electric guitars, fast drums, bass guitar, mischievous accordion melody, playful and cheeky, video game level music",
+        "variant": "ready",
+        "sound_reference": false,
+        "source_file": "city-punk-163431-v1.flac",
+        "loop_from_s": [
+          35.024,
+          60.624
+        ],
+        "made_by": "music-generator 0.3.0 (локальный Claude)"
+      }
+    },
+    {
+      "id": "02-pit",
+      "use": "level",
+      "level": 2,
+      "title": "Котлован",
+      "files": {
+        "ogg": "02-pit.ogg",
+        "mp3": "02-pit.mp3"
+      },
+      "duration_s": 48.0,
+      "loop_start_s": 0,
+      "loop_end_s": 48.0,
+      "samplerate": 48000,
+      "bpm": 140.0,
+      "beats_per_bar": 4,
+      "bars": 28,
+      "key": "E minor",
+      "lufs": -16.0,
+      "true_peak_dbtp": -2.64,
+      "seam_similarity": 0.878,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 1572548181,
+        "caption": "folk punk rock instrumental, distorted electric guitars, punchy drums, bass guitar, accordion lead melody, video game level music, heavy and stomping, low palm-muted guitar riffs, digging groove, gritty and determined",
+        "variant": "a",
+        "sound_reference": true,
+        "source_file": "02-pit-a-185357-v1.flac",
+        "loop_from_s": [
+          5.7013,
+          53.7013
+        ],
+        "made_by": "music-generator 0.3.0 (локальный Claude)",
+        "sound_reference_label": "«Город» city-punk-163431-v1, выбран пользователем 2026-10-01"
+      }
+    },
+    {
+      "id": "03-metro",
+      "use": "level",
+      "level": 3,
+      "title": "Метро",
+      "files": {
+        "ogg": "03-metro.ogg",
+        "mp3": "03-metro.mp3"
+      },
+      "duration_s": 72.8273,
+      "loop_start_s": 0,
+      "loop_end_s": 72.8273,
+      "samplerate": 48000,
+      "bpm": 145.0,
+      "beats_per_bar": 2,
+      "bars": 88,
+      "key": "D minor",
+      "lufs": -16.0,
+      "true_peak_dbtp": -3.28,
+      "seam_similarity": 0.877,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 1871038903,
+        "caption": "folk punk rock instrumental, distorted electric guitars, punchy drums, bass guitar, accordion lead melody, video game level music, dark underground tunnel mood, rumbling bass, echoing reverb, tense minor-key accordion, mechanical driving rhythm",
+        "variant": "b",
+        "sound_reference": false,
+        "source_file": "03-metro-b-184444-v1.flac",
+        "loop_from_s": [
+          8.272,
+          81.0993
+        ],
+        "made_by": "music-generator 0.3.0 (локальный Claude)"
+      }
+    },
+    {
+      "id": "04-mine",
+      "use": "level",
+      "level": 4,
+      "title": "Угольная шахта",
+      "files": {
+        "ogg": "04-mine.ogg",
+        "mp3": "04-mine.mp3"
+      },
+      "duration_s": 60.0,
+      "loop_start_s": 0,
+      "loop_end_s": 60.0,
+      "samplerate": 48000,
+      "bpm": 128.0,
+      "beats_per_bar": 4,
+      "bars": 32,
+      "key": "C minor",
+      "lufs": -16.0,
+      "true_peak_dbtp": -2.43,
+      "seam_similarity": 0.98,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 735937051,
+        "caption": "folk punk rock instrumental, distorted electric guitars, punchy drums, bass guitar, accordion lead melody, video game level music, mysterious and dark, sparse eerie accordion, ominous low guitars, cave echoes, slow-burning tension",
+        "variant": "a",
+        "sound_reference": true,
+        "source_file": "04-mine-a-185605-v1.flac",
+        "loop_from_s": [
+          3.632,
+          63.632
+        ],
+        "made_by": "music-generator 0.3.0 (локальный Claude)",
+        "sound_reference_label": "«Город» city-punk-163431-v1, выбран пользователем 2026-10-01"
+      }
+    },
+    {
+      "id": "05-quarry",
+      "use": "level",
+      "level": 5,
+      "title": "Карьер",
+      "files": {
+        "ogg": "05-quarry.ogg",
+        "mp3": "05-quarry.mp3"
+      },
+      "duration_s": 30.6068,
+      "loop_start_s": 0,
+      "loop_end_s": 30.6068,
+      "samplerate": 48000,
+      "bpm": 155.0,
+      "beats_per_bar": 4,
+      "bars": 20,
+      "key": "G major",
+      "lufs": -16.0,
+      "true_peak_dbtp": -2.54,
+      "seam_similarity": 0.578,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 446818526,
+        "caption": "folk punk rock instrumental, distorted electric guitars, punchy drums, bass guitar, accordion lead melody, video game level music, big and explosive, wide open sound, pounding drums, triumphant accordion hook, dusty and powerful",
+        "variant": "a",
+        "sound_reference": true,
+        "source_file": "05-quarry-a-185651-v1.flac",
+        "loop_from_s": [
+          29.4453,
+          60.0521
+        ],
+        "made_by": "music-generator 0.3.0 (локальный Claude)",
+        "sound_reference_label": "«Город» city-punk-163431-v1, выбран пользователем 2026-10-01"
+      }
+    },
+    {
+      "id": "06-road",
+      "use": "level",
+      "level": 6,
+      "title": "Дорожная стройка",
+      "files": {
+        "ogg": "06-road.ogg",
+        "mp3": "06-road.mp3"
+      },
+      "duration_s": 22.8572,
+      "loop_start_s": 0,
+      "loop_end_s": 22.8572,
+      "samplerate": 48000,
+      "bpm": 165.0,
+      "beats_per_bar": 4,
+      "bars": 16,
+      "key": "E major",
+      "lufs": -16.0,
+      "true_peak_dbtp": -3.28,
+      "seam_similarity": 0.758,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 80181349,
+        "caption": "folk punk rock instrumental, distorted electric guitars, punchy drums, bass guitar, accordion lead melody, video game level music, fast and carefree road trip punk, galloping rhythm, sunny and hot, catchy accordion riff",
+        "variant": "a",
+        "sound_reference": true,
+        "source_file": "06-road-a-185736-v1.flac",
+        "loop_from_s": [
+          48.2187,
+          71.0759
+        ],
+        "made_by": "music-generator 0.3.0 (локальный Claude)",
+        "sound_reference_label": "«Город» city-punk-163431-v1, выбран пользователем 2026-10-01"
+      }
+    },
+    {
+      "id": "07-bridge",
+      "use": "level",
+      "level": 7,
+      "title": "Мост через реку",
+      "files": {
+        "ogg": "07-bridge.ogg",
+        "mp3": "07-bridge.mp3"
+      },
+      "duration_s": 64.0,
+      "loop_start_s": 0,
+      "loop_end_s": 64.0,
+      "samplerate": 48000,
+      "bpm": 150.0,
+      "beats_per_bar": 4,
+      "bars": 40,
+      "key": "D major",
+      "lufs": -16.0,
+      "true_peak_dbtp": -2.99,
+      "seam_similarity": 0.976,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 1733010571,
+        "caption": "folk punk rock instrumental, distorted electric guitars, punchy drums, bass guitar, accordion lead melody, video game level music, heroic and soaring, anthemic accordion melody, wide open sky over the river, uplifting and brave",
+        "variant": "a",
+        "sound_reference": true,
+        "source_file": "07-bridge-a-185822-v1.flac",
+        "loop_from_s": [
+          11.824,
+          75.824
+        ],
+        "made_by": "music-generator 0.3.0 (локальный Claude)",
+        "sound_reference_label": "«Город» city-punk-163431-v1, выбран пользователем 2026-10-01"
+      }
+    },
+    {
+      "id": "08-tower",
+      "use": "level",
+      "level": 8,
+      "title": "Небоскрёб",
+      "files": {
+        "ogg": "08-tower.ogg",
+        "mp3": "08-tower.mp3"
+      },
+      "duration_s": 49.6,
+      "loop_start_s": 0,
+      "loop_end_s": 49.6,
+      "samplerate": 48000,
+      "bpm": 155.0,
+      "beats_per_bar": 4,
+      "bars": 32,
+      "key": "B minor",
+      "lufs": -16.0,
+      "true_peak_dbtp": -2.4,
+      "seam_similarity": 0.924,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 24894315,
+        "caption": "folk punk rock instrumental, distorted electric guitars, punchy drums, bass guitar, accordion lead melody, video game level music, tense climbing energy, urgent tremolo guitars, rising chord progression, dizzying height and wind, dramatic",
+        "variant": "a",
+        "sound_reference": true,
+        "source_file": "08-tower-a-185909-v1.flac",
+        "loop_from_s": [
+          20.7733,
+          70.3733
+        ],
+        "made_by": "music-generator 0.3.0 (локальный Claude)",
+        "sound_reference_label": "«Город» city-punk-163431-v1, выбран пользователем 2026-10-01"
+      }
+    },
+    {
+      "id": "09-tundra",
+      "use": "level",
+      "level": 9,
+      "title": "Газопровод в тундре",
+      "files": {
+        "ogg": "09-tundra.ogg",
+        "mp3": "09-tundra.mp3"
+      },
+      "duration_s": 25.6,
+      "loop_start_s": 0,
+      "loop_end_s": 25.6,
+      "samplerate": 48000,
+      "bpm": 150.0,
+      "beats_per_bar": 4,
+      "bars": 16,
+      "key": "A minor",
+      "lufs": -16.0,
+      "true_peak_dbtp": -4.54,
+      "seam_similarity": 0.937,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 1003178960,
+        "caption": "folk punk rock instrumental, distorted electric guitars, punchy drums, bass guitar, accordion lead melody, video game level music, frosty northern folk punk, icy sleigh bells, wild blizzard chase, Russian folk accordion, cold and rugged",
+        "variant": "a",
+        "sound_reference": true,
+        "source_file": "09-tundra-a-185956-v1.flac",
+        "loop_from_s": [
+          35.344,
+          60.944
+        ],
+        "made_by": "music-generator 0.3.0 (локальный Claude)",
+        "sound_reference_label": "«Город» city-punk-163431-v1, выбран пользователем 2026-10-01"
+      }
+    },
+    {
+      "id": "10-dam",
+      "use": "level",
+      "level": 10,
+      "title": "ГЭС: сдача объекта",
+      "files": {
+        "ogg": "10-dam.ogg",
+        "mp3": "10-dam.mp3"
+      },
+      "duration_s": 59.6008,
+      "loop_start_s": 0,
+      "loop_end_s": 59.6008,
+      "samplerate": 48000,
+      "bpm": 160.0,
+      "beats_per_bar": 4,
+      "bars": 40,
+      "key": "E minor",
+      "lufs": -16.0,
+      "true_peak_dbtp": -2.98,
+      "seam_similarity": 0.696,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 1159932640,
+        "caption": "folk punk rock instrumental, distorted electric guitars, punchy drums, bass guitar, accordion lead melody, video game level music, epic final level, dramatic and powerful, roaring guitars, thundering drums, heroic accordion theme, grand finale",
+        "variant": "a",
+        "sound_reference": true,
+        "source_file": "10-dam-a-190040-v1.flac",
+        "loop_from_s": [
+          4.0267,
+          63.6275
+        ],
+        "made_by": "music-generator 0.3.0 (локальный Claude)",
+        "sound_reference_label": "«Город» city-punk-163431-v1, выбран пользователем 2026-10-01"
+      }
+    },
+    {
+      "id": "menu",
+      "use": "menu",
+      "title": "Меню",
+      "files": {
+        "ogg": "menu.ogg",
+        "mp3": "menu.mp3"
+      },
+      "duration_s": 32.0,
+      "loop_start_s": 0,
+      "loop_end_s": 32.0,
+      "samplerate": 48000,
+      "bpm": 120.0,
+      "beats_per_bar": 4,
+      "bars": 16,
+      "key": "C major",
+      "lufs": -16.0,
+      "true_peak_dbtp": -1.94,
+      "seam_similarity": 0.736,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 1563811969,
+        "caption": "folk punk rock instrumental, distorted electric guitars, punchy drums, bass guitar, accordion lead melody, video game level music, cheerful and relaxed, light drums, friendly accordion tune, laid-back title screen music",
+        "variant": "a",
+        "sound_reference": true,
+        "source_file": "menu-a-190131-v1.flac",
+        "loop_from_s": [
+          28.9973,
+          60.9974
+        ],
+        "made_by": "music-generator 0.3.0 (локальный Claude)",
+        "sound_reference_label": "«Город» city-punk-163431-v1, выбран пользователем 2026-10-01"
+      }
+    },
+    {
+      "id": "boss",
+      "use": "boss",
+      "title": "Бой с боссом (ГЭС)",
+      "files": {
+        "ogg": "boss.ogg",
+        "mp3": "boss.mp3"
+      },
+      "duration_s": 43.6361,
+      "loop_start_s": 0,
+      "loop_end_s": 43.6361,
+      "samplerate": 48000,
+      "bpm": 175.0,
+      "beats_per_bar": 4,
+      "bars": 32,
+      "key": "D minor",
+      "lufs": -16.0,
+      "true_peak_dbtp": -2.92,
+      "seam_similarity": 0.81,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 1875505505,
+        "caption": "folk punk rock instrumental, distorted electric guitars, punchy drums, bass guitar, accordion lead melody, video game level music, intense boss battle, fast aggressive drums, menacing distorted riffs, frantic accordion, high tension and danger",
+        "variant": "b",
+        "sound_reference": false,
+        "source_file": "boss-b-185131-v1.flac",
+        "loop_from_s": [
+          29.3387,
+          72.9748
+        ],
+        "made_by": "music-generator 0.3.0 (локальный Claude)"
+      }
+    }
+  ]
+}
