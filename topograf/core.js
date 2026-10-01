@@ -108,7 +108,7 @@ function registerMode(m) {
 let mode = 'menu'; // menu | intro | play | pause | clear | over
 let levelIdx = 0, startLevel = 0, practice = false, inst = null, result = null, overAt = 0, menuLevel = 0;
 // песочница: все уровни открыты, время не ограничено, без рейтинга; выбор режима запоминается
-const SANDBOX_KEY = 'topograf-sandbox', TIME_BONUS = 1.3; // в смене у каждого уровня на 30 % больше базового времени
+const SANDBOX_KEY = 'topograf-sandbox', LEVEL_TIME = 240; // в смене каждый уровень — 4 минуты («Пикет» сам ставит себе 5)
 let sandbox = false; try { sandbox = localStorage.getItem(SANDBOX_KEY) === '1'; } catch (e) {}
 function setSandbox(on) { sandbox = on; try { localStorage.setItem(SANDBOX_KEY, on ? '1' : '0'); } catch (e) {} menuLevel = clamp(menuLevel, 0, maxSelectable() - 1); Sound.play('select'); }
 const maxSelectable = () => sandbox ? LEVELS.length : Math.min(Math.max(unlocked, forcedLevel + 1), LEVELS.length);
@@ -131,7 +131,7 @@ const api = {
   layer: makeLayer,
   finish(r) { if (mode === 'play' && !result) finishLevel(r); },
   get sandbox() { return sandbox; },
-  timeLimit(base) { return sandbox ? 1e6 : Math.round(base * TIME_BONUS / 5) * 5; }, // время уровня по базовому из моды
+  timeLimit(base) { return sandbox ? 1e6 : LEVEL_TIME; }, // время уровня: в смене 4 минуты (просьба пользователя; base моды больше не влияет), в песочнице без предела
   theme: THEME,
 };
 
