@@ -16,9 +16,27 @@
    • Углы — в радианах, 0 = восток (+x), положительные — по часовой (y вниз).
    • Всё «случайное» в рисунке — из seed (или из координат, если seed не задан),
      объекты не мерцают между кадрами. Текстуры генерируются один раз и кэшируются.
-   Дополнительно (сверх MODES.md): Sym.roads(ctx, list) — несколько дорог слоями
-   (сначала все бордюры, потом покрытие — чистые перекрёстки), Sym.hash, Sym.rng,
-   Sym.plan.label(ctx, x, y, text, size, color, rot).
+   Необязательные параметры сверх MODES.md (все можно не передавать):
+     ground(…, kind, seed, {poly, edge}) — залить сглаженный контур вместо прямоугольника;
+     road(…, kind, {seed, smooth:false, marking:false, cap}); manhole(ctx, x, y, kind, r=1.7, rot);
+     pole(ctx, x, y, kind, rot) — rot: направление линии/кронштейна; wires(…, kind='power'|'tele');
+     gate(ctx, x, y, w, rot, open 0..1); house opt: {height, material:'tile'|'metal'|'shingle',
+     solar, skylights, dish, chimney}; building/shed/greenhouse/garages opt.rot; shed opt.roof;
+     garages opt {w, h, apron}; hillshade opt {cell=4, z=1, alpha=.6, key}; surveyorTop opt
+     {pole, scale, vest, helmet}; tripodTop opt {aim, scale, legs}; dogTop(…, color);
+     plan.road(…, label='а'|null); plan.water(ctx, pts, width) — с width рисуется как река/ручей;
+     plan.slope(…, color); plan.pole(…, rot); plan.paper opt {title, scale, grid=100, gridX, gridY,
+     stamp=false, header, section, system, author, margin}.
+   Дополнительные функции: Sym.roads(ctx, [{pts, width, kind, seed, opt}]) — несколько дорог
+   слоями (сначала все бордюры, потом покрытие — чистые перекрёстки); Sym.plan.label(ctx, x, y,
+   text, size, color, rot); Sym.hash(seed, i), Sym.rng(seed); Sym.colors.
+   Производительность: тяжёлые статичные объекты (земля, дороги, дома, деревья, водоёмы…)
+   рисуются один раз в спрайт под текущий масштаб экрана и затем выводятся одним drawImage
+   (LRU-кэш ~8 Мпикс). Sym.cache = false — отключить; Sym.clearCache() — освободить память
+   (например, в конце уровня); Sym.prepare() — заранее сгенерировать текстуры (~0,2 с).
+   Подвижные объекты: car/personTop без seed не меняют вид при движении (seed по умолчанию
+   не зависит от координат); у car угол квантуется до 1°. Для hillshade передавайте одну и ту же
+   функцию высот (или opt.key) — иначе кэш не сработает.
    ========================================================================== */
 const Sym = (() => {
   'use strict';
@@ -498,9 +516,9 @@ const Sym = (() => {
       return r.c;
     },
     // штриховка огнестойких зданий на плане (45°, шаг 1,6 ед.)
-    hatch: () => {
-      const n = 32, c = mkCanvas(n, n), g = c.getContext('2d');
-      g.strokeStyle = 'rgba(196,84,58,.55)'; g.lineWidth = 0.6; g.beginPath();
+    hatch: () => { // 8 px/ед., плитка 16 ед.
+      const n = 128, c = mkCanvas(n, n), g = c.getContext('2d');
+      g.strokeStyle = 'rgba(196,84,58,.55)'; g.lineWidth = 2.2; g.beginPath();
       for (let t = -n; t <= 2 * n; t += n / 10) { g.moveTo(t, n); g.lineTo(t + n, 0); }
       g.stroke();
       return c;
@@ -543,7 +561,7 @@ const Sym = (() => {
     const key = name + '@' + f;
     if (key in _pats) return _pats[key];
     const src = texCanvas(name), n = Math.round(src.width * f);
-    if (n > 1100 || Math.abs(n - src.width * f) > 1e-6) return (_pats[key] = null);
+    if (n > 1100 || n < 4 || Math.abs(n - src.width * f) > 1e-6) return (_pats[key] = null);
     const c = mkCanvas(n, n), g = c.getContext('2d');
     g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
     // три копии по краям — чтобы сглаживание на швах учитывало соседнюю плитку
@@ -559,7 +577,7 @@ const Sym = (() => {
       const m = ctx.getTransform();
       if (m.b === 0 && m.c === 0 && m.a > 0 && Math.abs(m.a - m.d) < 1e-9) {
         const f = sc * m.a, fq = Math.round(f * 4) / 4;
-        if (fq >= 0.5 && fq <= 24 && Math.abs(f - fq) < 1e-6) {
+        if (fq >= 0.125 && fq <= 24 && Math.abs(f - fq) < 1e-6) {
           const p = patRes(name, fq);
           if (p && p.setTransform) {
             const k = m.a, dx = Math.round(k * (ox || 0) + m.e) - m.e, dy = Math.round(k * (oy || 0) + m.f) - m.f;
@@ -2236,7 +2254,7 @@ const Sym = (() => {
     ctx.save();
     ctx.beginPath(); polyPath(ctx, p, true);
     ctx.fillStyle = fire ? 'rgba(236,150,112,.28)' : 'rgba(246,214,110,.38)'; ctx.fill();
-    if (fire) { ctx.fillStyle = patT('hatch', 0, 0, 0, 0, ctx); ctx.fill(); }
+    if (fire) { ctx.fillStyle = patT('hatch', 0, 0, 0, 1 / 8, ctx); ctx.fill(); }
     ctx.beginPath(); polyPath(ctx, p, true);
     ctx.strokeStyle = INK; ctx.lineWidth = 0.6; ctx.lineJoin = 'miter'; ctx.stroke();
     if (lab) {
@@ -2590,6 +2608,8 @@ const Sym = (() => {
     version: 1,
     cache: true,                       // false — рисовать всё напрямую, без спрайтов
     clearCache() { SPR.clear(); sprPx = 0; },
+    // заранее сгенерировать текстуры (например, пока показывается меню): Sym.prepare() или Sym.prepare(['grass', 'asphalt'])
+    prepare(kinds) { for (const k of kinds || Object.keys(GROUND_MACRO).concat(['macro', 'grain', 'paper', 'hatch'])) if (GEN[k]) texCanvas(k); },
     cacheInfo() { return { sprites: SPR.size, pixels: sprPx }; },
     plan,
     hash: (s, i) => hash(toSeed(s), i || 0),
