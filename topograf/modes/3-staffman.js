@@ -10,7 +10,7 @@
   const MX = 4;               // ед. на метр по горизонтали (пикет 20 м = 80 ед.)
   const VY = 14;              // ед. на метр по вертикали; в этом же масштабе люди и предметы (рельеф ×3,5)
   const PK = 80;              // шаг пикетов, ед.
-  const T_LEVEL = 140;        // длительность уровня, с
+  const T_LEVEL0 = 140;       // базовая длительность уровня, с (ядро добавляет +30 %, в песочнице — без предела)
   const SPEED = 92;           // шаг реечника, ед./с
   const ACC = 1100;           // разгон и торможение, ед./с²
   const RANGE = 260;          // предельное плечо, ед. (65 м)
@@ -805,6 +805,7 @@
   }
 
   function createLevel(api, variant, seed) {
+    const T_LEVEL = api.timeLimit(T_LEVEL0);
     const vid = variant.id;
     const w = genWorld(seed, vid);
     const titleW = (() => { try { const c = document.createElement('canvas').getContext('2d'); c.font = 'bold 12px system-ui, sans-serif'; return c.measureText('Реечник · ' + variant.title).width; } catch (e) { return 170; } })();

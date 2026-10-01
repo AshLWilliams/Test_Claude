@@ -2,7 +2,7 @@
 // «Горизонтали» — камеральная обработка: по пикетам с отметками провести горизонтали заданного сечения
 // (ручная интерполяция по рёбрам треугольников, как на кальке), в «Овраге» — ещё и тальвег. Устройство — в MODES.md.
 (() => {
-  const LIMIT = 150;                 // время уровня, с
+  const LIMIT0 = 150;                // базовое время уровня, с (ядро добавляет +30 %, в песочнице — без предела)
   const PANEL_W = 116;               // правая панель кнопок
   const MH = 130;                    // высота поля плана, ед. (1 ед. ≈ 0,25 м)
   const PAD = 7;                     // поля листа вокруг поля плана, ед.
@@ -456,6 +456,7 @@
         params: { ravine: true, iv: 0.5, levels: [8, 11] } },
     ],
     create(api, variant, seed) {
+      const LIMIT = api.timeLimit(LIMIT0);
       if (Sym.prepare) Sym.prepare(['paper']);
       const ravine = !!variant.params.ravine, iv = variant.params.iv;
       const avW0 = api.W - PANEL_W - 14, s0 = (360 - 40) / (MH + 2 * PAD);

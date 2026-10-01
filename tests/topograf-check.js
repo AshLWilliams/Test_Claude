@@ -1,5 +1,5 @@
 // Проверка «Топографа» в headless Chromium.
-// Запуск: NODE_PATH=$(npm root -g) node tests/topograf-check.js --out /tmp/out [--seeds 20] [modes/1-piket.js ...]
+// Запуск: NODE_PATH=$(npm root -g) node tests/topograf-check.js --out /tmp/out [--seeds 20] [--sandbox] [modes/1-piket.js ...]
 // Без указания файлов берутся все topograf/modes/*.js. Для каждого вида работ и каждого варианта:
 //  - загрузка без ошибок; на N случайных участках бот (inst.bot) доводит уровень до finish; звёзды ≥ 2 у всех;
 //  - время уровня (игровое), очки, среднее время кадра update+draw;
@@ -13,6 +13,7 @@ const opt = (name, def) => { const i = args.indexOf(name); if (i < 0) return def
 const OUT = path.resolve(opt('--out', path.join(os.tmpdir(), 'topo-check')));
 const SEEDS = +opt('--seeds', 20);
 const MAXT = +opt('--maxtime', 300);
+const SANDBOX = args.includes('--sandbox'); if (SANDBOX) args.splice(args.indexOf('--sandbox'), 1); // песочница: время без предела, без рейтинга
 const files = args.length ? args.map(a => path.resolve(a)) : fs.readdirSync(path.join(ROOT, 'modes')).filter(f => f.endsWith('.js')).sort().map(f => path.join(ROOT, 'modes', f));
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -40,6 +41,7 @@ function harness(modeFiles) {
     try {
       await page.goto(harness([file])); await page.waitForTimeout(300);
       await page.evaluate(() => { window.requestAnimationFrame = () => 0; }); // кадры гоняем сами
+      if (SANDBOX) await page.evaluate(() => { sandbox = true; });
       r.levels = await page.evaluate(() => LEVELS.map(L => L.key));
       if (!r.levels.length) { r.errors.push('мода не зарегистрировалась'); continue; }
       r.variants = {};
@@ -58,6 +60,7 @@ function harness(modeFiles) {
                 else ms += 0; t += 1 / 60; frames++;
               }
             } catch (e) { res.problems.push('исключение: ' + String(e && e.message).slice(0, 160)); }
+            if (mode === 'clear' && result && !Number.isFinite(result.score)) res.problems.push('очки не число: ' + result.score);
             if (mode === 'clear' && result) { res.finished++; res.stars.push(result.stars); res.scores.push(result.score); res.times.push(Math.round(t)); }
             else res.problems.push(`не закончен за ${maxT} с (режим ${mode})`);
             res.frameMs.push(ms / Math.max(1, Math.ceil(frames / 6)));
