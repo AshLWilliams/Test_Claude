@@ -1,0 +1,26 @@
+html, body { margin: 0; height: 100%; background: #14110f; color: #f1e6d6; font-family: system-ui, sans-serif; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+main { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 8px 0; box-sizing: border-box; }
+h1 { margin: 0; font-size: 1.3rem; letter-spacing: .08em; color: #ffb02e; }
+.hint { margin: 0; font-size: .8rem; opacity: .7; text-align: center; padding: 0 12px; }
+.hint a { color: #ffb02e; }
+.credit { display: flex; align-items: center; justify-content: center; gap: 8px; opacity: .85; }
+.credit img { border-radius: 50%; }
+
+/* размеры сцены и холста задаёт game.js (layout) */
+#stage { position: relative; flex: none; }
+#stage canvas { position: absolute; display: block; background: #1b2418; border-radius: 10px; outline: 2px solid #5a4632; box-shadow: 0 0 30px #7cc47c33; touch-action: none; }
+
+/* телефон: игра на весь экран, без заголовка и подсказок */
+body.touch { overflow: hidden; position: fixed; inset: 0; touch-action: none; }
+body.touch main { display: block; padding: 0; }
+body.touch h1, body.touch .hint { display: none; }
+body.touch #stage { position: fixed; left: 0; top: 0; background: #14110f; }
+body.touch #stage canvas { border-radius: 0; outline: none; box-shadow: none; }
+/* телефон держат вертикально — поворачиваем сцену, чтобы игра шла горизонтально */
+body.rotated #stage { transform-origin: top left; transform: rotate(90deg) translateY(-100%); }
+
+#nameForm { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 8px; z-index: 2; }
+#nameForm[hidden] { display: none; }
+#nameForm input, #nameForm button { font: inherit; font-size: 1rem; padding: 8px 12px; border-radius: 8px; border: 2px solid #5a4632; background: rgba(42,34,27,.92); color: #f1e6d6; }
+#nameForm input { width: 11em; }
+#nameForm button { background: #ffb02e; color: #1a120a; border-color: #ffb02e; font-weight: bold; cursor: pointer; }

@@ -16,7 +16,11 @@ const TICKET_TTL = 24 * 3600; // секунд
 const GAMES = {
   stardodger:  { path: '',          cmd: 'play', rate: 40, base: 100 },
   levelrunner: { path: 'surveyor/', cmd: 'run',  rate: 400, base: 10000 }, // кампания из 10 участков с бонусами за каждый
+  // «Топограф»: 10 уровней по 0..1000 очков. hidden: true — скрыть игру из /start и inline-режима,
+  // пока её нет в @BotFather (иначе Telegram отклонит ответ); рейтинги на сайте работают и со скрытой
+  topograf:    { path: 'topograf/', cmd: 'survey', rate: 60, base: 2000 },
 };
+const listed = () => Object.keys(GAMES).filter(g => !GAMES[g].hidden); // игры, которые бот показывает в Telegram
 const gameOf = name => (GAMES[name] ? name : 'stardodger'); // старые билеты без игры — Star Dodger
 const plausible = (g, score, duration) => score >= 0 && duration > 0 && duration < 3600 && score <= GAMES[g].rate * duration + GAMES[g].base;
 const topKey = g => (g === 'stardodger' ? 'top' : 'top:' + g);
@@ -62,8 +66,8 @@ async function handleUpdate(env, u) {
   const m = u.message;
   const cmd = m && (m.text || '').match(/^\/(\w+)/);
   if (cmd) {
-    const games = cmd[1] === 'start' ? Object.keys(GAMES) : Object.keys(GAMES).filter(g => GAMES[g].cmd === cmd[1]);
-    if (cmd[1] === 'start') await tg(env, 'sendMessage', { chat_id: m.chat.id, text: 'Выберите игру: /play — Star Dodger, /run — Level Runner. Чтобы сыграть с друзьями, наберите в любом чате @' + (env.BOT_USERNAME || 'ashlwilliamsgithubio_bot') + '.' });
+    const games = cmd[1] === 'start' ? listed() : listed().filter(g => GAMES[g].cmd === cmd[1]);
+    if (cmd[1] === 'start') await tg(env, 'sendMessage', { chat_id: m.chat.id, text: 'Выберите игру: /play — Star Dodger, /run — Level Runner' + (listed().includes('topograf') ? ', /survey — Топограф' : '') + '. Чтобы сыграть с друзьями, наберите в любом чате @' + (env.BOT_USERNAME || 'ashlwilliamsgithubio_bot') + '.' });
     for (const g of games) await tg(env, 'sendGame', { chat_id: m.chat.id, game_short_name: g });
   }
   const q = u.callback_query;
@@ -76,7 +80,7 @@ async function handleUpdate(env, u) {
   }
   const iq = u.inline_query;
   if (iq) {
-    await tg(env, 'answerInlineQuery', { inline_query_id: iq.id, cache_time: 300, results: Object.keys(GAMES).map(g => ({ type: 'game', id: g, game_short_name: g })) });
+    await tg(env, 'answerInlineQuery', { inline_query_id: iq.id, cache_time: 300, results: listed().map(g => ({ type: 'game', id: g, game_short_name: g })) });
   }
 }
 
