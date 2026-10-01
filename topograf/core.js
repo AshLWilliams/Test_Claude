@@ -309,8 +309,8 @@ function drawMenu() {
   ctx.fillStyle = 'rgba(15,10,8,.66)'; ctx.fillRect(0, 0, W, H);
   drawLogo(W / 2, 48, 32);
   text(ctx, 'ТОПОГРАФ', W / 2, 116, 34, THEME.accent);
-  text(ctx, 'Пять видов полевых и камеральных работ — десять участков, каждый раз новых.', W / 2, 142, 13, THEME.ink);
-  text(ctx, 'Пикет · Невязка · Реечник · Трассоискатель · Горизонтали', W / 2, 162, 12, THEME.dim);
+  text(ctx, 'Шесть видов полевых и камеральных работ — двенадцать участков, каждый раз новых.', W / 2, 142, 13, THEME.ink);
+  text(ctx, 'Пикет · Невязка · Реечник · Трассоискатель · Горизонтали · SLAM', W / 2, 162, 12, THEME.dim);
   text(ctx, sandbox ? (IS_TOUCH ? 'Тап — в песочницу' : 'Пробел, Enter или клик — в песочницу') : (IS_TOUCH ? 'Тап — начать смену' : 'Пробел, Enter или клик — начать смену'), W / 2, 198, 15, '#ffd76a');
   const mb = modeButtons();
   button(ctx, mb.shift, 'Смена', { active: !sandbox }); button(ctx, mb.sand, 'Песочница', { active: sandbox });
