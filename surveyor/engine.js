@@ -63,7 +63,7 @@ let skyTop = '#000';
 let seed, solids, platforms, pits, decor, pickups, enemies, projectiles, checkpoints, particles, popups, ladders, helmets;
 let ghosts, secrets, hintsShown = new Set();
 let tunnels = [], rooms = [], crowds = []; // подземные ходы, этажи здания, толпы рабочих на заднем плане
-let treasures = [], relicTaken = false, relicPlaced = false, maxLives = 3; // клады подземелья; Золотая каска даёт 4 каски до конца смены // ghosts — стены с тайником (рисуются целиком, сталкиваемся по кускам); secrets — ниши-тайники
+let treasures = [], relicTaken = false, relicPlaced = false, maxLives = 3, platTaken = false, platPlaced = false, kishLevel = false; // Платиновая каска (небоскрёб) — 5 касок; kishLevel — на участке играет «КиШ Геодезия» // клады подземелья; Золотая каска даёт 4 каски до конца смены // ghosts — стены с тайником (рисуются целиком, сталкиваемся по кускам); secrets — ниши-тайники
 let player, camX, camY = 0, levelEnd, finishX, finishY, respawn, arena = null;
 let score, lives, kills, time, levelTime, shake, banner = null, clearInfo = null;
 let mode = 'menu'; // menu | play | pause | clear | over | win
@@ -154,7 +154,7 @@ function generateLevel(s) {
   const R = mulberry32(s);
   const r = (a, b) => a + R() * (b - a), ri = (a, b) => Math.floor(r(a, b + 1)), pick = arr => arr[Math.floor(R() * arr.length)];
   solids = []; platforms = []; pits = []; decor = []; pickups = []; enemies = []; checkpoints = []; ladders = []; helmets = []; ghosts = []; secrets = [];
-  tunnels = []; rooms = []; crowds = []; treasures = []; relicPlaced = false;
+  tunnels = []; rooms = []; crowds = []; treasures = []; relicPlaced = false; platPlaced = false;
   arena = null;
   const bottom = H + (G.underground ? DEEP : 200); // низ земли: под подземельем она уходит глубже кадра
   let floorStart = 0, floorLen = ri(900, 1250);   // здание: где начался текущий этаж и какой он длины
@@ -342,7 +342,7 @@ function generateLevel(s) {
   // Этажи связаны лестницами с люками; в перекрытиях есть проёмы вниз. Над последним этажом — открытая крыша.
   function building() {
     const F = floorsInfo.concat([{ y: gy, start: floorStart, end: Infinity }]), saveX = x;
-    let belowHoles = [];
+    let belowHoles = []; const platSpots = [];
     rooms = F.slice(0, -1).map((f, k) => ({ x1: 0, x2: f.end, y: f.y, top: F[k + 1].y + SLAB_T }));
     for (let k = 1; k < F.length; k++) {
       const f = F[k], below = F[k - 1], y = f.y, L = f.start; // перекрытие над этажом ниже: [0, L]
@@ -372,6 +372,7 @@ function generateLevel(s) {
             const ex = sx > 200 && R() < 0.5 ? crates(sx + r(20, Math.max(21, w * 0.3)), y, h0) + 16 : sx;
             enemiesOn(Math.max(ex, 520), sx + w - Math.max(ex, 520), y, 0.1); crowd(sx, w, y);
             if (R() < 0.18) helmet(sx + w * r(0.3, 0.7), y, 0.25);
+            if (k >= F.length - 2) platSpots.push({ x: sx + w * r(0.35, 0.65), y }); // верхние этажи — место для Платиновой каски
           }
         }
         if (kind === 'stair') ladder(h0 + 4, y, below.y); // у перехода лестница уже стоит
@@ -379,6 +380,10 @@ function generateLevel(s) {
         sx = h0 + hw;
       }
       belowHoles = holes;
+    }
+    if (platSpots.length && !platTaken && !platPlaced) { // Платиновая каска — на одном из верхних этажей небоскрёба
+      const s = platSpots[Math.floor(R() * platSpots.length)]; platPlaced = true;
+      treasures.push({ x: s.x, y: s.y - 22, kind: 'platinum', t: R() * 6 });
     }
     x = saveX;
   }
@@ -1087,6 +1092,7 @@ function loadLevel(i) {
   respawn = { x: 80, y: checkpoints[0].y - 60 };
   heroJumpT = heroAtkT = -1;
   camX = 0; camY = 0; levelTime = 0; lives = maxLives; shake = 0; hintsShown = new Set();
+  kishLevel = i < THEMES.length - 1 && Math.random() < 0.3; // на этом участке вместо своего трека — «КиШ Геодезия»
   banner = { top: `Участок ${i + 1} из ${THEMES.length}`, title: theme.title, sub: (theme.subtitle || '') + ' · в руках: ' + WEAPONS[weaponOf()].name.toLowerCase(), t: 3.2 };
   if (theme.init) theme.init(api);
   skyTop = sampleSkyTop();
@@ -1103,7 +1109,7 @@ function sampleSkyTop() { // цвет верхнего края фона тем�
 }
 
 function reset(start = menuLevel) { // новая смена (прохождение); с 1-го участка — в рейтинг, с других — тренировка
-  score = 0; kills = 0; time = 0; maxLives = 3; relicTaken = false; // новая смена — снова три каски
+  score = 0; kills = 0; time = 0; maxLives = 3; relicTaken = false; platTaken = false; // новая смена — снова три каски
   startLevel = clamp(start, 0, THEMES.length - 1);
   practice = startLevel > 0;
   board = null; globalBoard = null; final = null; clearInfo = null;
@@ -1361,9 +1367,13 @@ function update(dt) {
     addScore(T.pts, k.x, k.y - 16);
     burst(k.x, k.y, T.color, 30, 220, 150); burst(k.x, k.y, '#ffffff', 12, 160, 100);
     if (k.kind === 'relic') {
-      relicTaken = true; maxLives = 4; lives = Math.min(maxLives, lives + 1);
+      relicTaken = true; maxLives = Math.max(maxLives, 4); lives = Math.min(maxLives, lives + 1);
       Sound.play('relic');
       banner = { top: 'НАХОДКА', title: 'Золотая каска!', sub: 'Теперь у геодезиста 4 каски — до конца смены', t: 3.2 };
+    } else if (k.kind === 'platinum') {
+      platTaken = true; maxLives = 5; lives = Math.min(maxLives, lives + 2);
+      Sound.play('relic');
+      banner = { top: 'НАХОДКА', title: 'Платиновая каска!', sub: 'Теперь у геодезиста 5 касок — до конца смены', t: 3.2 };
     } else { Sound.play('treasure'); popup(k.x, k.y - 34, T.name, T.color); }
   }
   treasures = treasures.filter(k => !k.got);
@@ -1496,6 +1506,11 @@ function damageEnemy(e, n, source, knock) {
     burst(e.x + e.w / 2, e.y + e.h / 2, def.deathColor || '#ffffff', e.isBoss ? 60 : 14, e.isBoss ? 320 : 220);
     shake = Math.max(shake, e.isBoss ? 14 : def.heavy ? 7 : 3);
     if (def.onDeath) def.onDeath(e, api);
+    if (!e.isBoss && ENGINE_ENEMIES[e.type] === def && Math.random() < 0.5) { // особые противники роняют каску с шансом 50 %
+      const cx = e.x + e.w / 2;
+      helmets.push({ x: cx, y: e.y + e.h / 2, kind: Math.random() < 0.25 ? 'white' : 'orange', t: 0, vx: rand(-70, 70), vy: -rand(360, 440), life: 10 });
+      popup(cx - 16, e.y - 34, 'Каска!', '#9cff9c');
+    }
   }
 }
 
@@ -1643,6 +1658,7 @@ const TREASURES = {
   coins:      { name: 'Клад старинных монет', pts: 1500, color: '#ffd24a' },
   tokens:     { name: 'Жетоны метро 1935 года', pts: 1000, color: '#e0c080' },
   relic:      { name: 'Золотая каска', pts: 500, color: '#ffe066' },
+  platinum:   { name: 'Платиновая каска', pts: 800, color: '#e8f4ff' },
 };
 const THEME_SPECIALS = { // особые персонажи по участкам (gen.specials переопределяет)
   city: ['tapeMeasurer', 'craneHook'], pit: ['tapeMeasurer', 'craneHook'], metro: ['mirror', 'estimator'], mine: ['mirror', 'tapeMeasurer'],
@@ -1783,6 +1799,7 @@ function drawTreasure(k) { // клад: сияние, искры и свой з�
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 30, 0, 7); ctx.fill();
   for (let i = 0; i < 4; i++) { const a = now * 1.5 + i * 1.57, r = 18 + Math.sin(now * 3 + i) * 3; ctx.fillStyle = '#fff'; ctx.fillRect(Math.cos(a) * r - 1, Math.sin(a) * r - 1, 2, 2); }
   switch (k.kind) {
+    case 'platinum': ctx.fillStyle = '#dfe9f2'; ctx.beginPath(); ctx.arc(0, 2, 12, Math.PI, 0); ctx.fill(); ctx.fillRect(-16, 1, 32, 4); ctx.fillStyle = '#ffffff'; ctx.fillRect(-2, -10, 4, 11); ctx.fillStyle = '#8fa3b5'; ctx.fillRect(-16, 4, 32, 1.5); ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.fillRect(-8, -7, 3, 6); text('5', 0, -14, 10, '#ffffff'); break;
     case 'relic': ctx.fillStyle = '#ffd24a'; ctx.beginPath(); ctx.arc(0, 2, 12, Math.PI, 0); ctx.fill(); ctx.fillRect(-16, 1, 32, 4); ctx.fillStyle = '#fff3b0'; ctx.fillRect(-2, -10, 4, 11); ctx.fillStyle = '#c99a1a'; ctx.fillRect(-16, 4, 32, 1.5); text('4', 0, -14, 10, '#fff3b0'); break;
     case 'theodolite': ctx.strokeStyle = '#c99a1a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-8, 14); ctx.moveTo(0, 0); ctx.lineTo(8, 14); ctx.stroke(); ctx.fillStyle = '#ffd24a'; ctx.fillRect(-7, -12, 14, 11); ctx.fillStyle = '#c99a1a'; ctx.fillRect(-10, -9, 4, 5); ctx.fillStyle = '#9fd3ff'; ctx.fillRect(6, -9, 3, 4); break;
     case 'benchmark': ctx.fillStyle = '#b08a4a'; ctx.beginPath(); ctx.arc(0, -2, 10, 0, 7); ctx.fill(); ctx.fillStyle = '#e0c080'; ctx.beginPath(); ctx.arc(0, -2, 7, 0, 7); ctx.fill(); ctx.fillStyle = '#6a4a20'; ctx.fillRect(-1, -8, 2, 12); ctx.fillRect(-5, -2, 10, 2); text('1913', 0, 16, 7, '#fff0c0'); break;
@@ -2334,11 +2351,11 @@ function drawSoundButton() { // динамик: перечёркнут, если
 function drawHUD() {
   ctx.fillStyle = 'rgba(20,14,10,.55)'; ctx.fillRect(0, 0, W, 30);
   text('Очки: ' + Math.floor(score), 12, 20, 15, '#fff', 'left');
-  for (let i = 0; i < maxLives; i++) { // жизни — каски (четвёртая — Золотая); половинка — после удара прораба
-    const x = 128 + i * 22, gold = i === 3;
+  for (let i = 0; i < maxLives; i++) { // жизни — каски (четвёртая — Золотая, пятая — Платиновая); половинка — после удара прораба
+    const x = 128 + i * 22, gold = i === 3 && relicTaken, plat = i === 4 || (i === 3 && !relicTaken);
     ctx.fillStyle = 'rgba(255,255,255,.2)'; ctx.beginPath(); ctx.arc(x, 20, 7, Math.PI, 0); ctx.fill(); ctx.fillRect(x - 8, 19, 16, 2);
     const f = clamp(lives - i, 0, 1);
-    if (f > 0) { ctx.save(); ctx.beginPath(); ctx.rect(x - 9, 10, 18 * f, 14); ctx.clip(); ctx.fillStyle = gold ? '#ffd24a' : '#f7f7f7'; ctx.beginPath(); ctx.arc(x, 20, 7, Math.PI, 0); ctx.fill(); ctx.fillRect(x - 8, 19, 16, 2); ctx.restore(); }
+    if (f > 0) { ctx.save(); ctx.beginPath(); ctx.rect(x - 9, 10, 18 * f, 14); ctx.clip(); ctx.fillStyle = gold ? '#ffd24a' : plat ? '#cfe6ff' : '#f7f7f7'; ctx.beginPath(); ctx.arc(x, 20, 7, Math.PI, 0); ctx.fill(); ctx.fillRect(x - 8, 19, 16, 2); ctx.restore(); }
   }
   const right = IS_TOUCH ? W - 74 : W - 44; // справа кнопки звука (и паузы на телефоне)
   drawSoundButton();
@@ -2711,7 +2728,7 @@ function frame(now) {
   let dt = Math.min(0.05, (now - last) / 1000); last = now;
   while (dt > 0) { const step = Math.min(dt, 1 / 60); update(step); dt -= step; } // мелкие шаги — стабильная физика
   draw();
-  Sound.music(levelIdx, mode !== 'pause', { menu: mode === 'menu' || mode === 'over' || mode === 'win', boss: !!(arena && arena.active && !arena.boss.dead) }); // музыка участка, меню или босса; на паузе молчит
+  Sound.music(levelIdx, mode !== 'pause', { menu: mode === 'menu' || mode === 'over' || mode === 'win', boss: !!(arena && arena.active && !arena.boss.dead), kish: kishLevel && mode !== 'menu' && mode !== 'over' && mode !== 'win' }); // музыка участка, меню или босса; на паузе молчит
   requestAnimationFrame(frame);
 }
 for (const ev of ['pointerdown', 'keydown', 'touchstart']) addEventListener(ev, () => Sound.unlock(), { capture: true, passive: true }); // звук разрешается первым нажатием

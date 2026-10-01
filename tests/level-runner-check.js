@@ -39,7 +39,7 @@ function harness(files) {
     const context = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     const page = await context.newPage();
     page.on('pageerror', e => r.errors.push(String(e.message).slice(0, 300)));
-    page.on('console', m => { if (m.type() === 'error') r.errors.push(m.text().slice(0, 300)); });
+    page.on('console', m => { if (m.type() === 'error' && !/manifest\.json|net::ERR_FAILED/.test(m.text())) r.errors.push(m.text().slice(0, 300)); }); // file:// не даёт fetch музыки — на сайте её грузит https
     await page.route('https://star-dodger.ashlwilliams.workers.dev/**', rt => rt.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*' }, contentType: 'application/json', body: '{"s":"S","top":[]}' }));
     try {
       await page.goto(harness([file]));
