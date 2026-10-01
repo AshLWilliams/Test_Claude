@@ -833,7 +833,7 @@
       if (!o.need) o.dead = true; else NEED += o.need;
     }
     const liveObjs = objs.filter(o => !o.dead);
-    const T_LEVEL = api.sandbox ? api.timeLimit(300) : 300; // оба участка «Пикета» — ровно 5 минут (просьба пользователя); в песочнице без предела
+    const T_LEVEL = api.sandbox ? api.timeLimit(360) : 360; // оба участка «Пикета» — ровно 6 минут (просьба пользователя); в песочнице без предела
 
     // ---------- статичный слой мира: рисуется один раз под масштаб экрана ----------
     statics.sort((a, b) => a.z - b.z || a.i - b.i);
