@@ -28,8 +28,8 @@
   const mmss = t => { t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
   const smooth = t => t * t * (3 - 2 * t);
   // слой ровно под текущую плотность пикселей (api.layer округляет вверх до целого — лишняя выборка при каждом кадре)
-  function layer(w, h, draw) {
-    const k = clamp(typeof scale === 'number' ? scale : 1, 1, 2.5), cv = document.createElement('canvas');
+  function layer(w, h, draw, kMax) {
+    const k = clamp(typeof scale === 'number' ? scale : 1, 1, kMax || 2.5), cv = document.createElement('canvas');
     cv.width = Math.max(1, Math.ceil(w * k)); cv.height = Math.max(1, Math.ceil(h * k));
     const c = cv.getContext('2d'); c.scale(cv.width / w, cv.height / h); draw(c);
     return { canvas: cv, w, h };
@@ -880,11 +880,11 @@
     // ---------- кэш: разрез грунта кусками по CW ед. ----------
     let ymin = Infinity, ymax = -Infinity;
     for (let x = XA; x <= XB; x += 2) { const y = gy(x); if (y < ymin) ymin = y; if (y > ymax) ymax = y; }
-    const yTopC = Math.floor(ymin - 64), yBotC = Math.ceil(ymax + 86), CW = 256;
+    const yTopC = Math.floor(ymin - 64), yBotC = Math.ceil(ymax + 86), CW = 160;
     const DEEP = '#8a6a48';
     const SOIL = ['#9b7a52', '#8c6a45', '#a8875c', '#7d5c3c', '#9a7448', '#b19166'];
     function surfPath(c, x0, x1, dy) { c.moveTo(x0, gy(x0) + (dy ? dy(x0) : 0)); for (let x = x0 + 2; x <= x1; x += 2) c.lineTo(x, gy(x) + (dy ? dy(x) : 0)); c.lineTo(x1, gy(x1) + (dy ? dy(x1) : 0)); }
-    function drawChunk(c, x0, x1) {
+    function drawChunk(c, x0, x1, yBotC) {
       const Rc = rngOf(seed + Math.round(x0) * 31);
       const a = x0 - 6, b = x1 + 6;
       // тело грунта и геологические слои (горизонтальные, с волной)
@@ -1026,7 +1026,10 @@
     const chunks = [];
     for (let x0 = XA; x0 < XB; x0 += CW) {
       const x1 = Math.min(XB, x0 + CW);
-      chunks.push({ x0, x1, layer: layer((x1 - x0 + 2) * Z, (yBotC - yTopC) * Z, c => { c.scale(Z, Z); c.translate(-x0 + 1, -yTopC); drawChunk(c, x0, x1); }) });
+      let lo = Infinity, hi = -Infinity; // свои границы у каждого куска — меньше пустой заливки
+      for (let x = x0 - 24; x <= x1 + 24; x += 2) { const y = gy(x); if (y < lo) lo = y; if (y > hi) hi = y; }
+      const top = Math.max(yTopC, Math.floor(lo - 64)), bot = Math.min(yBotC, Math.ceil(hi + 86));
+      chunks.push({ x0, x1, top, bot, layer: layer((x1 - x0 + 2) * Z, (bot - top) * Z, c => { c.scale(Z, Z); c.translate(-x0 + 1, -top); drawChunk(c, x0, x1, bot); }) });
     }
 
     // ---------- спрайты: деревья у трассы, крапива и кусты на трассе, камыш у воды ----------
@@ -1064,7 +1067,7 @@
       for (let i = 0; i + 1 < tw.length; i++) for (const d of [-6, 6]) { c.moveTo(tw[i] + d, FY - 24); c.quadraticCurveTo((tw[i] + tw[i + 1]) / 2 + d, FY - 18, tw[i + 1] + d, FY - 24); }
       c.stroke();
       const g = c.createLinearGradient(0, FY - 40, 0, FH); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, mix(TOD.haze, '#ffffff', 0.2)); c.fillStyle = g; c.globalAlpha = 0.35; c.fillRect(0, FY - 40, FW, FH); c.globalAlpha = 1;
-    });
+    }, 1);
     let distCar = null;
     const mid = layer(MW, MH, c => {
       const Rm = rngOf(seed ^ 0x3131);
@@ -1102,7 +1105,7 @@
       c.restore();
       const g = c.createLinearGradient(0, MY - 90, 0, MH); g.addColorStop(0, mix(TOD.haze, '#ffffff', 0.3)); g.addColorStop(1, 'rgba(255,255,255,0)');
       c.globalAlpha = 0.28; c.fillStyle = g; c.fillRect(0, 0, MW, MH); c.globalAlpha = 1;
-    });
+    }, 1);
     const clouds = [];
     for (let k = 0; k < 5; k++) {
       const cw = 60 + R() * 70, chh = 20 + R() * 12, sd = ri(1, 1e6);
@@ -1518,8 +1521,7 @@
       ctx.translate(-cam.x * Z, TOP - cam.y * Z); ctx.scale(Z, Z);
       const x0 = cam.x - 12, x1 = cam.x + VW + 12;
       if(!SK.trees)for (const tr of trees) if (tr.x + tr.hw > x0 && tr.x - tr.hw < x1) ctx.drawImage(tr.spr.canvas, tr.x - tr.hw, gy(tr.x) + 2 - tr.h - 4, tr.hw * 2, tr.h + 8);
-      mk('trees'); if(!SK.chunks)for (const ch of chunks) if (ch.x1 + 1 > x0 && ch.x0 - 1 < x1) ctx.drawImage(ch.layer.canvas, ch.x0 - 1, yTopC, ch.x1 - ch.x0 + 2, yBotC - yTopC);
-      ctx.fillStyle = DEEP; ctx.fillRect(x0, yBotC - 0.5, x1 - x0, 400); mk('chunks');
+      mk('trees'); if(!SK.chunks)for (const ch of chunks) if (ch.x1 + 1 > x0 && ch.x0 - 1 < x1) { ctx.drawImage(ch.layer.canvas, ch.x0 - 1, ch.top, ch.x1 - ch.x0 + 2, ch.bot - ch.top); ctx.fillStyle = DEEP; ctx.fillRect(ch.x0 - 0.5, ch.bot - 0.5, ch.x1 - ch.x0 + 1, 400); } mk('chunks');
       drawWater(ctx, x0, x1); mk('water');
       drawStakes(ctx, x0, x1); mk('stakes');
       if(!SK.station)drawStation(ctx); mk('station');
