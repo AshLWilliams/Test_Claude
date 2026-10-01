@@ -1,0 +1,46 @@
+{
+  "about": "Музыка игры от локального Claude (раздел «Музыка для игр» в CLAUDE.md). Каждый файл — готовая бесшовная петля; не перекодировать и не обрезать.",
+  "updated": "2026-10-01",
+  "loudness_lufs": -16,
+  "true_peak_max_dbtp": -1,
+  "formats": [
+    "ogg",
+    "mp3"
+  ],
+  "tracks": [
+    {
+      "id": "01-city",
+      "use": "level",
+      "level": 1,
+      "title": "Городская стройка",
+      "files": {
+        "ogg": "01-city.ogg",
+        "mp3": "01-city.mp3"
+      },
+      "duration_s": 25.6,
+      "loop_start_s": 0,
+      "loop_end_s": 25.6,
+      "samplerate": 48000,
+      "bpm": 150.0,
+      "beats_per_bar": 4,
+      "bars": 16,
+      "key": "A minor",
+      "lufs": -16.0,
+      "true_peak_dbtp": -3.34,
+      "seam_similarity": 0.974,
+      "origin": {
+        "model": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+        "seed": 227541460,
+        "caption": "energetic folk punk rock instrumental, driving distorted electric guitars, fast drums, bass guitar, mischievous accordion melody, playful and cheeky, video game level music",
+        "variant": "ready",
+        "sound_reference": false,
+        "source_file": "city-punk-163431-v1.flac",
+        "loop_from_s": [
+          35.024,
+          60.624
+        ],
+        "made_by": "music-generator 0.2.0 (локальный Claude)"
+      }
+    }
+  ]
+}
