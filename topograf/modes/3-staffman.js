@@ -1487,7 +1487,7 @@
     }
     function draw(ctx) {
       const W = api.W, H = api.H, TOP = api.TOP, VW = W / Z;
-      const PR = window.__prof; let pt = performance.now(); const mk = n => { if (PR) { const q = performance.now(); PR[n] = (PR[n] || 0) + q - pt; pt = q; } };
+      const PR = window.__prof; let pt = performance.now(); const mk = n => { if (PR) { if (window.__flush) ctx.getImageData(0, 0, 1, 1); const q = performance.now(); PR[n] = (PR[n] || 0) + q - pt; pt = q; } };
       if (!skyG) { skyG = ctx.createLinearGradient(0, TOP, 0, H * 0.72); skyG.addColorStop(0, TOD.sky0); skyG.addColorStop(1, TOD.sky1); }
       ctx.fillStyle = skyG; ctx.fillRect(0, TOP, W, H - TOP);
       ctx.drawImage(sunSpr.canvas, W * TOD.sx - 60, TOP + 18 + TOD.sy * 160 - 60, 120, 120);
