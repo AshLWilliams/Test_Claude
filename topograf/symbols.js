@@ -350,11 +350,13 @@ const Sym = (() => {
       g.fill();
     });
   }
+  // крупномасштабную пятнистость даёт макро-слой (период 512 и 320 ед.), поэтому сама плитка 128 ед.
+  // почти однородна на крупных масштабах — иначе её повтор заметен как «обои».
   function organic(seed, base, light, dark, amp, nBlades, styles, bw) {
-    const S = TSZ, big = fbm(S, seed, [[8, 1], [16, 0.7], [32, 0.4]]), mid = vnoise(S, 64, seed + 5), wn = wnoise(seed + 9);
+    const S = TSZ, big = fbm(S, seed, [[16, 1], [32, 0.6]]), mid = vnoise(S, 64, seed + 5), wn = wnoise(seed + 9);
     nBlades = Math.round(nBlades * S * S / 36864);
     const r = texPix(S, (x, y, o, i) => {
-      let t = (big[i] - 0.5) * 1.5 * amp + (mid[i] - 0.5) * 0.8 * amp;
+      let t = (big[i] - 0.5) * 0.95 * amp + (mid[i] - 0.5) * 0.85 * amp;
       const c = t > 0 ? light : dark; t = Math.min(1, Math.abs(t));
       const n = (wn() - 0.5) * 16;
       o[0] = base[0] + (c[0] - base[0]) * t + n;
@@ -405,16 +407,18 @@ const Sym = (() => {
       pebbles(g, S, rng(507), 40, 0.4, 0.8, ['#b9a78a', '#9c8f7c']);
       return r.c;
     },
-    gravel: () => {
-      const S = TSZ, W = worley(S, 2.3, 606), wn = wnoise(607), R = rng(608);
+    gravel: () => { // щебень: мелкое зерно спокойного тона + редкие крупные камни, без «телешума»
+      const S = TSZ, W = worley(S, 2.6, 606), wn = wnoise(607), R = rng(608), big = fbm(S, 609, [[8, 1], [24, 0.6]]);
       const tone = new Float32Array(W.n * W.n), tint = new Float32Array(W.n * W.n);
-      for (let i = 0; i < tone.length; i++) { tone[i] = 128 + R() * 62; tint[i] = (R() - 0.5) * 20; }
-      return texPix(S, (x, y, o, i) => {
+      for (let i = 0; i < tone.length; i++) { tone[i] = 148 + R() * 34; tint[i] = (R() - 0.5) * 16; }
+      const r = texPix(S, (x, y, o, i) => {
         const id = W.id[i], e = W.f2[i] - W.f1[i];
-        let v = tone[id] - (W.vx[i] + W.vy[i]) / W.cell * 20 + (wn() - 0.5) * 10;
-        if (e < 0.7) v *= 0.6 + e * 0.4;
-        o[0] = v + tint[id]; o[1] = v + tint[id] * 0.4; o[2] = v - tint[id] * 0.3 - 3;
-      }).c;
+        let v = tone[id] - (W.vx[i] + W.vy[i]) / W.cell * 11 + (wn() - 0.5) * 7 + (big[i] - 0.5) * 22;
+        if (e < 0.6) v *= 0.8 + e * 0.33;
+        o[0] = v + tint[id] + 3; o[1] = v + tint[id] * 0.4; o[2] = v - tint[id] * 0.3 - 6;
+      });
+      pebbles(r.g, S, rng(610), 70, 0.7, 1.3, ['#b4ada0', '#9a9284', '#c4beb2', '#8a8478']);
+      return r.c;
     },
     asphalt: () => {
       const S = TSZ, big = fbm(S, 707, [[8, 1], [24, 0.5]]), wn = wnoise(708);
@@ -459,9 +463,9 @@ const Sym = (() => {
       const S = TSZ, big = fbm(S, 1111, [[6, 1], [12, 0.7], [24, 0.4]]), W = worley(S, 8, 1112), wn = wnoise(1113);
       const r = texPix(S, (x, y, o, i) => {
         const b = big[i], n = (wn() - 0.5) * 14;
-        if (b < 0.4) {
-          const t = clamp((0.4 - b) * 9, 0, 1);
-          o[0] = lerp(86, 50, t) + n * 0.4; o[1] = lerp(100, 74, t) + n * 0.4; o[2] = lerp(64, 74, t) + n * 0.4;
+        if (b < 0.33) { // окна воды: тёмно-зелёная вода с отражением неба по краю
+          const t = clamp((0.33 - b) * 10, 0, 1);
+          o[0] = lerp(92, 62, t) + n * 0.4; o[1] = lerp(108, 92, t) + n * 0.4; o[2] = lerp(70, 88, t) + n * 0.4;
         } else {
           const tus = W.f1[i] < 2.8, l = tus ? (2.8 - W.f1[i]) / 2.8 : 0, sh = tus ? -(W.vx[i] + W.vy[i]) / 2.8 * 14 : 0;
           o[0] = 102 + l * 34 + sh + n + (b - 0.5) * 30; o[1] = 116 + l * 32 + sh + n + (b - 0.5) * 20; o[2] = 68 + l * 12 + sh * 0.6 + n * 0.6;
@@ -507,7 +511,7 @@ const Sym = (() => {
       for (let i = 0; i < ci.length; i++) ci[i] = (R0() * pal.length) | 0;
       const r = texPix(S, (x, y, o, i) => {
         const c = pal[ci[W.id[i]]], e = W.f2[i] - W.f1[i];
-        let k = e < 0.6 ? 0.72 : 1; k += (wn() - 0.5) * 0.12;
+        let k = e < 0.6 ? 0.8 : 1; k += (wn() - 0.5) * 0.1;
         const m = clamp((big[i] - 0.6) * 2.5, 0, 0.7);
         o[0] = (c[0] * (1 - m) + 84 * m) * k; o[1] = (c[1] * (1 - m) + 112 * m) * k; o[2] = (c[2] * (1 - m) + 52 * m) * k;
       });
@@ -540,6 +544,15 @@ const Sym = (() => {
         else { o[0] = 255; o[1] = 244; o[2] = 196; o[3] = Math.min(1, t) * 96; }
       }).c;
     },
+    // второй макро-слой другого периода: вместе с первым повтор не читается
+    macro2: () => {
+      const f = fbm(64, 1626, [[6, 1], [12, 0.5]]);
+      return texPix(64, (x, y, o, i) => {
+        const t = (f[i] - 0.5) * 2.4;
+        if (t < 0) { o[0] = 16; o[1] = 34; o[2] = 6; o[3] = Math.min(1, -t) * 110; }
+        else { o[0] = 236; o[1] = 236; o[2] = 170; o[3] = Math.min(1, t) * 80; }
+      }).c;
+    },
     paper: () => {
       const S = 256, big = fbm(S, 1717, [[4, 1], [16, 0.5]]), wn = wnoise(1718);
       const r = texPix(S, (x, y, o, i) => { const v = (big[i] - 0.5) * 8 + (wn() - 0.5) * 6; o[0] = 246 + v; o[1] = 241 + v; o[2] = 226 + v * 1.2; });
@@ -547,7 +560,7 @@ const Sym = (() => {
       return r.c;
     },
   };
-  const GROUND_MACRO = { grass: 0.5, lawn: 0.28, meadow: 0.55, dirt: 0.5, sand: 0.4, gravel: 0.3, asphalt: 0.3, concrete: 0.28, tiles: 0.22, swamp: 0.5, water: 0.4, field: 0.35, forestFloor: 0.45 };
+  const GROUND_MACRO = { grass: 0.42, lawn: 0.26, meadow: 0.45, dirt: 0.42, sand: 0.34, gravel: 0.3, asphalt: 0.28, concrete: 0.26, tiles: 0.2, swamp: 0.4, water: 0.34, field: 0.3, forestFloor: 0.38 };
   const _pats = {}, _texc = {};
   function texCanvas(name) { return _texc[name] || (_texc[name] = GEN[name]()); }
   function pat(name) {
@@ -617,6 +630,7 @@ const Sym = (() => {
     const shape = () => { ctx.beginPath(); if (poly && poly.length >= 3) smoothPath(ctx, poly, true); else ctx.rect(x, y, w, h); };
     const base = patT(tex, Math.round(hash(s, 1) * TS), Math.round(hash(s, 2) * TS), 0, 0, ctx);
     const macro = patT('macro', Math.round(hash(s, 3) * 512), Math.round(hash(s, 4) * 512), 0, 8, ctx);
+    const macro2 = patT('macro2', Math.round(hash(s, 8) * 320), Math.round(hash(s, 9) * 320), 0, 5, ctx);
     if (poly && poly.length >= 3) {
       const e = opt.edge != null ? opt.edge : 3;
       shape();
@@ -629,6 +643,8 @@ const Sym = (() => {
     }
     ctx.globalAlpha = GROUND_MACRO[kind];
     ctx.fillStyle = macro; ctx.fillRect(x, y, w, h);
+    ctx.globalAlpha = GROUND_MACRO[kind] * 0.8;
+    ctx.fillStyle = macro2; ctx.fillRect(x, y, w, h);
     ctx.globalAlpha = 1;
     const R = rng(s + 17);
     if (kind === 'lawn') {
@@ -1326,27 +1342,41 @@ const Sym = (() => {
     }
     const sh = -r * 0.07;
     ctx.fillStyle = pal[1]; lobePath(ctx, L, sh, sh, birch ? 0.78 : 0.84); ctx.fill();
+    // объём каждой «шапки» листвы: светлое ядро, смещённое к свету (на теневой стороне — меньше)
+    ctx.beginPath();
+    for (const l of L) {
+      const dx = l[0] - x, dy = l[1] - y, side = -(dx + dy) / (r * 1.2); // >0 — к свету
+      const rr = l[2] * clamp(0.5 + side * 0.25, 0.3, 0.68);
+      circ(ctx, l[0] - l[2] * 0.2 - r * 0.05, l[1] - l[2] * 0.2 - r * 0.05, rr);
+    }
+    ctx.fillStyle = pal[2]; ctx.fill();
     ctx.beginPath();
     for (const l of L) {
       const dx = l[0] - x, dy = l[1] - y;
-      if (dx + dy > r * 0.35) continue;
-      const rr = l[2] * 0.6;
-      circ(ctx, l[0] - r * 0.1 - dx * 0.12, l[1] - r * 0.1 - dy * 0.12, rr);
+      if (dx + dy > r * 0.45) continue;
+      circ(ctx, l[0] - l[2] * 0.36 - r * 0.05, l[1] - l[2] * 0.36 - r * 0.05, l[2] * 0.26);
     }
-    ctx.fillStyle = pal[2]; ctx.fill();
-    // листва: светлые и тёмные кластеры
-    ctx.beginPath();
-    for (let k = 0; k < n * 3 + 6; k++) {
-      const l = L[(R() * L.length) | 0], a = PI * 1.25 + (R() - 0.5) * 2.2, d = l[2] * (0.2 + R() * 0.65), rr = Math.max(0.3, r * (0.035 + R() * 0.05));
-      circ(ctx, l[0] + Math.cos(a) * d - r * 0.06, l[1] + Math.sin(a) * d - r * 0.06, rr);
+    ctx.fillStyle = alpha(pal[3], 0.8); ctx.fill();
+    // фактура листвы: мелкие светлые и тёмные пятнышки (не «горошек» — много, мелко и прозрачно)
+    if (r >= 5) {
+      const nl = Math.round(r * r * 0.7), dots = [[], []];
+      for (let k = 0; k < nl; k++) {
+        const l = L[(R() * L.length) | 0], a = R() * TAU, d = l[2] * Math.sqrt(R()) * 0.9, px = l[0] + Math.cos(a) * d, py = l[1] + Math.sin(a) * d;
+        const lit_ = (px - l[0]) + (py - l[1]) < 0;
+        dots[lit_ ? 0 : 1].push(px, py, Math.max(0.22, r * (0.025 + R() * 0.03)));
+      }
+      ctx.beginPath(); for (let i = 0; i < dots[0].length; i += 3) circ(ctx, dots[0][i], dots[0][i + 1], dots[0][i + 2]);
+      ctx.fillStyle = alpha(pal[3], 0.32); ctx.fill();
+      ctx.beginPath(); for (let i = 0; i < dots[1].length; i += 3) circ(ctx, dots[1][i], dots[1][i + 1], dots[1][i + 2]);
+      ctx.fillStyle = 'rgba(10,30,8,.22)'; ctx.fill();
     }
-    ctx.fillStyle = pal[3]; ctx.globalAlpha = 0.75; ctx.fill(); ctx.globalAlpha = 1;
+    // просветы между шапками на теневой стороне
     ctx.beginPath();
-    for (let k = 0; k < n + 3; k++) {
-      const l = L[(R() * L.length) | 0], a = PI * 0.25 + (R() - 0.5) * 1.8, d = l[2] * (0.45 + R() * 0.35), rr = r * (0.045 + R() * 0.045);
+    for (let k = 0; k < Math.round(n * 0.6); k++) {
+      const l = L[(R() * L.length) | 0], a = PI * 0.25 + (R() - 0.5) * 1.6, d = l[2] * (0.6 + R() * 0.3), rr = r * (0.035 + R() * 0.035);
       circ(ctx, l[0] + Math.cos(a) * d, l[1] + Math.sin(a) * d, rr);
     }
-    ctx.fillStyle = 'rgba(8,26,8,.35)'; ctx.fill();
+    ctx.fillStyle = 'rgba(8,24,8,.38)'; ctx.fill();
     if (apple) {
       ctx.beginPath();
       const nf = 6 + ((R() * 7) | 0), red = R() < 0.7;
@@ -1364,42 +1394,54 @@ const Sym = (() => {
     ctx.beginPath(); ctx.arc(cx, cy, r, th + be, th - be + TAU); ctx.lineTo(cx + L, cy + L); ctx.closePath();
   }
   function conifer(ctx, x, y, r, R, pal) {
-    const n = 11 + ((R() * 5) | 0), a0 = R() * TAU, jr = [];
-    for (let i = 0; i < 64; i++) jr.push(R());
-    ctx.fillStyle = SHA + '0.08)'; coneShadow(ctx, x + 0.5, y + 0.5, r * 1.02, r * 1.55); ctx.fill();
-    ctx.fillStyle = SHA + '0.15)'; coneShadow(ctx, x + r * 0.12, y + r * 0.12, r * 0.88, r * 1.3); ctx.fill();
-    // основа кроны — неровный тёмный круг
-    ctx.fillStyle = pal[0]; ctx.beginPath();
-    for (let i = 0; i < 36; i++) { const a = a0 + i / 36 * TAU, rr = r * (0.86 + jr[i] * 0.14 - (i & 1) * 0.08); const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr; if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); }
-    ctx.closePath(); ctx.fill();
-    // ярусы ветвей: радиальные пучки хвои
-    const tier = (rad, off, col, colLit, sc) => {
-      const dark = [], lite = [];
-      for (let i = 0; i < n; i++) {
-        const a = a0 + off + (i + (jr[i + 36] - 0.5) * 0.4) / n * TAU, kk = -(Math.cos(a) + Math.sin(a)) * SQ;
-        const len = rad * (0.42 + jr[(i * 3) % 64] * 0.12) * sc, cx = x - r * 0.06 + Math.cos(a) * rad * 0.52, cy = y - r * 0.06 + Math.sin(a) * rad * 0.52;
-        (kk > -0.15 ? lite : dark).push([cx, cy, len, a]);
+    // ель/сосна сверху: ярусы звёздчатых «лап», каждый следующий меньше, светлее и смещён к свету;
+    // теневая (ЮВ) половина каждого яруса притемнена, на лапах — светлые штрихи хвои.
+    const jr = [];
+    for (let i = 0; i < 160; i++) jr.push(R());
+    const a0 = jr[0] * TAU;
+    ctx.fillStyle = SHA + '0.08)'; coneShadow(ctx, x + 0.5, y + 0.5, r * 1.0, r * 1.6); ctx.fill();
+    ctx.fillStyle = SHA + '0.17)'; coneShadow(ctx, x + r * 0.1, y + r * 0.1, r * 0.86, r * 1.32); ctx.fill();
+    const tiers = r < 5 ? 2 : r < 9 ? 3 : 4;
+    const cols = [pal[0], pal[1], shade(pal[1], 0.12), pal[2], pal[3]];
+    for (let k = 0; k < tiers; k++) {
+      const f = 1 - k / tiers * 0.78, rk = r * f, off = -r * 0.045 * k, cx = x + off, cy = y + off;
+      const nb = Math.max(7, Math.round((k ? 10 : 13) + r * 0.35 - k * 1.5)), ak = a0 + k * 0.61;
+      const tips = [];
+      ctx.beginPath();
+      for (let i = 0; i < nb; i++) {
+        const j = jr[(k * 37 + i) % 160], a = ak + (i + (j - 0.5) * 0.35) / nb * TAU, am = ak + (i + 0.5 + (jr[(k * 41 + i * 3) % 160] - 0.5) * 0.3) / nb * TAU;
+        const ro = rk * (0.84 + j * 0.16), ri = rk * (0.6 + jr[(k * 53 + i * 7) % 160] * 0.12);
+        const tx = cx + Math.cos(a) * ro, ty = cy + Math.sin(a) * ro;
+        tips.push([tx, ty, a, ro]);
+        // лапа: два «пера» к вершине — чуть выгнутые бока
+        const sx = cx + Math.cos(a - 0.5 / nb * TAU) * ri, sy = cy + Math.sin(a - 0.5 / nb * TAU) * ri;
+        if (i) ctx.lineTo(sx, sy); else ctx.moveTo(sx, sy);
+        ctx.quadraticCurveTo(cx + Math.cos(a - 0.12) * ro * 0.9, cy + Math.sin(a - 0.12) * ro * 0.9, tx, ty);
+        ctx.quadraticCurveTo(cx + Math.cos(a + 0.12) * ro * 0.9, cy + Math.sin(a + 0.12) * ro * 0.9, cx + Math.cos(am) * ri, cy + Math.sin(am) * ri);
       }
-      for (const [arr, c] of [[dark, col], [lite, colLit]]) {
-        ctx.fillStyle = c; ctx.beginPath();
-        for (const [cx, cy, len, a] of arr) { ctx.moveTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len); ctx.ellipse(cx, cy, len, len * 0.36, a, 0, TAU); }
-        ctx.fill();
+      ctx.closePath();
+      ctx.fillStyle = cols[Math.min(cols.length - 1, k)]; ctx.fill();
+      // свет/тень яруса
+      const g = ctx.createLinearGradient(cx - rk * SQ, cy - rk * SQ, cx + rk * SQ, cy + rk * SQ);
+      g.addColorStop(0, 'rgba(255,250,210,' + (k ? 0.16 : 0.1) + ')'); g.addColorStop(0.45, 'rgba(255,250,210,0)');
+      g.addColorStop(0.6, 'rgba(0,16,8,0)'); g.addColorStop(1, 'rgba(0,16,8,' + (k ? 0.32 : 0.4) + ')');
+      ctx.fillStyle = g; ctx.fill();
+      // тонкая тёмная кромка — разделяет ярусы
+      if (k) { ctx.strokeStyle = 'rgba(6,22,12,.35)'; ctx.lineWidth = Math.max(0.15, r * 0.018); ctx.stroke(); }
+      // хвоя: светлые штрихи вдоль лап на освещённой стороне
+      if (r >= 4) {
+        ctx.beginPath();
+        for (const [tx, ty, a, ro] of tips) {
+          const kk = -(Math.cos(a) + Math.sin(a)) * SQ;
+          if (kk < -0.3) continue;
+          ctx.moveTo(cx + Math.cos(a) * ro * 0.45, cy + Math.sin(a) * ro * 0.45); ctx.lineTo(tx - Math.cos(a) * ro * 0.08, ty - Math.sin(a) * ro * 0.08);
+        }
+        ctx.strokeStyle = alpha(pal[3], 0.55); ctx.lineWidth = Math.max(0.18, r * 0.028); ctx.lineCap = 'round'; ctx.stroke();
       }
-    };
-    tier(r, 0, pal[1], pal[2], 1);
-    tier(r * 0.62, PI / n, pal[1], pal[2], 1.05);
-    // хвоя: светлые штрихи на освещённой стороне
-    ctx.strokeStyle = pal[3]; ctx.lineWidth = Math.max(0.2, r * 0.03); ctx.lineCap = 'round'; ctx.globalAlpha = 0.65;
-    ctx.beginPath();
-    for (let i = 0; i < n * 2; i++) {
-      const a = a0 + (i + 0.5) / (n * 2) * TAU, kk = -(Math.cos(a) + Math.sin(a)) * SQ;
-      if (kk < 0) continue;
-      const d1 = r * 0.2, d2 = r * (0.45 + jr[i % 64] * 0.3);
-      ctx.moveTo(x - r * 0.08 + Math.cos(a) * d1, y - r * 0.08 + Math.sin(a) * d1); ctx.lineTo(x - r * 0.08 + Math.cos(a) * d2, y - r * 0.08 + Math.sin(a) * d2);
     }
-    ctx.stroke(); ctx.globalAlpha = 1;
-    ctx.fillStyle = pal[2]; ctx.beginPath(); ctx.arc(x - r * 0.08, y - r * 0.08, Math.max(0.5, r * 0.16), 0, TAU); ctx.fill();
-    ctx.fillStyle = pal[3]; ctx.beginPath(); ctx.arc(x - r * 0.11, y - r * 0.11, Math.max(0.3, r * 0.07), 0, TAU); ctx.fill();
+    // верхушка
+    ctx.fillStyle = pal[2]; ctx.beginPath(); ctx.arc(x - r * 0.17, y - r * 0.17, Math.max(0.45, r * 0.12), 0, TAU); ctx.fill();
+    ctx.fillStyle = shade(pal[3], 0.25); ctx.beginPath(); ctx.arc(x - r * 0.2, y - r * 0.2, Math.max(0.25, r * 0.05), 0, TAU); ctx.fill();
   }
   function bush(ctx, x, y, r, seed) {
     r = r > 0 ? r : 4;
@@ -2609,7 +2651,7 @@ const Sym = (() => {
     cache: true,                       // false — рисовать всё напрямую, без спрайтов
     clearCache() { SPR.clear(); sprPx = 0; },
     // заранее сгенерировать текстуры (например, пока показывается меню): Sym.prepare() или Sym.prepare(['grass', 'asphalt'])
-    prepare(kinds) { for (const k of kinds || Object.keys(GROUND_MACRO).concat(['macro', 'grain', 'paper', 'hatch'])) if (GEN[k]) texCanvas(k); },
+    prepare(kinds) { for (const k of kinds || Object.keys(GROUND_MACRO).concat(['macro', 'macro2', 'grain', 'paper', 'hatch'])) if (GEN[k]) texCanvas(k); },
     cacheInfo() { return { sprites: SPR.size, pixels: sprPx }; },
     plan,
     hash: (s, i) => hash(toSeed(s), i || 0),
