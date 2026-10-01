@@ -1,0 +1,24 @@
+{
+  "id": "contours/hill",
+  "file": "contours-hill",
+  "duration": 48.0,
+  "loop_start": 0,
+  "loop_end": 48.0,
+  "samplerate": 48000,
+  "bpm": 80.0,
+  "bars": 16,
+  "beats_per_bar": 4,
+  "key": "C major",
+  "lufs": -18.86,
+  "true_peak_dbtp": -1.0,
+  "seam": 0.987,
+  "crossfade_ms": 750.0,
+  "source_window_s": [
+    48.5173,
+    96.5173
+  ],
+  "seed": 1560255883,
+  "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, thoughtful and quiet, solo piano, warm strings",
+  "engine": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+  "made_by": "music-generator 0.3.0 (локальный Claude)"
+}

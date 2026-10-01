@@ -1,0 +1,24 @@
+{
+  "id": "staffman/road",
+  "file": "staffman-road",
+  "duration": 58.1809,
+  "loop_start": 0,
+  "loop_end": 58.1809,
+  "samplerate": 48000,
+  "bpm": 132.0,
+  "bars": 32,
+  "beats_per_bar": 4,
+  "key": "G major",
+  "lufs": -16.1,
+  "true_peak_dbtp": -1.0,
+  "seam": 0.881,
+  "crossfade_ms": 454.5,
+  "source_window_s": [
+    53.136,
+    111.3169
+  ],
+  "seed": 933738642,
+  "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, upbeat and on the move, mixolydian folk rock instrumental, acoustic guitar, bass, live drums",
+  "engine": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+  "made_by": "music-generator 0.3.0 (локальный Claude)"
+}
