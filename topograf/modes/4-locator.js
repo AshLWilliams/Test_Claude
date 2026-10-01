@@ -4,7 +4,7 @@
 (() => {
   const COLS = 22, ROWS = 11, CS = 24, GW = COLS * CS, GH = ROWS * CS, N = COLS * ROWS;
   const EXT = 190;                   // запас сцены слева/справа за границей участка (широкий экран)
-  const LIMIT = 150;                 // время уровня, с
+  const LIMIT0 = 150;                // базовое время уровня, с (ядро добавляет +30 %, в песочнице — без предела)
   const CELL_M = CS * 0.25;          // клетка — 6 м
   const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1];
   const OPP = d => (d + 2) & 3, BIT = d => 1 << d;
@@ -528,6 +528,7 @@
         howto: ['В и К — магистрали насквозь; Т — от котельной. Г (от ГРП) и Э (от ТП) без колодцев — повороты ищите по сигналу.'], params: { battery: 55 } },
     ],
     create(api, variant, seed) {
+      const LIMIT = api.timeLimit(LIMIT0);
       if (Sym.prepare) Sym.prepare(['lawn', 'grass', 'asphalt', 'concrete', 'paper']);
       const g = generate(api, variant, seed);
       const nets = g.nets, NN = nets.length;

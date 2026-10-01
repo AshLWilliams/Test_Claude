@@ -107,6 +107,11 @@ function registerMode(m) {
 
 let mode = 'menu'; // menu | intro | play | pause | clear | over
 let levelIdx = 0, startLevel = 0, practice = false, inst = null, result = null, overAt = 0, menuLevel = 0;
+// песочница: все уровни открыты, время не ограничено, без рейтинга; выбор режима запоминается
+const SANDBOX_KEY = 'topograf-sandbox', TIME_BONUS = 1.3; // в смене у каждого уровня на 30 % больше базового времени
+let sandbox = false; try { sandbox = localStorage.getItem(SANDBOX_KEY) === '1'; } catch (e) {}
+function setSandbox(on) { sandbox = on; try { localStorage.setItem(SANDBOX_KEY, on ? '1' : '0'); } catch (e) {} menuLevel = clamp(menuLevel, 0, maxSelectable() - 1); Sound.play('select'); }
+const maxSelectable = () => sandbox ? LEVELS.length : Math.min(Math.max(unlocked, forcedLevel + 1), LEVELS.length);
 let score = 0, time = 0, levelTime = 0, shake = 0, results = [];
 let popups = [], particles = [], hudDrawn = false;
 let board = null, globalBoard = null, session = null, final = null;
@@ -125,12 +130,14 @@ const api = {
   shake(n) { shake = Math.max(shake, n); },
   layer: makeLayer,
   finish(r) { if (mode === 'play' && !result) finishLevel(r); },
+  get sandbox() { return sandbox; },
+  timeLimit(base) { return sandbox ? 1e6 : Math.round(base * TIME_BONUS / 5) * 5; }, // время уровня по базовому из моды
   theme: THEME,
 };
 
 function startRun(from) {
   score = 0; time = 0; results = []; board = null; globalBoard = null; final = null; nameForm.hidden = true;
-  startLevel = clamp(from, 0, LEVELS.length - 1); practice = startLevel > 0;
+  startLevel = clamp(from, 0, LEVELS.length - 1); practice = sandbox || startLevel > 0;
   loadLevel(startLevel);
   if (!practice) newSession();
 }
@@ -144,8 +151,8 @@ function loadLevel(i) {
 function finishLevel(r) {
   result = { score: clamp(Math.round(r.score || 0), 0, 1000), stars: clamp(r.stars | 0, 0, 3), lines: r.lines || [], drawResult: r.drawResult || null };
   score += result.score; results[levelIdx] = result;
-  const k = LEVELS[levelIdx].key; if ((starsMem[k] || 0) < result.stars) starsMem[k] = result.stars;
-  if (levelIdx + 2 > unlocked) unlocked = Math.min(LEVELS.length, levelIdx + 2);
+  const k = LEVELS[levelIdx].key; if (!sandbox && (starsMem[k] || 0) < result.stars) starsMem[k] = result.stars;
+  if (!sandbox && levelIdx + 2 > unlocked) unlocked = Math.min(LEVELS.length, levelIdx + 2);
   try { localStorage.setItem(UNLOCK_KEY, unlocked); localStorage.setItem(STARS_KEY, JSON.stringify(starsMem)); } catch (e) {}
   Sound.play(result.stars >= 1 ? 'clear' : 'bad');
   mode = 'clear'; overAt = performance.now();
@@ -245,7 +252,8 @@ function drawHUD() {
   let h = null; try { h = inst && inst.hud ? inst.hud() : null; } catch (e) {}
   if (h) {
     let x = W - 200;
-    if (h.time != null) { const t = Math.max(0, Math.ceil(h.time)); text(ctx, `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`, x, 19, 13, t <= 10 ? THEME.bad : THEME.ink, 'right'); x -= 50; }
+    if (h.time != null && sandbox) { text(ctx, '∞', x, 20, 16, THEME.good, 'right'); x -= 50; }
+    else if (h.time != null) { const t = Math.max(0, Math.ceil(h.time)); text(ctx, `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`, x, 19, 13, t <= 10 ? THEME.bad : THEME.ink, 'right'); x -= 50; }
     if (h.progress != null) { const pw = 70; ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(x - pw, 12, pw, 5); ctx.fillStyle = THEME.accent; ctx.fillRect(x - pw, 12, pw * clamp(h.progress, 0, 1), 5); x -= pw + 10; }
     if (h.info && h.info.length) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, x, TOP); ctx.clip(); text(ctx, h.info.join(' · '), x, 19, 11, THEME.dim, 'right', '600'); ctx.restore(); }
   }
@@ -295,6 +303,7 @@ function drawMenuBackground() { // ожившая карта: горизонта
   ctx.strokeStyle = 'rgba(80,80,80,.18)'; // сетка крестов, как на листе плана
   for (let x = 40; x < W; x += 80) for (let y = 40; y < H; y += 80) { ctx.beginPath(); ctx.moveTo(x - 5, y); ctx.lineTo(x + 5, y); ctx.moveTo(x, y - 5); ctx.lineTo(x, y + 5); ctx.stroke(); }
 }
+function modeButtons() { return { shift: { x: W / 2 - 124, y: 212, w: 120, h: 30 }, sand: { x: W / 2 + 4, y: 212, w: 120, h: 30 } }; }
 function menuArrows() { return { left: { x: W / 2 - 200, y: 268, w: 36, h: 32 }, right: { x: W / 2 + 164, y: 268, w: 36, h: 32 } }; }
 function drawMenu() {
   ctx.fillStyle = 'rgba(15,10,8,.66)'; ctx.fillRect(0, 0, W, H);
@@ -302,13 +311,15 @@ function drawMenu() {
   text(ctx, 'ТОПОГРАФ', W / 2, 116, 34, THEME.accent);
   text(ctx, 'Пять видов полевых и камеральных работ — десять участков, каждый раз новых.', W / 2, 142, 13, THEME.ink);
   text(ctx, 'Пикет · Невязка · Реечник · Трассоискатель · Горизонтали', W / 2, 162, 12, THEME.dim);
-  text(ctx, IS_TOUCH ? 'Тап — начать смену' : 'Пробел, Enter или клик — начать смену', W / 2, 214, 15, '#ffd76a');
-  if (best) text(ctx, 'Рекорд: ' + best, W / 2, 236, 12, THEME.dim);
-  const maxSel = Math.max(unlocked, forcedLevel + 1);
+  text(ctx, sandbox ? (IS_TOUCH ? 'Тап — в песочницу' : 'Пробел, Enter или клик — в песочницу') : (IS_TOUCH ? 'Тап — начать смену' : 'Пробел, Enter или клик — начать смену'), W / 2, 198, 15, '#ffd76a');
+  const mb = modeButtons();
+  button(ctx, mb.shift, 'Смена', { active: !sandbox }); button(ctx, mb.sand, 'Песочница', { active: sandbox });
+  text(ctx, sandbox ? 'Без времени и без рейтинга · все уровни открыты' : (best ? 'На время, в рейтинг · рекорд: ' + best : 'На время, в рейтинг'), W / 2, 256, 11, THEME.dim);
+  const maxSel = maxSelectable();
   if (maxSel > 1) {
     const L = LEVELS[menuLevel], a = menuArrows(), st = starsMem[L.key] || 0;
     text(ctx, `Старт: ${L.num}. ${L.mode.title} — ${L.variant.title}`, W / 2, 289, 14, THEME.accent);
-    text(ctx, '★'.repeat(st) + '☆'.repeat(3 - st) + (menuLevel ? ' · тренировка — не в рейтинг' : ' · с первого уровня — в рейтинг'), W / 2, 308, 11, THEME.dim);
+    text(ctx, sandbox ? 'песочница — можно играть сколько угодно' : '★'.repeat(st) + '☆'.repeat(3 - st) + (menuLevel ? ' · тренировка — не в рейтинг' : ' · с первого уровня — в рейтинг'), W / 2, 308, 11, THEME.dim);
     button(ctx, a.left, '◀'); button(ctx, a.right, '▶');
   }
   drawGroupLink(W / 2, H - 14, 12);
@@ -332,10 +343,13 @@ function drawIntro() { // карточка правил перед уровне�
   for (const ln of lines) for (const w of wrapLines('• ' + ln, pw - 48, 12)) { if (y > 286) break; text(ctx, w, px + 24, y, 12, THEME.ink, 'left', '600'); y += 17; }
   text(ctx, IS_TOUCH ? 'Тап — начать' : 'Пробел или клик — начать', W / 2, 306, 13, '#ffd76a');
 }
+function pauseButtons() { return { go: { x: W / 2 - 134, y: 160, w: 128, h: 44 }, menu: { x: W / 2 + 6, y: 160, w: 128, h: 44 } }; }
+function toMenu() { mode = 'menu'; inst = null; result = null; menuLevel = sandbox ? levelIdx : startLevel; nameForm.hidden = true; pointers.clear(); Sound.play('select'); }
 function drawPause() {
   ctx.fillStyle = 'rgba(15,10,8,.7)'; ctx.fillRect(0, 0, W, H);
-  text(ctx, 'ПАУЗА', W / 2, 150, 34, THEME.accent);
-  text(ctx, IS_TOUCH ? 'Тап — продолжить' : 'P, пробел или клик — продолжить', W / 2, 184, 13, THEME.dim);
+  text(ctx, 'ПАУЗА', W / 2, 130, 34, THEME.accent);
+  const pb = pauseButtons(); button(ctx, pb.go, 'Продолжить', { active: true }); button(ctx, pb.menu, 'В меню');
+  text(ctx, sandbox ? 'Песочница: участок можно бросить и выбрать другой' : 'В меню — смена прервётся, результат не засчитается', W / 2, 236, 12, THEME.dim);
 }
 function drawStars(x, y, n, size = 22) { for (let i = 0; i < 3; i++) text(ctx, i < n ? '★' : '☆', x + (i - 1) * size * 1.2, y, size, i < n ? '#ffd24a' : 'rgba(255,255,255,.35)'); }
 function drawClear() {
@@ -378,7 +392,7 @@ function drawEnd() {
   for (let i = 0; i < n; i++) { const r = results[i]; text(ctx, String(i + 1), x0 + cw * (i + 0.5), 100, 10, THEME.dim); text(ctx, r ? '★'.repeat(r.stars) || '—' : '·', x0 + cw * (i + 0.5), 114, 10, r && r.stars ? '#ffd24a' : THEME.dim); }
   text(ctx, (IS_TOUCH ? 'Тап' : 'Пробел или клик') + ' — в меню', W / 2, 136, 12, THEME.dim);
   const y = 162, ox = (W - 640) / 2;
-  if (practice) text(ctx, 'Тренировка не с первого уровня — результат не идёт в рейтинг', W / 2, y + 10, 12, THEME.dim);
+  if (practice) text(ctx, sandbox ? 'Песочница — результат не идёт в рейтинг' : 'Тренировка не с первого уровня — результат не идёт в рейтинг', W / 2, y + 10, 12, THEME.dim);
   else if (TICKET) { drawTable(globalBoard, 'Мировой рейтинг', ox + 40, ox + 300, y); drawTable(board, 'Рекорды чата', ox + 340, ox + 600, y); }
   else { drawTable(globalBoard, 'Мировой рейтинг', ox + 190, ox + 450, y, 5); if (!nameForm.hidden) text(ctx, 'Введите имя, чтобы попасть в рейтинг', W / 2, y + 126, 12, THEME.dim); }
   drawGroupLink(W / 2, nameForm.hidden ? H - 12 : H - 62, 11);
@@ -424,7 +438,7 @@ function advance() { // «тап по экрану» вне игры
   if (mode === 'clear') nextLevel();
   else if (mode === 'over') { mode = 'menu'; inst = null; menuLevel = startLevel; nameForm.hidden = true; }
 }
-function selectLevel(d) { const maxSel = Math.max(unlocked, forcedLevel + 1); menuLevel = clamp(menuLevel + d, 0, Math.min(maxSel, LEVELS.length) - 1); Sound.play('select'); }
+function selectLevel(d) { menuLevel = clamp(menuLevel + d, 0, maxSelectable() - 1); Sound.play('select'); }
 const pointers = new Set();
 canvas.addEventListener('pointerdown', e => {
   e.preventDefault(); Sound.unlock();
@@ -435,7 +449,8 @@ canvas.addEventListener('pointerdown', e => {
   if (mode !== 'play' && inLink(p)) { openGroup(); return; }
   if (mode === 'menu') {
     const a = menuArrows();
-    if (Math.max(unlocked, forcedLevel + 1) > 1) { if (hit(a.left, p)) { selectLevel(-1); return; } if (hit(a.right, p)) { selectLevel(1); return; } }
+    if (maxSelectable() > 1) { if (hit(a.left, p)) { selectLevel(-1); return; } if (hit(a.right, p)) { selectLevel(1); return; } }
+    const mb = modeButtons(); if (hit(mb.shift, p)) { if (sandbox) setSandbox(false); return; } if (hit(mb.sand, p)) { if (!sandbox) setSandbox(true); return; }
     advance(); return;
   }
   if (mode === 'play') {
@@ -445,6 +460,7 @@ canvas.addEventListener('pointerdown', e => {
     if (inst.pointerDown) inst.pointerDown(p);
     return;
   }
+  if (mode === 'pause' && hit(pauseButtons().menu, p)) { toMenu(); return; }
   advance();
 });
 canvas.addEventListener('pointermove', e => { if (mode !== 'play' || !inst.pointerMove) return; const p = toGame(e); p.id = e.pointerId; p.down = pointers.has(e.pointerId); inst.pointerMove(p); });

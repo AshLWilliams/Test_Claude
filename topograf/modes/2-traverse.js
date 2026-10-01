@@ -5,7 +5,7 @@
   const WH = 330;                    // высота мира, ед. (поле под HUD)
   const DMIN = 60, DMAX = 230;       // допустимая длина стороны хода, ед.
   const MU = 0.25;                   // метров в единице
-  const LIMIT = 140;                 // время уровня, с
+  const LIMIT0 = 140;                // базовое время уровня, с (ядро добавляет +30 %, в песочнице — без предела)
   const TREF = 120;                  // к этому сроку бонус за время сходит на нет
   const KSEC = 2.2;                  // секунд дуги на единицу смещения марки от нити в окуляре
   const RHO = 206265;                // секунд в радиане
@@ -672,6 +672,7 @@
   });
 
   function create(api, variant, seed) {
+    const LIMIT = api.timeLimit(LIMIT0);
     const R = api.rng(seed), forest = variant.id === 'forest';
     const ww = Math.round(clamp(api.W, 560, 860)), TH = api.theme;
     let wd = null, ref = null, tries = 0;
