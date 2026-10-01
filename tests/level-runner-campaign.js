@@ -17,7 +17,7 @@ const PAGE = 'file://' + path.resolve(__dirname, '..', 'surveyor', 'index.html')
   const page = await ctx.newPage();
   const errors = [], requests = [];
   page.on('pageerror', e => errors.push(String(e.message).slice(0, 300)));
-  page.on('console', m => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });
+  page.on('console', m => { if (m.type() === 'error' && !/manifest\.json|net::ERR_FAILED/.test(m.text())) errors.push(m.text().slice(0, 300)); }); // file:// не даёт fetch музыки — на сайте её грузит https
   await page.route('https://star-dodger.ashlwilliams.workers.dev/**', r => {
     requests.push(new URL(r.request().url()).pathname);
     r.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*' }, contentType: 'application/json', body: '{"s":"S","top":[],"rank":1,"improved":true}' });

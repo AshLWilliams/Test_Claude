@@ -61,7 +61,7 @@ const Sound = (() => {
   }
   let lastKey = '';
   function music(level, playing, where) { // вызывается движком каждый кадр: участок, играть ли, { menu, boss }
-    wantId = where && where.menu ? 'menu' : where && where.boss ? 'boss' : 'L' + (level + 1);
+    wantId = where && where.menu ? 'menu' : where && where.boss ? 'boss' : where && where.kish ? null : 'L' + (level + 1); // kish — на участке «КиШ Геодезия» (жребий движка, 30 %)
     if (manifest && wantId === 'boss' && !manifest.boss) wantId = 'L' + (level + 1);
     wantPlay = playing;
     const k = wantId + (wantPlay ? 1 : 0) + (muted ? 1 : 0) + (manifest ? 1 : 0); // без лишней работы каждый кадр
