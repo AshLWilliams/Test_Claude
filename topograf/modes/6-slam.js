@@ -17,11 +17,11 @@
   const TW = WW / TC, TH = WH / TC;
   const HR = 3;                // «радиус» топографа при обходе препятствий
   const RANGE = 60;            // дальность лидара, ед. (≈ 15 м)
-  const FLOOR_R = 44;          // дальше пол под острым углом почти не отражает
+  const FLOOR_R = 54;          // дальше пол под острым углом почти не отражает
   const RV = 62;               // радиус «налобного фонаря»: насколько видно настоящий объект
-  const V_WALK = 28, V_RUN = 46;   // шаг и бег, ед./с
+  const V_WALK = 32, V_RUN = 52;   // шаг и бег, ед./с
   const MS = 0.9 / V_WALK;     // показ скорости, м/с на ед./с (игровое время сжато)
-  const VIS = 0.8;             // смещение облака, ед. на 1 см дрейфа (показ с увеличением ×20)
+  const VIS = 1;               // смещение облака, ед. на 1 см дрейфа (показ с увеличением ×25)
   const BASE = 0.0016;         // рост дрейфа, см на единицу пути при спокойном шаге
   const BLUR = 4.5;            // размытие облака на бегу, см
   const TOL = 5;               // допуск толщины облака, см
@@ -163,7 +163,7 @@
         c.save(); c.translate((rx0 + rx1) / 2, (ry0 + ry1) / 2); c.rotate(-Math.PI / 2); api.text(c, 'ПАНДУС  i = 15 %', 0, 3, 7, 'rgba(255,255,255,.45)'); c.restore();
       });
       degen.push({ x0: rx0, y0: ry0 - 6, x1: rx1, y1: ry1 + 6 });
-      // приметы на пандусе: пожарные шкафы и вентшахта
+      // приметы на пандусе: пожарные шкафы у стены
       const nf = ri(1, 2);
       for (let k = 0; k < nf; k++) {
         const fy = ry0 + (ry1 - ry0) * (k + 1) / (nf + 1) + rr(-25, 25), ox = rampE ? rx1 : rx0, fx0 = rampE ? ox - 4 : ox, fx1 = fx0 + 4;
@@ -198,7 +198,7 @@
         y += dd;
       }
       aisles.push(y + aw / 2); y += aw;
-      // осевые линии проездов и стрелки
+      // осевые линии проездов
       for (const ay of aisles) {
         for (let x = hx0 + 12; x < hx1 - 12; x += 16) line(x, ay, x + 7, ay, 0.6, 'rgba(242,194,48,.55)', 2);
       }
@@ -326,7 +326,7 @@
             c.fillStyle = '#d8d2c6'; c.fillRect(x, sy1 - dep, w, dep - 1);
             c.fillStyle = 'rgba(120,110,95,.6)'; for (let k = x + 6; k < x + w - 6; k += 12) c.fillRect(k, sy1 - dep + 4, 8, 3), c.fillRect(k, sy1 - 12, 8, 3);
             c.fillStyle = '#7a3b2e'; c.fillRect(x - 1, sy1 + 0.2, w + 2, 3);
-            for (let k = x; k < x + w; k += 4) { c.fillStyle = (k / 4) % 2 ? '#e8e2d4' : '#a8473a'; c.fillRect(k, sy1 + 0.2, 2, 3); }
+            for (let k = 0; k * 2 < w; k++) { c.fillStyle = k % 2 ? '#e8e2d4' : '#a8473a'; c.fillRect(x + k * 2, sy1 + 0.2, Math.min(2, w - k * 2), 3); }   // маркиза
             api.text(c, nm, x + w / 2, sy1 - dep / 2 + 2, 5.5, '#3a3530');
           });
           x += w + ri(12, 22);
@@ -469,7 +469,7 @@
       for (let k = 0; k < markN && cand.length; k++) {
         const sc = cand.map(c => { let d = Infinity; for (const p of chosen) d = Math.min(d, hyp(wx(c) - p.x, wy(c) - p.y)); return { c, d }; }).sort((a, b) => b.d - a.d);
         const pick = sc[Math.floor(R() * Math.min(sc.length, Math.max(3, sc.length * 0.05)))];
-        const m = { x: wx(pick.c), y: wy(pick.c), n: k + 1, done: false, hold: 0, at: 0 };
+        const m = { x: wx(pick.c), y: wy(pick.c), n: k + 1, done: false, hold: 0 };
         marks.push(m); chosen.push(m);
       }
       for (const m of marks) {
@@ -667,7 +667,7 @@
     let time = 0, over = false, path = null, walkPtr = null, lastRepath = -1, tapFx = null, run = false, dragT = 0;
     let lastTapT = -9, lastTapP = null, vSm = 0, omega = 0, stepT = 0, dist = 0, distLoop = 0;
     let initT = 0, initDone = false, initFails = 0, initFailT = -9, initMoved = 0;
-    let endT = 0, endReason = '', holdPtr = null, holdKey = false, readyT = -9, stopT = 0;
+    let endT = 0, holdPtr = null, holdKey = false, readyT = -9, stopT = 0;
     const D = { x: 0, y: 0 };   // текущий дрейф, см
     let dTh = R() * TAU, jerkCool = 0, jerkFx = 0, ghosts = 0, phantoms = 0, glassT = -9, dynT = -9, scanA = 0;
     let rtkNow = 0, rtkPrev = 0, banner = null, warnRunT = -9, lastDegMsg = -9, lastRtkMsg = -9;
@@ -687,6 +687,7 @@
 
     // ---------- подвижные помехи: машины и люди ----------
     const dyn = [];
+    let honkT = -9;
     const cum = p => { const c = [0]; for (let i = 1; i < p.length; i++) c.push(c[i - 1] + hyp(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y)); return c; };
     const cars = carRoutes.map((r, k) => ({ r, c: cum(r.pts), s: r.loop ? r2(0, 1) * cum(r.pts)[r.pts.length - 1] : -1, v: 0, vmax: r2(18, 24), x: 0, y: 0, a: 0, wait: YARD ? r2(2, 12) + k * 6 : 0, color: CARC[Math.floor(R2() * CARC.length)], seed: Math.floor(R2() * 1e6), moving: false }));
     const people = [];
@@ -708,7 +709,8 @@
       for (const o of cars) {
         if (o.s < 0) { o.wait -= dt; o.moving = false; if (o.wait <= 0) { o.s = 0; o.a = Math.atan2(o.r.pts[1].y - o.r.pts[0].y, o.r.pts[1].x - o.r.pts[0].x); carAt(o); } continue; }
         const ca = Math.cos(o.a), sa = Math.sin(o.a), rx = hero.x - o.x, ry = hero.y - o.y, fw = rx * ca + ry * sa, sd = Math.abs(-rx * sa + ry * ca);
-        const block = fw > 0 && fw < 26 && sd < 9;   // уступает дорогу топографу
+        const block = fw > 0 && fw < 34 && sd < 9;   // уступает дорогу топографу (и сигналит)
+        if (block && o.v > 8 && time - honkT > 6 && hyp(o.x - hero.x, o.y - hero.y) < 40) { honkT = time; api.sfx('car'); }
         o.v = block ? Math.max(0, o.v - 60 * dt) : Math.min(o.vmax, o.v + 14 * dt);
         o.s += o.v * dt; o.moving = o.v > 2;
         if (!o.r.loop && o.s > o.c[o.c.length - 1]) { o.s = -1; o.wait = r2(4, 12); o.x = -999; continue; }
@@ -853,7 +855,7 @@
       api.sfx('good'); api.sfx('point'); api.burst(toScreen(hero.x, hero.y).x, toScreen(hero.x, hero.y).y, '#6cff8a', 14);
     }
     function markDone(m) {
-      m.done = true; m.at = time;
+      m.done = true;
       const a = r2(0, TAU), v = r2(1, 2); D.x = Math.cos(a) * v; D.y = Math.sin(a) * v;
       newChunk();
       popW(m.x, m.y - 8, `Марка М${m.n} занята · дрейф ${fmt(v, 1)} см`, '#6cff8a');
@@ -869,7 +871,7 @@
 
     let resultData = null;
     function finish(reason) {
-      if (over) return; over = true; endReason = reason;
+      if (over) return; over = true;
       if (holdPtr != null) holdPtr = null;
       const cov = needCov ? covered / needCov : 0, T = thickness(), md = marksDone(), nl = loops.length;
       const covS = 400 * clamp((cov - 0.4) / 0.55, 0, 1);
@@ -883,12 +885,13 @@
       let stars = 0;
       if (ok) { stars = 1; if (T <= TOL && nl >= 1 && score >= 600) stars = 2; if (stars === 2 && T <= 3.5 && nl >= 2 && cov >= 0.9 && reason === 'static' && score >= 790) stars = 3; }
       resultData = { cov, T, md, nl };
-      const fin = reason === 'static' ? `Статика на старте ✓ · время ${mmss(time)}` : reason === 'early' ? `Сдано досрочно, без статики · ${mmss(time)}` : 'Время вышло — сдано, что снято';
+      const fin = reason === 'static' ? `Статика на старте ✓ · ${mmss(time)}` : reason === 'early' ? `Досрочно, без статики · ${mmss(time)}` : 'Время вышло — сдано, что снято';
       api.finish({
         score, stars, drawResult,
         lines: [
-          `Охват ${Math.round(cov * 100)} % · толщина ${fmt(T, 1)} см (допуск ${TOL})`,
-          `Марок ${md}${md < 3 ? ' (нужно ≥ 3)' : ''} · петель ${nl} · призраки: ${ghosts} ${plural(ghosts, 'точка', 'точки', 'точек')}`,
+          `Охват ${Math.round(cov * 100)} % · облако ${fmt(T, 1)} см (доп. ${TOL})`, // строки короткие — влезают при W=560
+          `Марок ${md}${md < 3 ? ' (нужно ≥ 3)' : ''} · петель ${nl}`,
+          `Призраки: ${ghosts} ${plural(ghosts, 'точка', 'точки', 'точек')}`,
           fin,
         ],
       });
@@ -989,7 +992,7 @@
           const a = R2() * TAU, v = r2(5, 8); D.x += Math.cos(a) * v; D.y += Math.sin(a) * v;
           api.shake(6); api.sfx('bad'); popW(hero.x, hero.y - 10, `Потеря трекинга! +${fmt(v, 1)} см`, '#ff6b5b');
         }
-        if (running && time - warnRunT > 10) { warnRunT = time; popW(hero.x, hero.y - 10, `Бегом ${fmt(vSm * MS, 1)} м/с — облако реже, дрейф ×2,5`, '#ffd27a'); api.sfx('warn'); }
+        if (running && time - warnRunT > 10) { warnRunT = time; api.sfx('warn'); }
         kT += dt;
         if (kT >= 0.25 || hyp(D.x - cdx[kc], D.y - cdy[kc]) > 0.25 || cb[kc] !== (running ? 1 : 0)) newChunk();
         // лидар
@@ -1124,6 +1127,7 @@
             ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(a) * RANGE, sy + Math.sin(a) * RANGE); ctx.stroke();
           }
         }
+        ctx.strokeStyle = 'rgba(255,122,28,.9)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(hx, hy, 4.4, 0, TAU); ctx.stroke();   // «вы здесь»
         Sym.surveyorTop(ctx, hx, hy, hero.dir, hero.ph, {});
         ctx.fillStyle = '#23272b'; ctx.beginPath(); ctx.arc(sx, sy, 1.3, 0, TAU); ctx.fill();
         ctx.strokeStyle = initDone ? '#7ee8ff' : '#ffd76a'; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.arc(sx, sy, 1.3, scanA, scanA + 4); ctx.stroke();
@@ -1166,7 +1170,8 @@
       pill(ctx, mr.x - 2, mr.y - 2, mr.w + 4, mr.h + 4, 'rgba(10,16,22,.9)', 'rgba(120,200,240,.4)');
       ctx.fillStyle = '#05070a'; ctx.fillRect(mr.x, mr.y, mr.w, mr.h); ctx.drawImage(miniCv, mr.x, mr.y, mr.w, mr.h);
       const sm = mr.w / WW;
-      ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 0.8; ctx.strokeRect(mr.x + camX * sm, mr.y + camY * sm, Math.min(VW(), WW) * sm, Math.min(VH, WH) * sm);
+      { const x0 = mr.x + camX * sm, y0 = mr.y + camY * sm, x1 = Math.min(mr.x + mr.w, x0 + VW() * sm), y1 = Math.min(mr.y + mr.h, y0 + VH * sm);
+        ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 0.8; ctx.strokeRect(x0, y0, x1 - x0, y1 - y0); }
       for (const mk of marks) { ctx.fillStyle = mk.done ? '#6cff8a' : '#ffb02e'; const x = mr.x + mk.x * sm, y = mr.y + mk.y * sm; ctx.beginPath(); ctx.moveTo(x, y - 3.5); ctx.lineTo(x + 3, y + 2); ctx.lineTo(x - 3, y + 2); ctx.closePath(); ctx.fill(); }
       ctx.strokeStyle = '#ff6e5a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(mr.x + start.x * sm, mr.y + start.y * sm, 2.5, 0, TAU); ctx.stroke();
       ctx.fillStyle = '#ff7a1c'; ctx.beginPath(); ctx.arc(mr.x + hero.x * sm, mr.y + hero.y * sm, 2.4, 0, TAU); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.8; ctx.stroke();
@@ -1251,7 +1256,7 @@
       // протокол обработки
       const fit = (str, size) => { c.font = `600 ${size}px system-ui, sans-serif`; while (str.length > 8 && c.measureText(str).width > w - 20) str = str.slice(0, -2); return str; };
       const rows = [];
-      if (resultData) rows.push(`Толщина ${fmt(resultData.T, 1)} см (допуск ${TOL}) · охват ${Math.round(resultData.cov * 100)} % · смещения ×20`);
+      if (resultData) rows.push(`Толщина ${fmt(resultData.T, 1)} см (допуск ${TOL}) · охват ${Math.round(resultData.cov * 100)} % · смещения ×25`);
       rows.push(loops.length ? 'Петли (дрейф, см): ' + loops.map(l => `П${l.n} ${fmt(l.before, 1)}→${fmt(l.after, 1)}`).join(' · ') : 'Петли не замкнуты — дрейф не уравнен');
       rows.push('Марки: ' + marks.map(m => `М${m.n} ${m.done ? '✓' : '—'}`).join('  '));
       rows.push(`Призраки: от людей и машин ${ghosts - phantoms} · фантомы стекла ${phantoms}`);
@@ -1292,7 +1297,6 @@
       return -1;
     }
     const covIdx = c => (((c / NW) | 0) >> 1) * CW + ((c % NW) >> 1);
-    const botStill = () => vSm < 1.2 && !path;
     function botTap(x, y) {
       const s = toScreen(x, y), mr = mmRect();
       const ui = [btnM(), btnD()].some(b => s.x >= b.x - 4 && s.x <= b.x + b.w + 4 && s.y >= b.y - 4 && s.y <= b.y + b.h + 4) || (s.x > mr.x - 4 && s.y < mr.y + mr.h + 18) || (s.x < 270 && s.y < TOP + 44);
@@ -1302,21 +1306,24 @@
       bot.tx = x; bot.ty = y; bot.stuckT = 0; bot.sx = hero.x; bot.sy = hero.y;
     }
     function botPick() {
-      const wrapT = Math.min(LIMIT, 300) - 80, cov = needCov ? covered / needCov : 1;
+      const wrapT = Math.min(LIMIT, 300) - 95, cov = needCov ? covered / needCov : 1;
       const need = Math.min(4, marks.length), md = marksDone();
       const wrap = time > wrapT || cov >= 0.96;
       const open = marks.filter(m => !m.done);
       const pathLen = (x, y) => { const p = pathTo(hero.x, hero.y, x, y); if (!p) return Infinity; let L = 0, px = hero.x, py = hero.y; for (const q of p) { L += hyp(q.x - px, q.y - py); px = q.x; py = q.y; } return L; };
       let mk = null, ml = Infinity;
-      for (const m of open) { if (hyp(m.x - hero.x, m.y - hero.y) > (wrap ? 2000 : 120)) continue; const L = pathLen(m.x, m.y); if (L < ml) { ml = L; mk = m; } }
-      if (mk && (ml < 110 || (wrap && md < need))) { bot.kind = 'mark'; bot.mark = mk; botTap(mk.x, mk.y); return; }
+      for (const m of open) { if (hyp(m.x - hero.x, m.y - hero.y) > (wrap ? 2000 : 150)) continue; const L = pathLen(m.x, m.y); if (L < ml) { ml = L; mk = m; } }
+      if (mk && (ml < 140 || (wrap && md < (time > wrapT + 40 ? 3 : need)))) { bot.kind = 'mark'; bot.mark = mk; botTap(mk.x, mk.y); return; }
       if (wrap) { bot.kind = 'home'; botTap(start.x, start.y); return; }
       if (distLoop > 1500 && hyp(D.x, D.y) > 2.2) { // специально замкнуть петлю
         const c = bfs(c => { const x = wx(c), y = wy(c), tc = clamp(Math.floor(y / TC), 0, TH - 1) * TW + clamp(Math.floor(x / TC), 0, TW - 1); return lastT[tc] >= 0 && time - lastT[tc] > LOOP_T + 3 && degK[c] < 2; });
         if (c >= 0) { bot.kind = 'loop'; botTap(wx(c), wy(c)); return; }
       }
-      const c = bfs(c => { const cc = covIdx(c); return req[cc] && covN[cc] < COV_MIN && !skip[cc] && degK[c] < 2; });
-      if (c >= 0) { bot.kind = 'cov'; bot.cc = covIdx(c); botTap(wx(c), wy(c)); return; }
+      // фронтир охвата: ближайшая неснятая клетка, но не вплотную (ближние снимутся по пути)
+      let first = -1;
+      const c = bfs(c => { const cc = covIdx(c); if (!(req[cc] && covN[cc] < COV_MIN && !skip[cc] && degK[c] < 2)) return false; if (first < 0) first = c; return hyp(wx(c) - hero.x, wy(c) - hero.y) > 22; });
+      const cg = c >= 0 ? c : first;
+      if (cg >= 0) { bot.kind = 'cov'; bot.cc = covIdx(cg); botTap(wx(cg), wy(cg)); return; }
       bot.kind = 'home'; botTap(start.x, start.y);
     }
     function botStep(dt) {
@@ -1333,23 +1340,24 @@
         if (vSm < 1.5) { const b = btnM(); inst.pointerDown({ x: b.x + b.w / 2, y: b.y + b.h / 2, id: 92, button: 0 }); bot.holding = true; }
         return;
       }
-      if (bot.kind === 'home') { if (!path && hyp(start.x - hero.x, start.y - hero.y) > 4) botTap(start.x, start.y); return; }
-      // уклонение: движется рядом — постоять
+      // уклонение: рядом движутся люди или машина — постоять, пока не пройдут
       bot.dynCool -= dt;
+      const busy = () => dyn.some(d => d.o.moving && hyp(d.x - hero.x, d.y - hero.y) < 34);
       if (bot.dynWait > 0) {
         bot.dynWait -= dt;
-        const still = dyn.some(d => d.o.moving && hyp(d.x - hero.x, d.y - hero.y) < 34);
-        if (!still || bot.dynWait <= 0) { bot.dynWait = 0; bot.dynCool = 2.5; bot.kind = ''; }
+        if (!busy()) { bot.dynWait = 0; bot.kind = bot.kind === 'home' ? 'home' : ''; }
+        else if (bot.dynWait <= 0) { bot.dynCool = 3; bot.kind = bot.kind === 'home' ? 'home' : ''; }
         return;
       }
-      if (bot.dynCool <= 0 && path && dyn.some(d => d.o.moving && hyp(d.x - hero.x, d.y - hero.y) < 32)) {
+      if (bot.dynCool <= 0 && path && busy()) {
         const s = toScreen(hero.x, hero.y);
         if (s.y > TOP + 4 && s.y < api.H - 4 && s.x > 0 && s.x < W()) { inst.pointerDown({ x: s.x, y: s.y, id: 93, button: 0 }); inst.pointerUp({ x: s.x, y: s.y, id: 93, button: 0 }); } else stop();
-        bot.dynWait = 5; return;
+        bot.dynWait = 6; return;
       }
+      if (bot.kind === 'home') { if (!path && hyp(start.x - hero.x, start.y - hero.y) > 4) botTap(start.x, start.y); return; }
       // застрял?
       bot.stuckT += dt;
-      if (bot.stuckT > 2.5) { if (hyp(hero.x - bot.sx, hero.y - bot.sy) < 3) { if (bot.kind === 'cov' && bot.cc >= 0) skip[bot.cc] = 1; if (bot.kind === 'mark' && bot.mark && !path) bot.mark.skipT = time; bot.kind = ''; path = null; } bot.stuckT = 0; bot.sx = hero.x; bot.sy = hero.y; }
+      if (bot.stuckT > 2.5) { if (hyp(hero.x - bot.sx, hero.y - bot.sy) < 3) { if (bot.kind === 'cov' && bot.cc >= 0) skip[bot.cc] = 1; bot.kind = ''; path = null; } bot.stuckT = 0; bot.sx = hero.x; bot.sy = hero.y; }
       bot.re -= dt;
       if (!path) {
         if (bot.kind === 'cov' && bot.cc >= 0 && covN[bot.cc] < COV_MIN) skip[bot.cc] = 1;
