@@ -24,3 +24,10 @@ body.rotated #stage { transform-origin: top left; transform: rotate(90deg) trans
 #nameForm input, #nameForm button { font: inherit; font-size: 1rem; padding: 8px 12px; border-radius: 8px; border: 2px solid #5a4632; background: rgba(42,34,27,.92); color: #f1e6d6; }
 #nameForm input { width: 11em; }
 #nameForm button { background: #ffb02e; color: #1a120a; border-color: #ffb02e; font-weight: bold; cursor: pointer; }
+
+/* Telegram Mini App (в том числе Telegram на компьютере): игра на всё окно, без заголовка и подписей страницы */
+html.tgapp body { overflow: hidden; position: fixed; inset: 0; touch-action: none; }
+html.tgapp main { display: block; padding: 0; }
+html.tgapp h1, html.tgapp .hint { display: none; }
+html.tgapp #stage { position: fixed; left: 0; top: 0; background: #14110f; }
+html.tgapp #stage canvas { border-radius: 0; outline: none; box-shadow: none; }
