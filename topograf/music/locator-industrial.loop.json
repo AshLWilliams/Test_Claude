@@ -1,0 +1,24 @@
+{
+  "id": "locator/industrial",
+  "file": "locator-industrial",
+  "duration": 50.0873,
+  "loop_start": 0,
+  "loop_end": 50.0873,
+  "samplerate": 48000,
+  "bpm": 116.0,
+  "bars": 24,
+  "beats_per_bar": 4,
+  "key": "E minor",
+  "lufs": -16.0,
+  "true_peak_dbtp": -1.47,
+  "seam": 0.913,
+  "crossfade_ms": 517.2,
+  "source_window_s": [
+    63.4507,
+    113.538
+  ],
+  "seed": 1484676646,
+  "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, mechanical and metallic, light industrial, metallic percussion, bass, phrygian mode, not aggressive",
+  "engine": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+  "made_by": "music-generator 0.3.0 (локальный Claude)"
+}

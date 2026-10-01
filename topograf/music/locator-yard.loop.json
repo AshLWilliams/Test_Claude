@@ -1,0 +1,24 @@
+{
+  "id": "locator/yard",
+  "file": "locator-yard",
+  "duration": 55.3808,
+  "loop_start": 0,
+  "loop_end": 55.3808,
+  "samplerate": 48000,
+  "bpm": 104.0,
+  "bars": 24,
+  "beats_per_bar": 4,
+  "key": "E minor",
+  "lufs": -16.0,
+  "true_peak_dbtp": -1.92,
+  "seam": 0.933,
+  "crossfade_ms": 576.9,
+  "source_window_s": [
+    41.968,
+    97.3488
+  ],
+  "seed": 2017260433,
+  "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, detective mood, steady pulse, synth bass, pulsing arpeggios, sparse sonar-like pings",
+  "engine": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+  "made_by": "music-generator 0.3.0 (локальный Claude)"
+}

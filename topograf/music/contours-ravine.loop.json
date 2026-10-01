@@ -1,0 +1,24 @@
+{
+  "id": "contours/ravine",
+  "file": "contours-ravine",
+  "duration": 67.7712,
+  "loop_start": 0,
+  "loop_end": 67.7712,
+  "samplerate": 48000,
+  "bpm": 84.0,
+  "bars": 24,
+  "beats_per_bar": 4,
+  "key": "A minor",
+  "lufs": -17.47,
+  "true_peak_dbtp": -1.0,
+  "seam": 0.962,
+  "crossfade_ms": 714.3,
+  "source_window_s": [
+    9.968,
+    77.7392
+  ],
+  "seed": 806670197,
+  "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, final level, hopeful finale, gradual uplifting rise, minor pentatonic melody, piano and strings",
+  "engine": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+  "made_by": "music-generator 0.3.0 (локальный Claude)"
+}
