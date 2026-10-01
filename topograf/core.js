@@ -16,7 +16,6 @@ let TICKET = PARAMS.get('t');
 const MINIAPP = !!window.TG_APP; // открыта как Telegram Mini App: билет без чата — только мировой рейтинг
 if (!TICKET && window.tgTicket) tgTicket(API, GAME).then(t => { if (t) TICKET = t; });
 const STORAGE_KEY = 'topograf-best', UNLOCK_KEY = 'topograf-unlocked', STARS_KEY = 'topograf-stars', NAME_KEY = 'star-dodger-name';
-const GROUP_URL = 'https://t.me/bearsurveyor';
 let best = 0, unlocked = 1, starsMem = {};
 try { best = +localStorage.getItem(STORAGE_KEY) || 0; unlocked = +localStorage.getItem(UNLOCK_KEY) || 1; starsMem = JSON.parse(localStorage.getItem(STARS_KEY) || '{}'); } catch (e) {}
 const forcedLevel = Math.max(0, (parseInt(PARAMS.get('level'), 10) || 1) - 1); // ?level=N — тренировка с уровня N
@@ -31,7 +30,7 @@ function layout() {
   rotated = IS_TOUCH && vh > vw;
   document.body.classList.toggle('rotated', rotated);
   let sw = rotated ? vh : vw, sh = rotated ? vw : vh;
-  if (!IS_TOUCH) { sw = Math.min(vw * 0.96, 1100, vh * 0.78 * 16 / 9); sh = sw * 9 / 16; }
+  if (!IS_TOUCH && !window.TG_APP) { sw = Math.min(vw * 0.96, 1100, vh * 0.78 * 16 / 9); sh = sw * 9 / 16; } // Mini App (и на компьютере) — на всё окно
   stage.style.width = sw + 'px'; stage.style.height = sh + 'px';
   W = Math.round(Math.max(560, Math.min(860, H * sw / sh)));
   cssScale = Math.min(sw / W, sh / H);
@@ -54,6 +53,10 @@ function toGame(e) {
 function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function fitText(c, str, x, y, size, color, maxW = W - 24) { // строка по центру; если не влезает в ширину — мельче шрифт
+  c.font = `bold ${size}px system-ui, sans-serif`; const w = c.measureText(str).width;
+  text(c, str, x, y, w > maxW ? Math.max(8, size * maxW / w) : size, color);
+}
 function text(c, str, x, y, size, color = '#fff', align = 'center', weight = 'bold') {
   c.fillStyle = color; c.font = `${weight} ${size}px system-ui, sans-serif`; c.textAlign = align; c.fillText(str, x, y);
 }
@@ -200,7 +203,6 @@ function draw() {
     ctx.globalAlpha = 1;
     drawHUD();
   } else drawMenuBackground();
-  groupLink = null;
   if (mode === 'menu') drawMenu();
   if (mode === 'intro') drawIntro();
   if (mode === 'pause') drawPause();
@@ -266,24 +268,18 @@ function drawHUD() {
 }
 
 // ---------- экраны ----------
-const logo = new Image(); logo.src = '../surveyor/img/bear-surveyor.jpg';
-function drawLogo(x, y, r) {
+function drawLogo(x, y, r) { // эмблема игры: знак пункта геодезической сети (треугольник с точкой) на кружке с горизонталями
   ctx.save(); ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.arc(x + 2, y + 3, r + 2, 0, 7); ctx.fill();
+  ctx.fillStyle = '#2a2219'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
   ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.clip();
-  if (logo.complete && logo.naturalWidth) ctx.drawImage(logo, x - r, y - r, r * 2, r * 2); else { ctx.fillStyle = '#c9ad7f'; ctx.fillRect(x - r, y - r, r * 2, r * 2); }
-  ctx.restore(); ctx.strokeStyle = '#c9ad7f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke();
+  ctx.strokeStyle = 'rgba(201,173,127,.35)'; ctx.lineWidth = 1;
+  for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.ellipse(x - r * 0.15, y + r * 0.1, r * 0.3 * i, r * 0.22 * i, -0.3, 0, 7); ctx.stroke(); }
+  ctx.restore();
+  ctx.strokeStyle = '#c9ad7f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke();
+  const s = r * 0.62; ctx.strokeStyle = THEME.accent; ctx.lineWidth = Math.max(2, r * 0.09); ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(x, y - s * 0.75); ctx.lineTo(x + s * 0.85, y + s * 0.55); ctx.lineTo(x - s * 0.85, y + s * 0.55); ctx.closePath(); ctx.stroke();
+  ctx.fillStyle = THEME.accent; ctx.beginPath(); ctx.arc(x, y + s * 0.12, Math.max(2, r * 0.1), 0, 7); ctx.fill();
 }
-let groupLink = null;
-function drawGroupLink(x, y, size) {
-  const label = 'Игра сделана для группы ', url = 't.me/bearsurveyor';
-  ctx.font = `bold ${size}px system-ui, sans-serif`;
-  const w1 = ctx.measureText(label).width, w2 = ctx.measureText(url).width, x0 = x - (w1 + w2) / 2;
-  text(ctx, label, x0, y, size, THEME.dim, 'left'); text(ctx, url, x0 + w1, y, size, '#7ec8ff', 'left');
-  ctx.fillStyle = '#7ec8ff'; ctx.fillRect(x0 + w1, y + 2, w2, 1);
-  groupLink = { x: x0 - 6, y: y - size - 6, w: w1 + w2 + 12, h: size + 14 };
-}
-const inLink = p => groupLink && hit(groupLink, p);
-function openGroup() { try { window.open(GROUP_URL, '_blank'); } catch (e) { location.href = GROUP_URL; } }
 
 function drawMenuBackground() { // ожившая карта: горизонтали медленно плывут, пикеты мигают
   const t = performance.now() / 1000;
@@ -313,8 +309,8 @@ function drawMenu() {
   ctx.fillStyle = 'rgba(15,10,8,.66)'; ctx.fillRect(0, 0, W, H);
   drawLogo(W / 2, 48, 32);
   text(ctx, 'ТОПОГРАФ', W / 2, 116, 34, THEME.accent);
-  text(ctx, 'Шесть видов полевых и камеральных работ — двенадцать участков, каждый раз новых.', W / 2, 142, 13, THEME.ink);
-  text(ctx, 'Пикет · Невязка · Реечник · Трассоискатель · Горизонтали · SLAM', W / 2, 162, 12, THEME.dim);
+  fitText(ctx, 'Шесть видов полевых и камеральных работ — двенадцать участков, каждый раз новых.', W / 2, 142, 13, THEME.ink);
+  fitText(ctx, 'Пикет · Невязка · Реечник · Трассоискатель · Горизонтали · SLAM', W / 2, 162, 12, THEME.dim);
   text(ctx, sandbox ? (IS_TOUCH ? 'Тап — в песочницу' : 'Пробел, Enter или клик — в песочницу') : (IS_TOUCH ? 'Тап — начать смену' : 'Пробел, Enter или клик — начать смену'), W / 2, 198, 15, '#ffd76a');
   const mb = modeButtons();
   button(ctx, mb.shift, 'Смена', { active: !sandbox }); button(ctx, mb.sand, 'Песочница', { active: sandbox });
@@ -326,7 +322,6 @@ function drawMenu() {
     text(ctx, sandbox ? 'песочница — можно играть сколько угодно' : '★'.repeat(st) + '☆'.repeat(3 - st) + (menuLevel ? ' · тренировка — не в рейтинг' : ' · с первого уровня — в рейтинг'), W / 2, 308, 11, THEME.dim);
     button(ctx, a.left, '◀'); button(ctx, a.right, '▶');
   }
-  drawGroupLink(W / 2, H - 14, 12);
 }
 function wrapLines(str, maxW, size) { // перенос строки по ширине
   ctx.font = `600 ${size}px system-ui, sans-serif`;
@@ -400,7 +395,6 @@ function drawEnd() {
   else if (TICKET && MINIAPP) drawTable(globalBoard, 'Мировой рейтинг', ox + 190, ox + 450, y, 5);
   else if (TICKET) { drawTable(globalBoard, 'Мировой рейтинг', ox + 40, ox + 300, y); drawTable(board, 'Рекорды чата', ox + 340, ox + 600, y); }
   else { drawTable(globalBoard, 'Мировой рейтинг', ox + 190, ox + 450, y, 5); if (!nameForm.hidden) text(ctx, 'Введите имя, чтобы попасть в рейтинг', W / 2, y + 126, 12, THEME.dim); }
-  drawGroupLink(W / 2, nameForm.hidden ? H - 12 : H - 62, 11);
 }
 
 // ---------- рейтинги ----------
@@ -451,7 +445,6 @@ canvas.addEventListener('pointerdown', e => {
   const sb = SOUND_BTN();
   if (Math.hypot(p.x - sb.x, p.y - sb.y) < sb.r * 1.8) { Sound.toggleMute(); return; }
   { const mb = MUSIC_BTN(); if (p.x > mb.x - 4 && p.x < mb.x + mb.w + 4 && p.y > mb.y - 4 && p.y < mb.y + mb.h + 10) { toggleMusicSource(); return; } }
-  if (mode !== 'play' && inLink(p)) { openGroup(); return; }
   if (mode === 'menu') {
     const a = menuArrows();
     if (maxSelectable() > 1) { if (hit(a.left, p)) { selectLevel(-1); return; } if (hit(a.right, p)) { selectLevel(1); return; } }

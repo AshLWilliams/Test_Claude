@@ -97,7 +97,7 @@ function layout() {
   rotated = IS_TOUCH && vh > vw;
   document.body.classList.toggle('rotated', rotated);
   let sw = rotated ? vh : vw, sh = rotated ? vw : vh; // размеры сцены в её собственной, горизонтальной системе
-  if (!IS_TOUCH) { sw = Math.min(vw * 0.96, 1100, vh * 0.78 * 16 / 9); sh = sw * 9 / 16; } // компьютер — окно 16:9
+  if (!IS_TOUCH && !window.TG_APP) { sw = Math.min(vw * 0.96, 1100, vh * 0.78 * 16 / 9); sh = sw * 9 / 16; } // Mini App (и на компьютере) — на всё окно // компьютер — окно 16:9
   stage.style.width = sw + 'px'; stage.style.height = sh + 'px';
   W = Math.round(Math.max(560, Math.min(860, H * sw / sh)));
   cssScale = Math.min(sw / W, sh / H);
@@ -1575,6 +1575,10 @@ function updateProjectiles(dt) {
 }
 
 // ---------- отрисовка: общие элементы (одинаковы во всех темах) ----------
+function fitText(str, x, y, size, color, maxW = W - 24) { // строка по центру; если не влезает в ширину — мельче шрифт
+  ctx.font = `bold ${size}px system-ui, sans-serif`; const w = ctx.measureText(str).width;
+  text(str, x, y, w > maxW ? Math.max(8, size * maxW / w) : size, color);
+}
 function text(str, x, y, size, color = '#fff', align = 'center') {
   ctx.fillStyle = color; ctx.font = `bold ${size}px system-ui, sans-serif`; ctx.textAlign = align; ctx.fillText(str, x, y);
 }
@@ -2479,8 +2483,8 @@ function drawMenu() {
   ctx.fillStyle = 'rgba(15,10,8,.72)'; ctx.fillRect(0, 0, W, H);
   drawLogo(W / 2, 50, 34);
   text('LEVEL RUNNER', W / 2, 122, 34, '#ffb02e');
-  text('Геодезист сдаёт объект: 10 участков от городской стройки до плотины ГЭС.', W / 2, 148, 13, '#f1e6d6');
-  text('Ломай бочки, ищи тайники с золотыми чертежами, в конце — главный инспектор.', W / 2, 166, 13, '#f1e6d6');
+  fitText('Геодезист сдаёт объект: 10 участков от городской стройки до плотины ГЭС.', W / 2, 148, 13, '#f1e6d6');
+  fitText('Ломай бочки, ищи тайники с золотыми чертежами, в конце — главный инспектор.', W / 2, 166, 13, '#f1e6d6');
   text(IS_TOUCH ? 'Слева — бег и ▼ (спрыгнуть), справа — прыжок и рейка' : '← → бег · пробел прыжок · J удар рейкой · P пауза', W / 2, 188, 12, '#c9b89e');
   drawGroupLink(W / 2, H - 14, 12);
   const maxSel = Math.max(unlocked, forcedLevel + 1);
