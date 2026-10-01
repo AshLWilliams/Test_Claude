@@ -1,0 +1,24 @@
+{
+  "id": "traverse/forest",
+  "file": "traverse-forest",
+  "duration": 53.3303,
+  "loop_start": 0,
+  "loop_end": 53.3303,
+  "samplerate": 48000,
+  "bpm": 72.0,
+  "bars": 16,
+  "beats_per_bar": 4,
+  "key": "D minor",
+  "lufs": -16.13,
+  "true_peak_dbtp": -1.0,
+  "seam": 0.96,
+  "crossfade_ms": 833.3,
+  "source_window_s": [
+    42.6507,
+    95.981
+  ],
+  "seed": 972381931,
+  "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, mysterious damp forest and swamp, dorian mode, marimba, low flutes, dark ambient pad",
+  "engine": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+  "made_by": "music-generator 0.3.0 (локальный Claude)"
+}

@@ -1,5 +1,5 @@
 'use strict';
-// Звук Level Runner: саундтрек (music/) и синтезированные эффекты (Web Audio, без файлов).
+// Звук Level Runner: музыка (music/: свой трек у участков, меню и босса по manifest.json; запасной — «КиШ Геодезия») и синтезированные эффекты.
 // Браузеры разрешают звук только после действия игрока — всё включается при первом нажатии (unlockAudio).
 const Sound = (() => {
   const MUTE_KEY = 'level-runner-muted';
@@ -9,27 +9,65 @@ const Sound = (() => {
   const MUSIC_VOL = 0.25;  // музыка — фоном, тише эффектов
   const SFX_VOL = 0.9;     // общий уровень эффектов
 
-  // ---------- саундтрек: «КиШ Геодезия» на всех участках и в меню ----------
-  const tracks = ['music/kish-geodeziya.mp3'].map(src => {
-    const a = new Audio(); a.src = src; a.loop = true; a.preload = 'none'; a.volume = MUSIC_VOL;
-    return a;
-  });
-  let current = null, wantPlay = false;
-  function trackFor() { return tracks[0]; }
+  // ---------- саундтрек ----------
+  // Свой трек у каждого участка, меню и боя с боссом — от локального генератора ACE-Step (music/manifest.json,
+  // договор — «Музыка для игр» в CLAUDE.md). Петли бесшовные — играем через Web Audio с loopStart/loopEnd.
+  // Нет трека (или манифеста, или не загрузился) — общий «КиШ Геодезия», как раньше.
+  const fallback = new Audio(); fallback.src = 'music/kish-geodeziya.mp3'; fallback.loop = true; fallback.preload = 'none'; fallback.volume = MUSIC_VOL;
+  const canOgg = !!fallback.canPlayType('audio/ogg; codecs="vorbis"');
+  let manifest, wantPlay = false, wantId = null, cur = null, musicGain = null; const bufs = {};
+  function loadManifest() {
+    manifest = null; // идёт загрузка
+    fetch('music/manifest.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null).then(m => {
+      const map = {};
+      for (const r of (m && Array.isArray(m.tracks) ? m.tracks : [])) {
+        const key = r.use === 'level' ? 'L' + r.level : r.use; // L1…L10, menu, boss
+        if (key && r.files) map[key] = r;
+      }
+      manifest = map; syncMusic();
+    });
+  }
+  function loadBuf(key) {
+    const r = manifest[key]; if (bufs[key] !== undefined) return; bufs[key] = 'loading';
+    fetch('music/' + (canOgg && r.files.ogg ? r.files.ogg : r.files.mp3 || r.files.ogg)).then(x => x.arrayBuffer())
+      .then(b => new Promise((ok, no) => ac.decodeAudioData(b, ok, no))).then(buf => { bufs[key] = buf; syncMusic(); }).catch(() => { bufs[key] = null; syncMusic(); });
+  }
+  function stopCur(fade = 0.5) {
+    if (!cur) return; const c = cur; cur = null; const t = ac.currentTime;
+    c.g.gain.cancelScheduledValues(t); c.g.gain.setValueAtTime(c.g.gain.value, t); c.g.gain.linearRampToValueAtTime(0, t + fade);
+    try { c.s.stop(t + fade + 0.05); } catch (e) {}
+  }
   function syncMusic() {
-    for (const t of tracks) if (t !== current && !t.paused) t.pause();
-    if (!current) return;
     const should = wantPlay && unlocked && !muted && !document.hidden;
-    if (should && current.paused) current.play().catch(() => {});
-    if (!should && !current.paused) current.pause();
+    let useFile = false;
+    if (ac && manifest === undefined) loadManifest();
+    if (ac && manifest && wantId && manifest[wantId]) {
+      const b = bufs[wantId];
+      if (b === undefined) loadBuf(wantId);
+      if (b !== null) useFile = true; // грузится или готов — общий трек не включаем
+      if (b && b !== 'loading' && should) {
+        if (!cur || cur.id !== wantId) {
+          stopCur(); if (ac.state === 'suspended') ac.resume();
+          const r = manifest[wantId], s = ac.createBufferSource(), g = ac.createGain();
+          s.buffer = b; s.loop = true; s.loopStart = Math.max(0, +r.loop_start_s || 0); s.loopEnd = Math.min(b.duration, +r.loop_end_s || b.duration);
+          g.gain.setValueAtTime(0, ac.currentTime); g.gain.linearRampToValueAtTime(1, ac.currentTime + 0.6);
+          s.connect(g); g.connect(musicGain); s.start(); cur = { id: wantId, s, g };
+        }
+      } else stopCur(0.25);
+    } else stopCur();
+    const fb = should && !useFile && !(ac && manifest === null); // пока манифест грузится — тишина, без «КиШ» на секунду
+    if (fb && fallback.paused) fallback.play().catch(() => {});
+    if (!fb && !fallback.paused) fallback.pause();
   }
-  function music(level, playing) { // вызывается движком при смене участка и режима
-    const t = trackFor(level);
-    if (t !== current) { if (current) current.pause(); current = t; }
+  let lastKey = '';
+  function music(level, playing, where) { // вызывается движком каждый кадр: участок, играть ли, { menu, boss }
+    wantId = where && where.menu ? 'menu' : where && where.boss ? 'boss' : 'L' + (level + 1);
+    if (manifest && wantId === 'boss' && !manifest.boss) wantId = 'L' + (level + 1);
     wantPlay = playing;
-    syncMusic();
+    const k = wantId + (wantPlay ? 1 : 0) + (muted ? 1 : 0) + (manifest ? 1 : 0); // без лишней работы каждый кадр
+    if (k !== lastKey) { lastKey = k; syncMusic(); }
   }
-  document.addEventListener('visibilitychange', syncMusic); // свернули вкладку/Telegram — музыка на паузе
+  document.addEventListener('visibilitychange', () => { lastKey = ''; syncMusic(); }); // свернули вкладку/Telegram — музыка на паузе
 
   function unlock() {
     if (unlocked) return;
@@ -39,6 +77,7 @@ const Sound = (() => {
       // эффекты громкие, поэтому идут через компрессор — при наложении не хрипят
       const comp = ac.createDynamicsCompressor(); comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4; comp.connect(ac.destination);
       master = ac.createGain(); master.gain.value = SFX_VOL; master.connect(comp);
+      musicGain = ac.createGain(); musicGain.gain.value = MUSIC_VOL; musicGain.connect(ac.destination); // музыка мимо компрессора, как раньше <audio>
       noiseBuf = ac.createBuffer(1, ac.sampleRate * 0.6, ac.sampleRate);
       const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     } catch (e) { ac = null; }
@@ -139,7 +178,7 @@ const Sound = (() => {
   }
 
   return {
-    play, music, unlock, toggleMute, get muted() { return muted; },
+    play, music, unlock, toggleMute, get muted() { return muted; }, get musicNow() { return cur ? cur.id : !fallback.paused ? 'КиШ' : null; },
     get state() { return current ? { track: current.src.split('/').pop(), playing: !current.paused, time: +current.currentTime.toFixed(1) } : null; }, // для проверок
   };
 })();

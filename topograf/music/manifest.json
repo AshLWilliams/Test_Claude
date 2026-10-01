@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "generated": "2026-10-01",
+  "engine": "ACE-Step 1.5",
+  "tracks": {
+    "menu": {
+      "ogg": "menu.ogg",
+      "mp3": "menu.mp3",
+      "duration": 55.3837,
+      "loop_start": 0,
+      "loop_end": 55.3837,
+      "bpm": 104.0,
+      "bars": 24,
+      "lufs": -16.0,
+      "seed": 2004354720,
+      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, bright early morning, getting ready to head out, light and optimistic, acoustic guitar, light percussion, glockenspiel"
+    },
+    "piket/village": {
+      "ogg": "piket-village.ogg",
+      "mp3": "piket-village.mp3",
+      "duration": 57.6,
+      "loop_start": 0,
+      "loop_end": 57.6,
+      "bpm": 100.0,
+      "bars": 24,
+      "lufs": -16.0,
+      "seed": 1364568629,
+      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, rural houses with yards, dogs and vegetable gardens, cheerful and homely, accordion lead, balalaika and mandolin plucking, light beat"
+    },
+    "piket/park": {
+      "ogg": "piket-park.ogg",
+      "mp3": "piket-park.mp3",
+      "duration": 65.4506,
+      "loop_start": 0,
+      "loop_end": 65.4506,
+      "bpm": 88.0,
+      "bars": 24,
+      "lufs": -16.0,
+      "seed": 2044032313,
+      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, calm city park with a pond, peaceful, dreamy lydian mode, harp, flute, soft pad"
+    },
+    "traverse/block": {
+      "ogg": "traverse-block.ogg",
+      "mp3": "traverse-block.mp3",
+      "duration": 59.9999,
+      "loop_start": 0,
+      "loop_end": 59.9999,
+      "bpm": 96.0,
+      "bars": 24,
+      "lufs": -16.0,
+      "seed": 926339316,
+      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, focused and precise city walk, piano ostinato, pizzicato strings, quiet urban beat"
+    },
+    "traverse/forest": {
+      "ogg": "traverse-forest.ogg",
+      "mp3": "traverse-forest.mp3",
+      "duration": 53.3303,
+      "loop_start": 0,
+      "loop_end": 53.3303,
+      "bpm": 72.0,
+      "bars": 16,
+      "lufs": -16.13,
+      "seed": 972381931,
+      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, mysterious damp forest and swamp, dorian mode, marimba, low flutes, dark ambient pad"
+    },
+    "staffman/road": {
+      "ogg": "staffman-road.ogg",
+      "mp3": "staffman-road.mp3",
+      "duration": 58.1809,
+      "loop_start": 0,
+      "loop_end": 58.1809,
+      "bpm": 132.0,
+      "bars": 32,
+      "lufs": -16.1,
+      "seed": 933738642,
+      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, upbeat and on the move, mixolydian folk rock instrumental, acoustic guitar, bass, live drums"
+    },
+    "staffman/river": {
+      "ogg": "staffman-river.ogg",
+      "mp3": "staffman-river.mp3",
+      "duration": 70.1283,
+      "loop_start": 0,
+      "loop_end": 70.1283,
+      "bpm": 110.0,
+      "bars": 32,
+      "lufs": -16.0,
+      "seed": 1711240431,
+      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, rippling river water, bright and light, major pentatonic melody, ukulele, koto, bottle percussion, soft pad"
+    },
+    "locator/yard": {
+      "ogg": "locator-yard.ogg",
+      "mp3": "locator-yard.mp3",
+      "duration": 55.3808,
+      "loop_start": 0,
+      "loop_end": 55.3808,
+      "bpm": 104.0,
+      "bars": 24,
+      "lufs": -16.0,
+      "seed": 2017260433,
+      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, detective mood, steady pulse, synth bass, pulsing arpeggios, sparse sonar-like pings"
+    },
+    "locator/industrial": {
+      "ogg": "locator-industrial.ogg",
+      "mp3": "locator-industrial.mp3",
+      "duration": 50.0873,
+      "loop_start": 0,
+      "loop_end": 50.0873,
+      "bpm": 116.0,
+      "bars": 24,
+      "lufs": -16.0,
+      "seed": 1484676646,
+      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, mechanical and metallic, light industrial, metallic percussion, bass, phrygian mode, not aggressive"
+    },
+    "contours/hill": {
+      "ogg": "contours-hill.ogg",
+      "mp3": "contours-hill.mp3",
+      "duration": 48.0,
+      "loop_start": 0,
+      "loop_end": 48.0,
+      "bpm": 80.0,
+      "bars": 16,
+      "lufs": -18.86,
+      "seed": 1560255883,
+      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, thoughtful and quiet, solo piano, warm strings"
+    },
+    "contours/ravine": {
+      "ogg": "contours-ravine.ogg",
+      "mp3": "contours-ravine.mp3",
+      "duration": 67.7712,
+      "loop_start": 0,
+      "loop_end": 67.7712,
+      "bpm": 84.0,
+      "bars": 24,
+      "lufs": -17.47,
+      "seed": 806670197,
+      "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, final level, hopeful finale, gradual uplifting rise, minor pentatonic melody, piano and strings"
+    }
+  },
+  "jingles": {
+    "clear": {
+      "ogg": "jingle-clear.ogg",
+      "mp3": "jingle-clear.mp3",
+      "duration": 4.89
+    },
+    "win": {
+      "ogg": "jingle-win.ogg",
+      "mp3": "jingle-win.mp3",
+      "duration": 6.1
+    }
+  }
+}

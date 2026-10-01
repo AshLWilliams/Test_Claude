@@ -1,0 +1,24 @@
+{
+  "id": "piket/park",
+  "file": "piket-park",
+  "duration": 65.4506,
+  "loop_start": 0,
+  "loop_end": 65.4506,
+  "samplerate": 48000,
+  "bpm": 88.0,
+  "bars": 24,
+  "beats_per_bar": 4,
+  "key": "F major",
+  "lufs": -16.0,
+  "true_peak_dbtp": -2.48,
+  "seam": 0.939,
+  "crossfade_ms": 681.8,
+  "source_window_s": [
+    29.0613,
+    94.5119
+  ],
+  "seed": 2044032313,
+  "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, calm city park with a pond, peaceful, dreamy lydian mode, harp, flute, soft pad",
+  "engine": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+  "made_by": "music-generator 0.3.0 (локальный Claude)"
+}

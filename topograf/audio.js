@@ -8,12 +8,35 @@ const Sound = (() => {
   // Источник музыки: 'synth' — синтез music.js (в конце уровня ускоряется и добавляет напряжённый слой),
   // 'files' — петли из music/ (их делает локальный генератор ACE-Step; список — music/manifest.json), в конце уровня — чуть быстрее.
   const SRC_KEY = 'topograf-music-src';
-  let source = 'synth'; try { if (localStorage.getItem(SRC_KEY) === 'files') source = 'files'; } catch (e) {}
+  let source = 'files'; try { if (localStorage.getItem(SRC_KEY) === 'synth') source = 'synth'; } catch (e) {} // по умолчанию — треки локального генератора
   let manifest, manifestReq = null, fileCur = null; const buffers = {}, loading = {};
   const canOgg = (() => { try { return !!document.createElement('audio').canPlayType('audio/ogg; codecs="vorbis"'); } catch (e) { return false; } })();
   function loadManifest() {
     if (manifestReq) return manifestReq;
-    return (manifestReq = fetch('music/manifest.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null).then(m => (manifest = m && m.tracks ? m : null)));
+    return (manifestReq = fetch('music/manifest.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null)
+      .then(m => { manifest = normalize(m); if (manifest && ac) for (const id in manifest.jingles) loadJingle(id); return manifest; }));
+  }
+  // манифест — словарь по ключу участка (как прислан для «Топографа») или список, как у Level Runner (tracks: [{ id, key|use, files, loop_start_s, … }])
+  function normalize(m) {
+    if (!m || !m.tracks) return null;
+    if (!Array.isArray(m.tracks)) return { tracks: m.tracks, jingles: m.jingles || {} };
+    const out = { tracks: {}, jingles: {} };
+    for (const r of m.tracks) {
+      const f = r.files || r, e = { ogg: f.ogg, mp3: f.mp3, duration: r.duration_s ?? r.duration, loop_start: r.loop_start_s ?? r.loop_start, loop_end: r.loop_end_s ?? r.loop_end };
+      if (r.use === 'jingle') out.jingles[r.key || r.id] = e; else out.tracks[r.key || (r.use === 'menu' ? 'menu' : r.id)] = e;
+    }
+    return out;
+  }
+  const jingleBuf = {};
+  function loadJingle(id) {
+    const j = manifest.jingles[id]; if (!j || jingleBuf[id] !== undefined) return; jingleBuf[id] = null;
+    fetch('music/' + (canOgg && j.ogg ? j.ogg : j.mp3 || j.ogg)).then(r => r.arrayBuffer()).then(b => new Promise((ok, no) => ac.decodeAudioData(b, ok, no)))
+      .then(buf => { jingleBuf[id] = buf; }).catch(() => {});
+  }
+  function playJingle(id) { // джингл вместо синтезированной фанфары, если выбраны файлы и он загружен
+    if (source !== 'files' || !jingleBuf[id]) return false;
+    const s = ac.createBufferSource(), g = ac.createGain(); s.buffer = jingleBuf[id]; g.gain.value = 0.55;
+    s.connect(g); g.connect(musicOut); s.start(); return true;
   }
   function loadBuffer(id) {
     const tr = manifest && manifest.tracks[id]; if (!tr || loading[id]) return;
@@ -110,8 +133,9 @@ const Sound = (() => {
     if (muted || !ac || !SFX[name]) return;
     const now = performance.now(); if (now - (lastPlayed[name] || 0) < 45) return; lastPlayed[name] = now;
     if (ac.state === 'suspended') ac.resume();
+    if ((name === 'clear' || name === 'win') && playJingle(name)) return;
     try { SFX[name](); } catch (e) {}
   }
   function toggleMute() { muted = !muted; try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch (e) {} }
-  return { play, music, unlock, toggleMute, toggleSource, get muted() { return muted; }, get source() { return source; }, get hasFiles() { return !!manifest; }, names: Object.keys(SFX) };
+  return { play, music, unlock, toggleMute, toggleSource, get muted() { return muted; }, get source() { return source; }, get musicNow() { return fileCur ? fileCur.id : null; }, get hasFiles() { return !!manifest; }, names: Object.keys(SFX) };
 })();

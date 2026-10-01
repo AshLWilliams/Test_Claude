@@ -2711,7 +2711,7 @@ function frame(now) {
   let dt = Math.min(0.05, (now - last) / 1000); last = now;
   while (dt > 0) { const step = Math.min(dt, 1 / 60); update(step); dt -= step; } // мелкие шаги — стабильная физика
   draw();
-  Sound.music(levelIdx, mode !== 'pause'); // музыка участка; на паузе молчит
+  Sound.music(levelIdx, mode !== 'pause', { menu: mode === 'menu' || mode === 'over' || mode === 'win', boss: !!(arena && arena.active && !arena.boss.dead) }); // музыка участка, меню или босса; на паузе молчит
   requestAnimationFrame(frame);
 }
 for (const ev of ['pointerdown', 'keydown', 'touchstart']) addEventListener(ev, () => Sound.unlock(), { capture: true, passive: true }); // звук разрешается первым нажатием
