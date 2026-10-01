@@ -1029,7 +1029,16 @@
       let lo = Infinity, hi = -Infinity; // свои границы у каждого куска — меньше пустой заливки
       for (let x = x0 - 24; x <= x1 + 24; x += 2) { const y = gy(x); if (y < lo) lo = y; if (y > hi) hi = y; }
       const top = Math.max(yTopC, Math.floor(lo - 64)), bot = Math.min(yBotC, Math.ceil(hi + 86));
-      chunks.push({ x0, x1, top, bot, layer: layer((x1 - x0 + 2) * Z, (bot - top) * Z, c => { c.scale(Z, Z); c.translate(-x0 + 1, -top); drawChunk(c, x0, x1, bot); }) });
+      const ly = layer((x1 - x0 + 2) * Z, (bot - top) * Z, c => { c.scale(Z, Z); c.translate(-x0 + 1, -top); drawChunk(c, x0, x1, bot); });
+      // пустые строки сверху не рисуем: ищем первую строку с непрозрачными пикселями
+      let row = 0;
+      try {
+        const cv = ly.canvas, d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data, cw4 = cv.width * 4;
+        scan: for (; row < cv.height; row++) for (let i = row * cw4 + 3, e = i + cw4; i < e; i += 4) if (d[i]) break scan;
+        row = Math.max(0, row - 1);
+      } catch (e) { row = 0; }
+      const sk = row * (bot - top) / ly.canvas.height;
+      chunks.push({ x0, x1, top: top + sk, bot, sy: row, layer: ly });
     }
 
     // ---------- спрайты: деревья у трассы, крапива и кусты на трассе, камыш у воды ----------
@@ -1069,6 +1078,7 @@
       const g = c.createLinearGradient(0, FY - 40, 0, FH); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, mix(TOD.haze, '#ffffff', 0.2)); c.fillStyle = g; c.globalAlpha = 0.35; c.fillRect(0, FY - 40, FW, FH); c.globalAlpha = 1;
     }, 1);
     let distCar = null;
+    const midLow = mix('#8fae5a', TOD.haze, 0.3);
     const mid = layer(MW, MH, c => {
       const Rm = rngOf(seed ^ 0x3131);
       const gl = x => MY + 6 * Math.sin(x * 0.004 + 1) + 3 * Math.sin(x * 0.013);
@@ -1497,21 +1507,21 @@
     }
     function draw(ctx) {
       const W = api.W, H = api.H, TOP = api.TOP, VW = W / Z;
-      const SK = window.__skip || {}; const PR = window.__prof; let pt = performance.now(); const mk = n => { if (PR) { const q = performance.now(); PR[n] = (PR[n] || 0) + q - pt; pt = q; } };
       if (!skyG) { skyG = ctx.createLinearGradient(0, TOP, 0, H * 0.72); skyG.addColorStop(0, TOD.sky0); skyG.addColorStop(1, TOD.sky1); }
       // экономим заливку: небо — до сплошной части дальнего плана, дальний — до среднего, средний — до верха рельефа
       const fy = TOP + 118 - FY - (cam.y - cam0y) * Z * 0.12, my = TOP + 160 - MY - (cam.y - cam0y) * Z * 0.3;
-      let gMin = 1e9; for (let x = cam.x - 4; x < cam.x + VW + 8; x += 5) gMin = Math.min(gMin, gy(x));
-      const gTop = TOP + (gMin - cam.y) * Z + 1;
-      if(!SK.sky){ctx.fillStyle = skyG; ctx.fillRect(0, TOP, W, Math.min(H, gTop, fy + FY - 5) - TOP);}
-      if(!SK.sun)ctx.drawImage(sunSpr.canvas, W * TOD.sx - 60, TOP + 18 + TOD.sy * 160 - 60, 120, 120);
-      if(!SK.clouds)for (const cl of clouds) { const x = ((cl.x + clock * cl.v - cam.x * Z * 0.05) % (W + 320) + W + 320) % (W + 320) - 160; ctx.drawImage(cl.spr.canvas, x, TOP + cl.y - 16, cl.w, cl.h); }
+      let gMax = -1e9; for (let x = cam.x - 12; x < cam.x + VW + 12; x += 4) gMax = Math.max(gMax, gy(x));
+      const gTop = TOP + (gMax - cam.y) * Z + 2; // ниже самой низкой точки рельефа в кадре всё закрыто грунтом
+      ctx.fillStyle = skyG; ctx.fillRect(0, TOP, W, Math.min(H, gTop, fy + FY - 5) - TOP);
+      ctx.drawImage(sunSpr.canvas, W * TOD.sx - 60, TOP + 18 + TOD.sy * 160 - 60, 120, 120);
+      for (const cl of clouds) { const x = ((cl.x + clock * cl.v - cam.x * Z * 0.05) % (W + 320) + W + 320) % (W + 320) - 160; ctx.drawImage(cl.spr.canvas, x, TOP + cl.y - 16, cl.w, cl.h); }
       ctx.strokeStyle = 'rgba(40,40,50,.55)'; ctx.lineWidth = 1; ctx.beginPath();
       for (const b of birds) { const f = Math.sin(clock * 9 + b.ph) * 2.2; ctx.moveTo(b.x - 4, TOP + b.y - f); ctx.quadraticCurveTo(b.x - 1.5, TOP + b.y - 1, b.x, TOP + b.y); ctx.quadraticCurveTo(b.x + 1.5, TOP + b.y - 1, b.x + 4, TOP + b.y - f); }
-      ctx.stroke(); mk('sky');
-      if(!SK.far)blit(ctx, far, -(cam.x - XA) * Z * PF, fy, FW, FH, W, Math.min(gTop, my + MY - 10));
+      ctx.stroke();
+      blit(ctx, far, -(cam.x - XA) * Z * PF, fy, FW, FH, W, Math.min(gTop, my + MY - 10));
       const mox = -(cam.x - XA) * Z * PM;
-      if(!SK.mid)blit(ctx, mid, mox, my, MW, MH, W, gTop); mk('strips');
+      blit(ctx, mid, mox, my, MW, MH, W, gTop);
+      if (gTop > my + MH) { ctx.fillStyle = midLow; ctx.fillRect(0, my + MH - 1, W, gTop - my - MH + 1); }
       if (distCar) { // машина на дальней дороге
         const cx = mox + distCar.x, cy = my + distCar.gl(distCar.x) + 12.5;
         if (cx > -10 && cx < W + 10) { ctx.fillStyle = '#c0392b'; ctx.fillRect(cx - 4, cy - 2.4, 8, 2.4); ctx.fillRect(cx - 2, cy - 4, 4, 1.8); ctx.fillStyle = '#9ccbe3'; ctx.fillRect(cx - 1.4, cy - 3.6, 2.6, 1.2); ctx.fillStyle = '#222'; ctx.fillRect(cx - 3, cy - 0.4, 1.4, 1); ctx.fillRect(cx + 1.6, cy - 0.4, 1.4, 1); }
@@ -1520,20 +1530,20 @@
       ctx.save();
       ctx.translate(-cam.x * Z, TOP - cam.y * Z); ctx.scale(Z, Z);
       const x0 = cam.x - 12, x1 = cam.x + VW + 12;
-      if(!SK.trees)for (const tr of trees) if (tr.x + tr.hw > x0 && tr.x - tr.hw < x1) ctx.drawImage(tr.spr.canvas, tr.x - tr.hw, gy(tr.x) + 2 - tr.h - 4, tr.hw * 2, tr.h + 8);
-      mk('trees'); if(!SK.chunks)for (const ch of chunks) if (ch.x1 + 1 > x0 && ch.x0 - 1 < x1) { ctx.drawImage(ch.layer.canvas, ch.x0 - 1, ch.top, ch.x1 - ch.x0 + 2, ch.bot - ch.top); ctx.fillStyle = DEEP; ctx.fillRect(ch.x0 - 0.5, ch.bot - 0.5, ch.x1 - ch.x0 + 1, 400); } mk('chunks');
-      drawWater(ctx, x0, x1); mk('water');
-      drawStakes(ctx, x0, x1); mk('stakes');
-      if(!SK.station)drawStation(ctx); mk('station');
+      for (const tr of trees) if (tr.x + tr.hw > x0 && tr.x - tr.hw < x1) ctx.drawImage(tr.spr.canvas, tr.x - tr.hw, gy(tr.x) + 2 - tr.h - 4, tr.hw * 2, tr.h + 8);
+      for (const ch of chunks) if (ch.x1 + 1 > x0 && ch.x0 - 1 < x1) { ctx.drawImage(ch.layer.canvas, 0, ch.sy, ch.layer.canvas.width, ch.layer.canvas.height - ch.sy, ch.x0 - 1, ch.top, ch.x1 - ch.x0 + 2, ch.bot - ch.top); ctx.fillStyle = DEEP; ctx.fillRect(ch.x0 - 0.5, ch.bot - 0.5, ch.x1 - ch.x0 + 1, 400); }
+      drawWater(ctx, x0, x1);
+      drawStakes(ctx, x0, x1);
+      drawStation(ctx);
       drawRay(ctx);
-      if(!SK.hero)drawHero(ctx); mk('hero');
-      if(!SK.front)drawFront(ctx, x0, x1); mk('front');
+      drawHero(ctx);
+      drawFront(ctx, x0, x1);
       ctx.restore();
-      if(!SK.labels)drawLabels(ctx, W); mk('labels');
+      drawLabels(ctx, W);
       drawSpeech(ctx, W);
       drawOffscreen(ctx, W, H);
-      if(!SK.plan)drawPlan(ctx, W); mk('plan');
-      if(!SK.levelui)drawLevelUI(ctx, W); mk('levelui');
+      drawPlan(ctx, W);
+      drawLevelUI(ctx, W);
       if (banner) {
         ctx.font = 'bold 12px system-ui, sans-serif';
         const tw = Math.min(W - 24, ctx.measureText(banner.text).width + 20), a = Math.min(1, banner.t / 0.3);
@@ -1541,7 +1551,7 @@
         ctx.save(); ctx.beginPath(); ctx.rect(W / 2 - tw / 2 + 4, TOP + 32, tw - 8, 22); ctx.clip();
         api.text(ctx, banner.text, W / 2, TOP + 47, 12, banner.color); ctx.restore(); ctx.globalAlpha = 1;
       }
-      mk('banner'); if(!SK.buttons)drawButtons(ctx); mk('buttons');
+      drawButtons(ctx);
     }
     function drawWater(c, x0, x1) {
       if (!w.water) return;
