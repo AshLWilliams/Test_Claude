@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="screen-orientation" content="landscape">
+<title>Топограф</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>🗺 Топограф</h1>
+  <!-- сцена: на компьютере — окно 16:9, на телефоне — весь экран; в вертикальном положении поворачивается на 90° -->
+  <div id="stage">
+    <canvas id="game"></canvas>
+    <form id="nameForm" hidden>
+      <input id="nameInput" maxlength="20" placeholder="Ваше имя" autocomplete="nickname">
+      <button>В рейтинг</button>
+    </form>
+  </div>
+  <p class="hint">Мышь или палец — всё управление · P — пауза · M — звук</p>
+  <p class="hint credit"><img src="../surveyor/img/bear-surveyor.jpg" alt="Bear Surveyor" width="28" height="28"> Игра сделана для группы <a href="https://t.me/bearsurveyor" target="_blank" rel="noopener">Bear Surveyor</a></p>
+  <p class="hint"><a href="../surveyor/">Level Runner</a> · <a href="../">Star Dodger</a></p>
+</main>
+<script src="audio.js"></script>
+<script src="core.js"></script>
+<script src="symbols.js"></script>
+<!-- виды работ: каждый — отдельный файл, в каждом два варианта участка (см. MODES.md) -->
+<script src="modes/1-piket.js"></script>
+<script src="modes/2-traverse.js"></script>
+<script src="modes/3-staffman.js"></script>
+<script src="modes/4-locator.js"></script>
+<script src="modes/5-contours.js"></script>
+<script>startGame();</script>
+</body>
+</html>
