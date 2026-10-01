@@ -503,6 +503,14 @@ function generateLevel(s) {
   if (!mid.length) mid = spots.filter(o => o.p > 0.12);
   let gpsSpot = null;
   if (mid.length) { gpsSpot = pick(mid); spawnEnemy('gps', gpsSpot.x0 + gpsSpot.w * 0.6, gpsSpot.y, { groundY: gpsSpot.y, variant: GPS_VARIANTS[levelIdx % GPS_VARIANTS.length] }); }
+  // особые персонажи участка (THEME_SPECIALS): по одному каждого вида
+  const used = new Set([gpsSpot]);
+  for (const type of (G.specials || THEME_SPECIALS[theme.id] || [])) {
+    const cand = spots.filter(o => !used.has(o) && o.p > 0.15 && o.p < 0.9 && o.w > 220 && !enemies.some(h => h.x > o.x0 && h.x < o.x0 + o.w));
+    const o = cand.length ? pick(cand) : spots.find(q => !used.has(q) && q.w > 200);
+    if (!o) continue; used.add(o);
+    spawnEnemy(type, o.x0 + o.w * (type === 'craneHook' ? 0.5 : 0.65), o.y, { groundY: o.y });
+  }
   if (G.yeti) { // снежный человек в сугробе — один на участок
     const ys = spots.filter(o => o !== gpsSpot && o.p > 0.2 && o.p < 0.85 && o.w > 200 && !enemies.some(h => h.x > o.x0 && h.x < o.x0 + o.w));
     const o = ys.length ? pick(ys) : spots.find(q => q !== gpsSpot && q.w > 200);
@@ -657,6 +665,12 @@ function drawSay(e, ctx, color) { // облачко с репликой над �
   ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.fillText(e.say, 0, y);
   ctx.restore();
 }
+const TAPE_LINES = ['Сейчас обмерим!', 'Межевание, не шевелись!', 'Граница участка — тут!', 'Точка по рулетке, без всяких GPS!'];
+const ESTIMATE_LINES = ['Пересчитаем по новой расценке!', 'Это в смету не входит!', 'Удорожание на двадцать процентов!', 'Подпиши допсоглашение!'];
+const MIRROR_LINES = ['Повторяю измерение!', 'Невязка в пределах допуска!', 'Контроль — второй приём!', 'Прямо и обратно!'];
+let heroJumpT = -1, heroAtkT = -1; // когда герой последний раз прыгал и бил — двойник повторяет
+function place(e) { const a = Math.sin(e.ph) * 0.95; e.x = e.ax + Math.sin(a) * e.L - e.w / 2; e.y = e.ay + Math.cos(a) * e.L; } // бадья на тросе
+function drawEstimateSheet(p, ctx) { ctx.fillStyle = '#f4f1e6'; ctx.fillRect(-7, -8, 14, 16); ctx.fillStyle = '#8a9aa8'; for (let y = -4; y < 6; y += 3) ctx.fillRect(-5, y, 10, 0.8); ctx.fillStyle = '#c62828'; ctx.font = 'bold 4px system-ui'; ctx.textAlign = 'center'; ctx.fillText('СМЕТА', 0, -5); }
 const pickLine = (list, e) => e ? list[(e.lineI = (e.lineI || 0) + 1) % list.length] : list[Math.floor(Math.random() * list.length)];
 
 const ENGINE_ENEMIES = {
@@ -879,6 +893,184 @@ const ENGINE_ENEMIES = {
       drawSay(e, ctx, '#1e5bb8');
     },
   },
+  // кадастровый инженер: кидает рулетку как лассо и подтягивает героя к себе; рейка рвёт ленту
+  tapeMeasurer: {
+    w: 18, h: 40, hp: 3, pts: 350, touchHurts: false, hitColor: '#ffe082', deathColor: '#f2c230',
+    init(e) { e.state = 'walk'; e.st = 0; e.cd = 1.5; e.vx = 0; e.vy = 0; e.onG = true; e.tape = 0; e.say = null; e.sayT = 0; e.lineI = 0; },
+    onHit(e) { if (e.state === 'cast' || e.state === 'reel') { e.state = 'stun'; e.st = 1.2; e.tape = 0; popup(e.x + e.w / 2, e.y - 20, 'Рулетка порвана!', '#ffe082'); } },
+    onDeath(e) { popup(e.x + e.w / 2, e.y - 30, 'Межевание отменяется…', '#ffe082'); },
+    update(e, dt) {
+      const P = player, dx = api.dx(e), adx = Math.abs(dx), toP = Math.sign(dx) || 1, level = Math.abs(P.y + P.h - (e.y + e.h)) < 30;
+      e.st -= dt; e.cd -= dt; e.sayT -= dt;
+      let want = 0, speed = 120;
+      if (e.state === 'walk') { // держит дистанцию
+        if (adx > 600) want = 0; else { e.dir = toP; want = adx < 130 ? -toP : adx > 230 ? toP : 0; }
+        if (e.cd <= 0 && level && adx > 60 && adx < 240 && e.onG) { e.state = 'aim'; e.st = 0.45; e.dir = toP; e.say = pickLine(TAPE_LINES, e); e.sayT = 1.6; Sound.play('tape'); }
+      } else if (e.state === 'aim') { if (e.st <= 0) { e.state = 'cast'; e.tape = 0; } }
+      else if (e.state === 'cast') { // лента вылетает вперёд
+        e.tape += 520 * dt;
+        const tx = e.x + e.w / 2 + e.dir * e.tape, ty = e.y + 18;
+        if (P.inv <= 0 && tx > P.x - 4 && tx < P.x + P.w + 4 && ty > P.y && ty < P.y + P.h) { e.state = 'reel'; e.st = 0.55; Sound.play('tape'); popup(P.x + P.w / 2, P.y - 14, 'Попался на рулетку!', '#ffe082'); }
+        else if (e.tape > 250 || solidAt(tx, ty)) { e.state = 'retract'; }
+      } else if (e.state === 'reel') { // подтягивает героя
+        const pull = -e.dir * 260 * dt; moveX(P, pull); P.vx = 0;
+        e.tape = Math.max(10, Math.abs(P.x + P.w / 2 - (e.x + e.w / 2)));
+        if (e.st <= 0 || e.tape < 26) { hurtPlayer(e.x + e.w / 2, 0.5); e.state = 'retract'; }
+      } else if (e.state === 'retract') { e.tape -= 700 * dt; if (e.tape <= 0) { e.tape = 0; e.state = 'walk'; e.cd = rand(1.8, 2.8); } }
+      else if (e.state === 'stun') { if (e.st <= 0) { e.state = 'walk'; e.cd = 2; } }
+      const vx = walkerStep(e, dt, want, speed, false);
+      if (want && !vx) e.cd = Math.min(e.cd, 0.2);
+      if (e.y > deathLimit(e)) e.dead = true;
+    },
+    draw(e, ctx) {
+      const run = e.onG && Math.abs(e.vxNow || 0) > 10, sw = run ? Math.sin(e.t * 14) * 0.6 : 0;
+      ctx.strokeStyle = '#2b3445'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+      for (const s of [sw, -sw]) { ctx.beginPath(); ctx.moveTo(0, -17); ctx.lineTo(Math.sin(s) * 11, -2); ctx.stroke(); }
+      ctx.fillStyle = '#1e5bb8'; ctx.fillRect(-7, -36, 14, 20); ctx.fillStyle = '#c6ff00'; ctx.fillRect(-7, -35, 14, 13); ctx.fillStyle = '#fff'; ctx.fillRect(-7, -28, 14, 2);
+      ctx.fillStyle = '#f1c27d'; ctx.beginPath(); ctx.arc(1, -42, 6, 0, 7); ctx.fill(); ctx.fillStyle = '#222'; ctx.fillRect(3, -44, 2, 2);
+      ctx.fillStyle = '#1e5bb8'; ctx.beginPath(); ctx.arc(1, -45, 6.5, Math.PI, 0); ctx.fill(); ctx.fillRect(3, -46, 9, 2); // кепка
+      ctx.fillStyle = '#f2c230'; ctx.fillRect(4, -24, 9, 9); ctx.fillStyle = '#222'; ctx.fillRect(6, -22, 5, 5); // корпус рулетки
+      if (e.tape > 0) { // жёлтая лента с делениями
+        ctx.fillStyle = '#ffd600'; ctx.fillRect(12, -19, e.tape - 10, 3);
+        ctx.fillStyle = '#222'; for (let x = 16; x < e.tape; x += 8) ctx.fillRect(x, -19, 1, x % 40 < 8 ? 3 : 1.5);
+        ctx.fillStyle = '#9e9e9e'; ctx.fillRect(e.tape, -21, 3, 6); // крючок
+      }
+      drawSay(e, ctx, '#6a5a00');
+    },
+  },
+  // сметчик с калькулятором: кидает листы сметы волной — попадание отнимает очки («удорожание»); вблизи — убегает
+  estimator: {
+    w: 18, h: 40, hp: 2, pts: 300, touchHurts: false, hitColor: '#ffffff', deathColor: '#cfe6ff',
+    init(e) { e.state = 'walk'; e.cd = 1.2; e.vx = 0; e.vy = 0; e.onG = true; e.say = null; e.sayT = 0; e.lineI = 0; },
+    onDeath(e) { popup(e.x + e.w / 2, e.y - 30, 'Смета не согласована!', '#cfe6ff'); for (let i = 0; i < 6; i++) particles.push({ x: e.x + 9, y: e.y + 10, vx: rand(-140, 140), vy: -rand(120, 260), life: 1.8, max: 1.8, color: '#f4f1e6', grav: 260, size: 4, w: 7, h: 9, rot: rand(0, 6), vr: rand(-6, 6), chunk: true, paper: true, ph: rand(0, 6) }); },
+    update(e, dt) {
+      const P = player, dx = api.dx(e), adx = Math.abs(dx), toP = Math.sign(dx) || 1, level = Math.abs(P.y + P.h - (e.y + e.h)) < 60;
+      e.cd -= dt; e.sayT -= dt;
+      let want = 0, speed = 110;
+      if (adx < 600) {
+        e.dir = toP;
+        if (adx < 110) { want = -toP; speed = 230; if (e.sayT < 0) { e.say = 'Не подходи, я считаю!'; e.sayT = 1; } } // трусоват
+        else if (adx > 300) want = toP;
+        if (e.cd <= 0 && level && adx > 90 && adx < 420) { // бросок листа сметы
+          e.cd = rand(1.6, 2.4); e.say = pickLine(ESTIMATE_LINES, e); e.sayT = 1.5; Sound.play('throw');
+          shoot({ x: e.x + e.w / 2 + toP * 12, y: e.y + 14, w: 14, h: 16, vx: toP * 170, gravity: 0, life: 3.2, hurts: false, reflectable: true, destructible: true, source: e, pts: 15, silent: true,
+            y0: e.y + 14, age: 0, color: '#f4f1e6', draw: drawEstimateSheet,
+            update(p, dt) {
+              if (p.reflected) return; // отбитый рейкой лист летит обратно в сметчика
+              p.age += dt; p.y = p.y0 - p.h / 2 + Math.sin(p.age * 6) * 16; p.rot = Math.sin(p.age * 6) * 0.4;
+              if (!p.reflected && !p.dead && overlap(p, player) && mode === 'play') {
+                p.dead = true; const lost = Math.min(Math.floor(score), 150); score -= lost;
+                popup(player.x + player.w / 2, player.y - 14, lost ? `−${lost} очков: удорожание!` : 'Смета в ноль!', '#ff8a7a'); Sound.play('cash');
+              }
+            } });
+        }
+      }
+      walkerStep(e, dt, want, speed, false);
+      if (e.y > deathLimit(e)) e.dead = true;
+    },
+    draw(e, ctx) {
+      const run = e.onG && Math.abs(e.vxNow || 0) > 10, sw = run ? Math.sin(e.t * 16) * 0.7 : 0;
+      ctx.strokeStyle = '#3a3a44'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+      for (const s of [sw, -sw]) { ctx.beginPath(); ctx.moveTo(0, -17); ctx.lineTo(Math.sin(s) * 11, -2); ctx.stroke(); }
+      ctx.fillStyle = '#5d6a7a'; ctx.fillRect(-7, -36, 14, 20); ctx.fillStyle = '#fff'; ctx.fillRect(-2, -36, 4, 10); ctx.fillStyle = '#1e5bb8'; ctx.fillRect(-1, -35, 2, 8); // пиджак, галстук
+      ctx.fillStyle = '#f1c27d'; ctx.beginPath(); ctx.arc(1, -42, 6, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#222'; ctx.lineWidth = 1; ctx.strokeRect(1.5, -45, 4, 3); ctx.strokeRect(-3.5, -45, 4, 3); // очки
+      ctx.fillStyle = '#6a4a2a'; ctx.beginPath(); ctx.arc(1, -46, 6, Math.PI, 0); ctx.fill(); // причёска
+      ctx.fillStyle = '#263238'; ctx.fillRect(6, -30, 8, 11); ctx.fillStyle = '#9ccc65'; ctx.fillRect(7, -29, 6, 3); // калькулятор
+      ctx.fillStyle = '#cfd8dc'; for (let k = 0; k < 3; k++) ctx.fillRect(7 + k * 2, -25, 1.5, 1.5);
+      drawSay(e, ctx, '#1e5bb8');
+    },
+  },
+  // роботизированный тахеометр: на штативе, ловит героя лазером (ATR); простоял в луче секунду — разряд. Спрятаться — за препятствием
+  robotTotal: {
+    w: 22, h: 46, hp: 3, pts: 400, touchHurts: false, stompable: true, flip: false, knockback: false, heavy: true, hitColor: '#ffeb3b', deathColor: '#f2c230',
+    init(e) { e.lock = 0; e.cd = 0; e.ang = 0; e.zap = 0; },
+    onDeath(e) { popup(e.x + e.w / 2, e.y - 20, 'ATR: потеря сигнала', '#ffeb3b'); burst(e.x + e.w / 2, e.y + 10, '#ff3b30', 12, 200); },
+    update(e, dt) {
+      const P = player, hx = e.x + e.w / 2, hy = e.y + 8, px = P.x + P.w / 2, py = P.y + P.h / 2;
+      e.cd -= dt; e.zap -= dt;
+      let see = Math.abs(px - hx) < 330 && Math.abs(py - hy) < 170 && mode === 'play';
+      if (see) for (let k = 1; k < 14; k++) { const t = k / 14; if (solidAt(hx + (px - hx) * t, hy + (py - hy) * t)) { see = false; break; } } // прямая видимость
+      if (see) { e.ang += (Math.atan2(py - hy, px - hx) - e.ang) * Math.min(1, dt * 8); } else e.ang = Math.sin(e.t * 0.8) * 1.2 + (Math.cos(e.t * 0.4) > 0 ? 0 : Math.PI); // сканирует
+      if (see && e.cd <= 0) {
+        const was = e.lock; e.lock += dt;
+        if (was === 0) Sound.play('atr');
+        if (e.lock >= 1) { e.lock = 0; e.cd = 2; e.zap = 0.25; hurtPlayer(hx); Sound.play('zap'); burst(px, py, '#ff5252', 10, 160); }
+      } else e.lock = Math.max(0, e.lock - dt * 2);
+      e.see = see;
+    },
+    draw(e, ctx) {
+      ctx.strokeStyle = '#f2c230'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(0, -26); ctx.lineTo(-12, 0); ctx.moveTo(0, -26); ctx.lineTo(12, 0); ctx.moveTo(0, -26); ctx.lineTo(1, 0); ctx.stroke(); // штатив
+      ctx.fillStyle = '#555'; ctx.fillRect(-9, -29, 18, 4);
+      ctx.fillStyle = '#e0e4e8'; ctx.fillRect(-8, -44, 16, 15); ctx.fillStyle = '#263238'; ctx.fillRect(-6, -41, 6, 5); ctx.fillStyle = '#4fc3f7'; ctx.fillRect(-5, -40, 4, 3); // корпус с экраном
+      ctx.save(); ctx.translate(0, -38); ctx.rotate(e.ang); // зрительная труба крутится
+      ctx.fillStyle = '#37474f'; ctx.fillRect(-2, -4, 14, 8); ctx.fillStyle = '#ff3b30'; ctx.fillRect(11, -1.5, 2, 3);
+      ctx.restore();
+      ctx.fillStyle = e.see ? '#ff3b30' : '#2e7d32'; ctx.fillRect(4, -43, 3, 2);
+      if (e.see && e.cd <= 0) { // луч и прицел на герое
+        const P = player, lx = P.x + P.w / 2 - (e.x + e.w / 2), ly = P.y + P.h / 2 - (e.y + e.h);
+        ctx.strokeStyle = `rgba(255,59,48,${0.35 + e.lock * 0.6})`; ctx.lineWidth = 1 + e.lock * 2; ctx.beginPath(); ctx.moveTo(Math.cos(e.ang) * 12, -38 + Math.sin(e.ang) * 12); ctx.lineTo(lx, ly); ctx.stroke();
+        ctx.strokeStyle = '#ff3b30'; ctx.lineWidth = 1.5; const r = 14 - e.lock * 8; ctx.strokeRect(lx - r, ly - r, r * 2, r * 2);
+        text('ATR', 0, -52, 9, '#ff6b5b');
+      }
+      if (e.zap > 0) { const P = player, lx = P.x + P.w / 2 - (e.x + e.w / 2), ly = P.y + P.h / 2 - (e.y + e.h); ctx.strokeStyle = '#fff59d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, -38); for (let k = 1; k <= 6; k++) ctx.lineTo(lx * k / 6 + rand(-6, 6), -38 + (ly + 38) * k / 6 + rand(-6, 6)); ctx.stroke(); }
+    },
+  },
+  // двойник из ОТК: тёмная копия геодезиста — через полсекунды повторяет за героем прыжки и удары рейкой
+  mirror: {
+    w: 18, h: 40, hp: 3, pts: 450, touchHurts: false, hitColor: '#b0bec5', deathColor: '#455a64',
+    init(e) { e.vx = 0; e.vy = 0; e.onG = true; e.seenJump = heroJumpT; e.seenAtk = heroAtkT; e.atk = 0; e.say = null; e.sayT = 0; e.lineI = 0; e.met = false; },
+    onDeath(e) { popup(e.x + e.w / 2, e.y - 30, 'Невязка… не в допуске', '#b0bec5'); burst(e.x + 9, e.y + 20, '#263238', 18, 200); },
+    update(e, dt) {
+      const P = player, dx = api.dx(e), adx = Math.abs(dx), toP = Math.sign(dx) || 1;
+      e.sayT -= dt;
+      if (!e.met && adx < 300) { e.met = true; e.say = 'Контрольный замер! Повторяю за тобой.'; e.sayT = 2; }
+      let want = 0;
+      if (adx < 700) { e.dir = toP; want = adx > 70 ? toP : adx < 40 ? -toP : 0; }
+      if (heroJumpT > e.seenJump && levelTime - heroJumpT > 0.45) { e.seenJump = heroJumpT; if (e.onG) { e.vy = -600; e.onG = false; } } // повторяет прыжок
+      if (heroAtkT > e.seenAtk && levelTime - heroAtkT > 0.45) { e.seenAtk = heroAtkT; e.atk = 0.26; e.hitDone = false; Sound.play('swing'); if (Math.random() < 0.4) { e.say = pickLine(MIRROR_LINES, e); e.sayT = 1.4; } } // и удар рейкой
+      if (e.atk > 0) {
+        e.atk -= dt; const ph = 1 - e.atk / 0.26;
+        if (ph > 0.15 && ph < 0.75 && !e.hitDone) { const hb = { x: e.dir > 0 ? e.x + e.w / 2 : e.x + e.w / 2 - 64, y: e.y - 22, w: 64, h: e.h + 20 }; if (overlap(hb, P)) { e.hitDone = true; hurtPlayer(e.x + e.w / 2); } }
+      }
+      walkerStep(e, dt, want, 200, true);
+      if (e.y > deathLimit(e)) e.dead = true;
+    },
+    draw(e, ctx) {
+      const run = e.onG && Math.abs(e.vxNow || 0) > 10, sw = run ? Math.sin(e.t * 14) * 0.7 : (e.onG ? 0 : 0.5);
+      ctx.strokeStyle = '#11151c'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+      for (const s of [sw, -sw]) { ctx.beginPath(); ctx.moveTo(0, -17); ctx.lineTo(Math.sin(s) * 12, -2); ctx.stroke(); }
+      ctx.fillStyle = '#1c2230'; ctx.fillRect(-7, -36, 14, 20); ctx.fillStyle = '#455a64'; ctx.fillRect(-7, -35, 14, 17); ctx.fillStyle = '#90a4ae'; ctx.fillRect(-7, -28, 14, 2); ctx.fillRect(-7, -23, 14, 2);
+      ctx.fillStyle = '#9e8c78'; ctx.beginPath(); ctx.arc(1, -42, 6, 0, 7); ctx.fill(); ctx.fillStyle = '#ff3b30'; ctx.fillRect(3, -44, 2, 2); // красные глаза
+      ctx.fillStyle = '#212121'; ctx.beginPath(); ctx.arc(1, -45, 7, Math.PI, 0); ctx.fill(); ctx.fillRect(-6, -46, 16, 2); // чёрная каска
+      let ang = -1.9;
+      if (e.atk > 0) { const ph = 1 - e.atk / 0.26, k = ph < 0.6 ? ph / 0.6 : 1; ang = -2.4 + 2.75 * (1 - Math.pow(1 - k, 3)); }
+      ctx.save(); ctx.translate(4, -26); ctx.rotate(ang); ctx.globalAlpha = 0.85; drawStaff(52); ctx.restore();
+      ctx.fillStyle = 'rgba(40,50,70,.35)'; ctx.fillRect(-9, -50, 20, 50); // тень-аура
+      drawSay(e, ctx, '#455a64');
+    },
+  },
+  // крюк крановщицы Зины: бадья с бетоном качается на тросе поперёк пути; проскочи, когда она на другом краю. Три удара — трос рвётся
+  craneHook: {
+    w: 30, h: 26, hp: 3, pts: 300, flip: false, stompable: false, knockback: false, heavy: true, hitColor: '#bdbdbd', deathColor: '#9e9e9e',
+    init(e) { e.ax = e.x + e.w / 2; e.L = 170; e.ay = e.groundY - 6 - e.h - e.L; e.ph = Math.random() * 6; place(e); e.falling = false; e.shoutT = 2; },
+    onDeath(e) { popup(e.ax, e.ay + 40, 'Зина: «Ой, трос!»', '#ffd36a'); burst(e.x + e.w / 2, e.y + e.h, '#9e9e9e', 24, 220); debris(e.x + e.w / 2, e.y + e.h / 2, ['#9e9e9e', '#757575', '#f2c230'], 14, 220); },
+    update(e, dt) {
+      e.ph += dt * 2.1; place(e);
+      e.shoutT -= dt;
+      if (e.shoutT <= 0 && Math.abs(api.dx(e)) < 300) { e.shoutT = rand(3, 5); popup(e.ax, e.ay + 30, pickLine(['Вира помалу!', 'Майна!', 'Стоп, куда под груз?!', 'Зина на связи!']), '#ffd36a'); }
+    },
+    draw(e, ctx) { // рисуем в мировых координатах от точки подвеса
+      ctx.restore(); ctx.save();
+      const bx = e.x + e.w / 2, by = e.y;
+      ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(e.ax - 2, Math.min(e.ay, camY - 10)); ctx.lineTo(e.ax - 2, e.ay); ctx.lineTo(bx, by - 8); ctx.moveTo(e.ax + 2, Math.min(e.ay, camY - 10)); ctx.lineTo(e.ax + 2, e.ay); ctx.lineTo(bx, by - 8); ctx.stroke();
+      ctx.fillStyle = '#f2c230'; ctx.fillRect(e.ax - 7, e.ay - 10, 14, 12); ctx.fillStyle = '#222'; ctx.fillRect(e.ax - 7, e.ay - 6, 14, 2); // обойма
+      ctx.strokeStyle = '#555'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(bx, by - 4, 4, -Math.PI / 2, Math.PI * 1.1); ctx.stroke(); // крюк
+      ctx.fillStyle = '#9e9e9e'; ctx.beginPath(); ctx.moveTo(e.x, by); ctx.lineTo(e.x + e.w, by); ctx.lineTo(e.x + e.w - 4, by + e.h); ctx.lineTo(e.x + 4, by + e.h); ctx.fill(); // бадья
+      ctx.fillStyle = '#757575'; ctx.fillRect(e.x, by, e.w, 4); ctx.fillStyle = '#bdbdbd'; ctx.fillRect(e.x + 4, by + 2, e.w - 8, 3);
+      ctx.fillStyle = '#f2c230'; ctx.fillRect(e.x + 6, by + 10, e.w - 12, 4); ctx.fillStyle = '#222'; for (let k = 0; k < 3; k++) ctx.fillRect(e.x + 8 + k * 6, by + 10, 3, 4);
+    },
+  },
 };
 
 // ---------- кампания ----------
@@ -893,6 +1085,7 @@ function loadLevel(i) {
   generateLevel(seed);
   player = { x: 80, y: checkpoints[0].y - 40, w: 18, h: 40, vx: 0, vy: 0, face: 1, onGround: false, coyote: 0, inv: 0, attackT: 0, attackCd: 0, hitSet: null, anim: 0, drop: 0, climb: null, peakY: 0, snow: 0.3, stepK: 0, rungK: 0, domeSnow: 1 };
   respawn = { x: 80, y: checkpoints[0].y - 60 };
+  heroJumpT = heroAtkT = -1;
   camX = 0; camY = 0; levelTime = 0; lives = maxLives; shake = 0; hintsShown = new Set();
   banner = { top: `Участок ${i + 1} из ${THEMES.length}`, title: theme.title, sub: (theme.subtitle || '') + ' · в руках: ' + WEAPONS[weaponOf()].name.toLowerCase(), t: 3.2 };
   if (theme.init) theme.init(api);
@@ -1072,7 +1265,7 @@ function update(dt) {
   jumpBuf -= dt; P.drop -= dt;
   if (jumpBuf > 0 && P.coyote > 0) {
     if (input.down && P.onGround && platforms.some(p => Math.abs(P.y + P.h - p.y) < 2 && P.x + P.w > p.x && P.x < p.x + p.w)) { P.drop = 0.25; P.y += 2; }
-    else { P.vy = -JUMP_V; Sound.play('jump'); burst(P.x + P.w / 2, P.y + P.h, theme.dust || '#b9a58a', 6, 80, 300); shakeSnow(0.6); papers(); }
+    else { P.vy = -JUMP_V; heroJumpT = levelTime; Sound.play('jump'); burst(P.x + P.w / 2, P.y + P.h, theme.dust || '#b9a58a', 6, 80, 300); shakeSnow(0.6); papers(); }
     jumpBuf = 0; P.coyote = 0;
   }
   if (!input.jumpHeld && P.vy < -250) P.vy = -250; // короткое нажатие — низкий прыжок
@@ -1105,7 +1298,7 @@ function update(dt) {
 
   // удар рейкой: широкая дуга перед геодезистом
   P.attackCd -= dt;
-  if (attackQueued && P.attackCd <= 0) { P.attackT = 0.26; P.attackCd = 0.36; P.hitSet = new Set(); Sound.play(weaponOf() === 'staff' || weaponOf() === 'invar' ? 'swing' : 'swingPole'); shakeSnow(0.3); domeSnowFall(); }
+  if (attackQueued && P.attackCd <= 0) { P.attackT = 0.26; P.attackCd = 0.36; heroAtkT = levelTime; P.hitSet = new Set(); Sound.play(weaponOf() === 'staff' || weaponOf() === 'invar' ? 'swing' : 'swingPole'); shakeSnow(0.3); domeSnowFall(); }
   attackQueued = false;
   if (P.attackT > 0) {
     P.attackT -= dt;
@@ -1450,6 +1643,11 @@ const TREASURES = {
   coins:      { name: 'Клад старинных монет', pts: 1500, color: '#ffd24a' },
   tokens:     { name: 'Жетоны метро 1935 года', pts: 1000, color: '#e0c080' },
   relic:      { name: 'Золотая каска', pts: 500, color: '#ffe066' },
+};
+const THEME_SPECIALS = { // особые персонажи по участкам (gen.specials переопределяет)
+  city: ['tapeMeasurer', 'craneHook'], pit: ['tapeMeasurer', 'craneHook'], metro: ['mirror', 'estimator'], mine: ['mirror', 'tapeMeasurer'],
+  quarry: ['robotTotal', 'craneHook'], road: ['estimator', 'robotTotal'], bridge: ['robotTotal', 'craneHook'], tower: ['mirror', 'estimator'],
+  tundra: ['robotTotal', 'tapeMeasurer'], dam: ['estimator', 'mirror'],
 };
 const THEME_BREAKABLES = { // набор разрушаемых предметов участка, если тема не задала свой (gen.breakables)
   city: ['crate', 'barrel', 'box', 'bricks'], pit: ['cement', 'barrel', 'crate', 'bricks'], metro: ['crate', 'tubing', 'box', 'barrel'],
