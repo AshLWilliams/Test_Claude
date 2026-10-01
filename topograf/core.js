@@ -27,6 +27,7 @@ function layout() {
   const ins = window.tgInsets ? tgInsets() : { t: 0, b: 0, l: 0, r: 0 }; // Telegram Mini App на весь экран: обходим вырез и кнопки Telegram
   const vw = innerWidth - ins.l - ins.r, vh = innerHeight - ins.t - ins.b;
   stage.style.left = ins.l ? ins.l + 'px' : ''; stage.style.top = ins.t ? ins.t + 'px' : '';
+  if (window.TG_APP) stage.style.position = 'fixed'; // Mini App: сцена на всё окно, даже если style.css из кэша старый
   rotated = IS_TOUCH && vh > vw;
   document.body.classList.toggle('rotated', rotated);
   let sw = rotated ? vh : vw, sh = rotated ? vw : vh;
