@@ -5,7 +5,8 @@
   const WH = 330;                    // высота мира, ед. (поле под HUD)
   const DMIN = 60, DMAX = 230;       // допустимая длина стороны хода, ед.
   const MU = 0.25;                   // метров в единице
-  const LIMIT = 120;                 // время уровня, с
+  const LIMIT = 140;                 // время уровня, с
+  const TREF = 120;                  // к этому сроку бонус за время сходит на нет
   const KSEC = 2.2;                  // секунд дуги на единицу смещения марки от нити в окуляре
   const RHO = 206265;                // секунд в радиане
   const TAU = Math.PI * 2;
@@ -295,6 +296,8 @@
     const shed = (r) => { const s = sd(); take(r); OBJ.push(c => Sym.shed(c, r.x, r.y, r.w, r.h, { seed: s })); addRect(wd, r.x, r.y, r.w, r.h, 'мешает сарай', 'Здесь постройка'); wd.pf.push({ t: 'house', r, label: 'н' }); };
     const tree = (x, y, r, kind, top) => { if (nearG(x, y, 14 + r)) return; const s = sd(); (top ? TOPL : OBJ).push(c => Sym.tree(c, x, y, r, kind, s)); addCirc(wd, x, y, r * 0.7, r * 0.55, 'мешают деревья', 'Под кроной нет обзора'); wd.pf.push({ t: 'tree', x, y, kind }); };
     const car = (x, y, rot) => { const s = sd(); OBJ.push(c => Sym.car(c, x, y, rot, null, s)); const h = Math.abs(Math.cos(rot)) > 0.5; addRect(wd, x - (h ? 9 : 4), y - (h ? 4 : 9), h ? 18 : 8, h ? 8 : 18, '', 'Здесь стоит машина', 1); };
+    const bush = (x, y, r) => { if (nearG(x, y, 12 + r) || !free({ x: x - r, y: y - r, w: 2 * r, h: 2 * r }, 0)) return; take({ x: x - r * 0.8, y: y - r * 0.8, w: r * 1.6, h: r * 1.6 }); const s = sd(); OBJ.push(c => Sym.bush(c, x, y, r, s)); addCirc(wd, x, y, 0, r + 1, '', 'В кустах штатив не поставить'); };
+    const onMap = q => q.x > -8 && q.x < ww + 8 && q.y > -8 && q.y < WH + 8;
     const fence = (pts, kind) => { OBJ.push(c => Sym.fence(c, pts, kind)); addLine(wd, pts, 'мешает забор'); wd.pf.push({ t: 'fence', pts, kind }); };
     // сторона клетки к улице: координата вдоль (a) и вглубь от улицы (d) → мир
     const toW = (c, F, a, d) => F === 'b' ? { x: a, y: c.y1 - d } : F === 't' ? { x: a, y: c.y0 + d } : F === 'r' ? { x: c.x1 - d, y: a } : { x: c.x0 + d, y: a };
@@ -324,6 +327,18 @@
         const r = rectAD(c, F, a, a + len, sb, sb + dep);
         if (free(r)) building(r, ri(3, 9));
         a += len + rf(18, 34);
+      }
+      // двор за домами: деревья, кусты, иногда площадка — глубже линии видимости вдоль улицы
+      const yd0 = sb + dep + 20, yd1 = depthOf(c, F) - 8;
+      if (yd1 - yd0 > 24) {
+        if (chance(0.5) && yd1 - yd0 > 40) { const a = rf(a0 + 10, Math.max(a0 + 11, a1 - 60)), pr = rectAD(c, F, a, a + rf(40, 54), yd0 + 4, yd0 + 4 + rf(28, 34)); if (onMap({ x: pr.x + pr.w / 2, y: pr.y + pr.h / 2 }) && free(pr, 3)) { take(pr); const s = sd(); OBJ.push(cc => Sym.playground(cc, pr.x, pr.y, pr.w, pr.h, s)); } }
+        const nY = Math.round((a1 - a0) * (yd1 - yd0) / 900);
+        for (let k = 0; k < nY; k++) {
+          const q = toW(c, F, rf(a0 + 6, a1 - 6), rf(yd0, yd1)), r = rf(7, 11);
+          if (!onMap(q)) continue;
+          if (chance(0.3)) { bush(q.x, q.y, rf(3.5, 5.5)); continue; }
+          if (free({ x: q.x - r * 0.6, y: q.y - r * 0.6, w: r * 1.2, h: r * 1.2 }, 1)) { take({ x: q.x - r * 0.5, y: q.y - r * 0.5, w: r, h: r }); tree(q.x, q.y, r, pick(['deciduous', 'birch', 'conifer', 'deciduous']), false); }
+        }
       }
       // машины у подъездов — вдоль дома со двора
       if (chance(0.7)) {
@@ -362,7 +377,18 @@
       G.push(cc => Sym.ground(cc, x0, y0, x1 - x0, y1 - y0, 'grass', 31));
       const path = [{ x: x0 - 6, y: rf(y0, y1) }, { x: (x0 + x1) / 2 + rf(-20, 20), y: (y0 + y1) / 2 + rf(-10, 10) }, { x: x1 + 6, y: rf(y0, y1) }];
       RD.push(cc => Sym.road(cc, path, 7, 'path', { seed: 3 }));
-      const nt = Math.round((x1 - x0) * (y1 - y0) / Math.max(700, 1100 + relax * 250));
+      if (chance(0.45) && x1 - x0 > 90 && y1 - y0 > 60) { // пруд вдали от дорожки
+        for (let t = 0; t < 12; t++) {
+          const px = rf(x0 + 30, x1 - 30), py = rf(y0 + 22, y1 - 22), ax = rf(16, 26), ay = rf(10, 15);
+          if (distPoly(px, py, path, false) < ay + 10 || !onMap({ x: px, y: py }) || nearG(px, py, 50) || !free({ x: px - ax, y: py - ay, w: 2 * ax, h: 2 * ay }, 4)) continue;
+          const pts = []; for (let i = 0; i < 12; i++) { const an = i * TAU / 12, f = rf(0.85, 1.12); pts.push({ x: px + Math.cos(an) * ax * f, y: py + Math.sin(an) * ay * f }); }
+          take({ x: px - ax, y: py - ay, w: 2 * ax, h: 2 * ay }); const s = sd(); G.push(cc => Sym.pond(cc, pts, s)); addPoly(wd, pts, 'В пруду штатив не поставить'); wd.pf.push({ t: 'pond', pts });
+          break;
+        }
+      }
+      for (let i = 1; i < path.length; i++) { const p0 = path[i - 1], p1 = path[i], L = hyp(p1.x - p0.x, p1.y - p0.y); for (let u = 22; u < L - 10; u += 46) { const q = { x: p0.x + (p1.x - p0.x) * u / L - (p1.y - p0.y) / L * 6, y: p0.y + (p1.y - p0.y) * u / L + (p1.x - p0.x) / L * 6 }; if (onMap(q) && free({ x: q.x - 2, y: q.y - 2, w: 4, h: 4 }, 0)) { OBJ.push(cc => Sym.pole(cc, q.x, q.y, 'lamp')); addCirc(wd, q.x, q.y, 0, 2.2, '', 'Здесь фонарный столб'); } } }
+      for (let k = ri(4, 8); k > 0; k--) { const x = rf(x0 + 6, x1 - 6), y = rf(y0 + 6, y1 - 6); if (distPoly(x, y, path, false) > 9) bush(x, y, rf(3.5, 6)); }
+      const nt = Math.round((x1 - x0) * (y1 - y0) / Math.max(560, 800 + relax * 250));
       for (let k = 0; k < nt; k++) {
         const x = rf(x0 + 6, x1 - 6), y = rf(y0 + 6, y1 - 6), r = rf(8, 13);
         if (distPoly(x, y, path, false) < r * 0.8 + 4 || !free({ x: x - r * 0.6, y: y - r * 0.6, w: r * 1.2, h: r * 1.2 }, 0)) continue;
@@ -802,12 +828,12 @@
       if (hyp(w.x - g.x, w.y - g.y) < SNAP) { if (n >= 3) { p = g; closing = true; } }
       const res = check(wd, S, p, closing, 0);
       if (!res.ok) {
-        flash = { a: last, b: p, res, t: 2.2 }; say(res.why, TH.bad, 3); api.sfx('bad'); fails++;
+        flash = { a: last, b: p, res, t: 2.4 }; toastMsg = null; api.sfx('bad'); fails++; // причина — подписью у точки
         if (fails >= 3 && n >= 3 && check(wd, S, g, true, 0).ok) say('Подсказка: с этой станции уже можно замкнуть ход на пункт ГГС', TH.accent, 4);
         else if (fails === 3 && variant.params && variant.params.tip) say(variant.params.tip, TH.accent, 4);
         return false;
       }
-      fails = 0;
+      fails = 0; flash = null;
       const sp = toS(p);
       if (closing) {
         closed = true; pendAim = n - 1; api.sfx('good'); api.burst(sp.x, sp.y, '#6cff8a', 16);
@@ -965,11 +991,13 @@
         if (errs.length) lines.push(`Точность наведения ±${Math.round(mAim)}″`);
       } else {
         const P = perim(S, true);
-        const A = 220 * clamp(1 - Math.abs(adj.fb) / adj.tol, 0, 1) + 180 * clamp(1 - mAim / 35, 0, 1);
-        const Sx = clamp(200 - 45 * Math.max(0, n - refN), 0, 200);
-        const Lx = 150 * clamp(1 - 2.5 * Math.max(0, P / refP - 1), 0, 1);
+        // точность — главное: наведение «на авось» не окупается и скоростью (бонус за время умножается на качество наведения)
+        const qAim = clamp(1 - (mAim - 4) / 20, 0, 1);
+        const A = 250 * clamp(1 - Math.abs(adj.fb) / adj.tol, 0, 1) + 250 * qAim;
+        const Sx = clamp(150 - 40 * Math.max(0, n - refN), 0, 150);
+        const Lx = 100 * clamp(1 - 2.5 * Math.max(0, P / refP - 1), 0, 1);
         const tGood = 12 + refN * 6.5;                              // темп хорошего полевика для этого участка, с
-        const Tx = 250 * clamp(1 - (tUsed - tGood) / (LIMIT - tGood), 0, 1);
+        const Tx = 250 * clamp(1 - (tUsed - tGood) / (TREF - tGood), 0, 1) * (0.3 + 0.7 * qAim);
         score = Math.round(A + Sx + Lx + Tx);
         if (!adj.ok) score = Math.min(score, 240);
         stars = !adj.ok ? 0 : score >= 800 ? 3 : score >= 550 ? 2 : 1;
@@ -1269,7 +1297,7 @@
     // ---------- отрисовка: ведомость уравнивания ----------
     function drawPanel(ctx) {
       const A = adj, pw = panelW(), x = api.W - pw - 8, y = api.TOP + 6, h = api.H - api.TOP - 12;
-      Sym.plan.paper(ctx, x, y, pw, h, { stamp: false, grid: 0, margin: 4 });
+      Sym.plan.paper(ctx, x, y, pw, h, { stamp: false, grid: -1, margin: 4 });
       const L = x + 14, Rr = x + pw - 14; let yy = y + 26;
       const line = (s, size, color, t0, align = 'left', weight = 'bold') => {
         if (A.t >= t0) { ctx.font = `${weight} ${size}px system-ui, sans-serif`; const k = Math.min(1, (Rr - L) / Math.max(1, ctx.measureText(s).width)); api.text(ctx, s, align === 'left' ? L : align === 'right' ? Rr : x + pw / 2, yy, size * k, color, align, weight); }
@@ -1289,7 +1317,7 @@
       line(`Поправки v: ${vmin === vmax ? fmtSec(vmin) : fmtSec(vmin) + '…' + fmtSec(vmax)}, Σv = ${fmtSec(-A.fb)}`, fs, '#7a3d12', 2.2, 'left', '600');
       yy += 3;
       line(`fx = ${fmtMm(A.fx)}   fy = ${fmtMm(A.fy)} м`, fs, INK, 3.7, 'left', '600');
-      line(`fабс = ${A.fabs.toFixed(3).replace('.', ',')} м = 1/${A.N} P`, fs, INK, 3.9, 'left', '600');
+      line(`fабс = ${A.fabs.toFixed(3).replace('.', ',')} м · fабс/P = 1/${A.N}`, fs, INK, 3.9, 'left', '600');
       line(`${A.okL ? '✓' : '✗'} Линейная в допуске 1/2000`.replace('✗ Линейная в допуске', '✗ Линейная больше допуска'), fb2, A.okL ? '#1d7a36' : '#b3261e', 4.3);
       if (st === 'review') {
         const b = btnsReview();
@@ -1306,7 +1334,7 @@
     }
     function drawScheme(c, w, h, snap) {
       const P = snap.S, A = snap.adj, n = P.length, lab = Sym.plan.label;
-      Sym.plan.paper(c, 0, 0, w, h, { stamp: false, grid: 0, margin: 5 });
+      Sym.plan.paper(c, 0, 0, w, h, { stamp: false, grid: -1, margin: 5 });
       lab(c, w / 2, 16, 'Схема теодолитного хода', 9, INK, 0, 700);
       lab(c, w / 2, 26, (forest ? 'поляна в лесу' : 'городской квартал') + ' · М 1:' + (forest ? 2000 : 1000), 6, INK, 0, 500);
       // окно схемы: ход + участок
@@ -1315,7 +1343,8 @@
       x0 -= 18; y0 -= 18; x1 += 18; y1 += 18;
       const rows = A ? n : 0, rowH = rows > 9 ? 7 : 8, tabH = A ? 14 + rows * rowH + 22 : 16;
       const bx = 10, by = 32, bw = w - 20, bh = h - by - tabH - 10;
-      const k = Math.min(bw / (x1 - x0), bh / (y1 - y0)), ox = bx + (bw - (x1 - x0) * k) / 2 - x0 * k, oy = by + (bh - (y1 - y0) * k) / 2 - y0 * k;
+      const ix = bx + 16, iy = by + 10, iw = bw - 40, ih = bh - 22;                 // поля под подписи станций и стрелку севера
+      const k = Math.min(iw / (x1 - x0), ih / (y1 - y0)), ox = ix + (iw - (x1 - x0) * k) / 2 - x0 * k, oy = iy + (ih - (y1 - y0) * k) / 2 - y0 * k;
       const T2 = q => ({ x: ox + q.x * k, y: oy + q.y * k });
       c.save(); c.beginPath(); c.rect(bx, by, bw, bh); c.clip();
       for (const f of wd.pf) {
@@ -1326,6 +1355,7 @@
         if (f.t === 'house') { const r = f.r, q = [T2({ x: r.x, y: r.y }), T2({ x: r.x + r.w, y: r.y }), T2({ x: r.x + r.w, y: r.y + r.h }), T2({ x: r.x, y: r.y + r.h })]; Sym.plan.house(c, q, r.w * k > 14 && r.h * k > 8 ? f.label : ''); }
         else if (f.t === 'tree') { const q = T2(f); Sym.plan.tree(c, q.x, q.y, f.kind); }
         else if (f.t === 'fence') Sym.plan.fence(c, f.pts.map(T2), f.kind);
+        else if (f.t === 'pond') { c.beginPath(); f.pts.map(T2).forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)); c.closePath(); c.fillStyle = 'rgba(120,180,230,.55)'; c.fill(); c.strokeStyle = Sym.colors.blue; c.lineWidth = 0.6; c.stroke(); }
         else if (f.t === 'swamp') {
           const q = f.pts.map(T2), b = ptsBox(q, 0);
           c.save(); c.beginPath(); q.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)); c.closePath(); c.clip();
@@ -1394,7 +1424,7 @@
     // ---------- экземпляр уровня ----------
     const inst = {
       get phase() { return st; },             // для отладки и проб: фаза, попытки генерации, эталон, наведение
-      dbg: () => ({ tries, refN, refP, aim, adj, n: S.length }),
+      dbg: () => ({ tries, refN, refP, ref, aim, adj, n: S.length, S, view, wd, tUsed, hover }),
       update(dt) {
         if (finished) return;
         T += dt;
@@ -1522,7 +1552,7 @@
         const n = S.length;
         // на узком экране места для строки нет — заголовок уровня длинный
         const info = api.W < 620 ? [] : closed ? [adj ? `fβ ${fmtSec(adj.fb)}` : `ст. ${n}`] : [`ст. ${n - 1}`];
-        return { time: LIMIT - tUsed, info, progress: closed ? 1 : clamp(Math.abs(swept()) / TAU, 0, 1) };
+        return { time: LIMIT - tUsed, info, progress: api.W < 620 ? null : closed ? 1 : clamp(Math.abs(swept()) / TAU, 0, 1) }; // на узком — прогресс в плашке «Обход участка»
       },
       bot(dt) {
         if (finished) return;

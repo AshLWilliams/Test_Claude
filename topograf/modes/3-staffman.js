@@ -1,5 +1,5 @@
 'use strict';
-// «Реечник» — техническое нивелирование трассы и продольный профиль: вид сбоку (разрез), 120 с.
+// «Реечник» — техническое нивелирование трассы и продольный профиль: вид сбоку (разрез), 140 с.
 // Реечник идёт по трассе с рейкой РН-3; сзади на станции нивелир на штативе и наблюдатель. Рейку ставят на пикеты
 // (через 20 м), перегибы рельефа и характерные точки; луч нивелира горизонтален — отсчёт = ГИ − отметка точки.
 // Отсчёт берётся, пока пузырёк круглого уровня рейки в центре. Луч не достаёт, проходит над/под рейкой или упирается
@@ -10,12 +10,13 @@
   const MX = 4;               // ед. на метр по горизонтали (пикет 20 м = 80 ед.)
   const VY = 14;              // ед. на метр по вертикали; в этом же масштабе люди и предметы (рельеф ×3,5)
   const PK = 80;              // шаг пикетов, ед.
-  const T_LEVEL = 120;        // длительность уровня, с
+  const T_LEVEL = 140;        // длительность уровня, с
   const SPEED = 92;           // шаг реечника, ед./с
   const ACC = 1100;           // разгон и торможение, ед./с²
   const RANGE = 260;          // предельное плечо, ед. (65 м)
   const STAFF = 3;            // длина рейки, м
   const TOL = 7;              // допуск постановки рейки на точку, ед.
+  const SNAP = 17;            // в этих пределах реечник сам делает шаг к колышку (палец не попадёт в 7 ед. на ходу)
   const HOLD = 0.7;           // пузырёк в центре столько секунд — отсчёт взят
   const ZONE = 0.24;          // радиус «центра» круглого уровня (доля хода пузырька)
   const MOVE_T = 4;           // перенос нивелира, с
@@ -27,12 +28,24 @@
   const pad4 = v => String(Math.max(0, Math.round(v))).padStart(4, '0');
   const mmss = t => { t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
   const smooth = t => t * t * (3 - 2 * t);
-  // слой ровно под текущую плотность пикселей (api.layer округляет вверх до целого — лишняя выборка при каждом кадре)
+  // Слой ровно под текущую плотность пикселей и вывод «пиксель в пиксель»: копия 1:1 без пересчёта в разы дешевле
+  // масштабированной (api.layer округляет плотность вверх до целого — каждый кадр лишняя выборка).
+  let api0 = null;
+  const curK = () => { const cv = document.getElementById('game'); return cv && cv.width && api0 ? cv.width / api0.W : 1; }; // плотность кадра ядра
   function layer(w, h, draw, kMax) {
-    const k = clamp(typeof scale === 'number' ? scale : 1, 1, kMax || 2.5), cv = document.createElement('canvas');
-    cv.width = Math.max(1, Math.ceil(w * k)); cv.height = Math.max(1, Math.ceil(h * k));
+    const k = Math.min(curK(), kMax || 4), cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(h * k));
     const c = cv.getContext('2d'); c.scale(cv.width / w, cv.height / h); draw(c);
-    return { canvas: cv, w, h };
+    return { canvas: cv, w, h, k };
+  }
+  // вывести часть слоя (sx, sy, sw, sh — в его пикселях) в точку (x, y) текущей системы координат, d — её плотность
+  function px(c, ly, sx, sy, sw, sh, x, y, d) {
+    if (sw <= 0 || sh <= 0) return;
+    const m = c.getTransform(), kk = ly.canvas.width / ly.w;
+    if (Math.abs(kk * (d || 1) - m.a) > 0.02 * m.a || m.b || m.c) { c.drawImage(ly.canvas, sx, sy, sw, sh, x, y, sw / kk / (d || 1), sh / kk / (d || 1)); return; } // плотность сменилась (поворот экрана) — обычный вывод
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.drawImage(ly.canvas, sx, sy, sw, sh, Math.round(m.a * x + m.e), Math.round(m.d * y + m.f), sw, sh);
+    c.setTransform(m);
   }
   function rngOf(s) { let a = s | 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   function shade(hex, k) { // k < 0 — темнее, k > 0 — светлее
@@ -510,20 +523,19 @@
     id: 'staffman',
     title: 'Реечник',
     subtitle: 'Нивелирование трассы — продольный профиль',
-    howto: [
-      '◀ ▶ — идти; ▲ или свайп вверх — прыжок через канаву и бревно.',
-      'Встаньте на пикет ПК, перегиб или характерную точку и держите РЕЙКА.',
-      'Пузырёк уровня уплывает — гоните его в центр ◀ ▶ или ведя пальцем; 0,7 с в центре — отсчёт взят.',
-      'Луч нивелира горизонтален: дальше 65 м, над рейкой, под ней или за бугром — «Не вижу!» → ПЕРЕНОС.',
-      'Колышки перегибов видны только вблизи. Пропуск или лишняя точка портят профиль.',
+    howto: [ // на W = 560 карточка вмещает 9 строк — вместе со строкой варианта
+      '◀ ▶ — идти, ▲ или свайп вверх — прыжок через канаву и бревно.',
+      'Снимите все пикеты ПК, перегибы и характерные точки: у колышка держите РЕЙКА.',
+      'Гоните пузырёк уровня в центр ◀ ▶ или пальцем; 0,7 с в центре — отсчёт.',
+      'Луч горизонтален: дальше 65 м, над/под рейкой, за бугром — «Не вижу!» → ПЕРЕНОС.',
     ],
     variants: [
-      { id: 'road', title: 'Трасса дороги', subtitle: 'Поле, насыпь будущей дороги с трубой, переезд через шоссе с кюветами',
-        howto: ['Характерные точки: бровка и дно кювета, край проезжей части, подошва и бровка насыпи.'] },
+      { id: 'road', title: 'Трасса дороги', subtitle: 'Поле, насыпь с трубой, переезд через шоссе с кюветами',
+        howto: ['Точки: бровка и дно кювета, край проезжей части, подошва и бровка насыпи.'] },
       { id: 'river', title: 'Берег реки', subtitle: 'Луг, крутой берег, отмель и брод — профиль через реку',
-        howto: ['Точки: бровка и подошва откоса, урез воды, дно реки, уступ террасы. В воде медленнее и рейка шатается.'] },
+        howto: ['Точки: бровка и подошва откоса, урез воды, дно, уступ. В воде рейка шатается.'] },
     ],
-    create(api, variant, seed) { return createLevel(api, variant, seed); },
+    create(api, variant, seed) { api0 = api; return createLevel(api, variant, seed); },
   });
 
   // ---------- генерация участка ----------
@@ -657,11 +669,11 @@
       const riv = feats.find(f => f.kind === 'river');
       const nD = vid === 'road' ? ri(1, 2) : 1;
       for (let k = 0; k < nD; k++) {
-        const len = ri(20, 26), r = place(len, (a, b) => !inFeat(a, b) && !nearPt(a, b, 26) && !nearOb(a, b, 80));
+        const len = ri(18, 24), r = place(len, (a, b) => !inFeat(a, b) && !nearPt(a, b, 17) && !nearOb(a, b, 80), 160);
         if (r) { const dd = rnd(0.8, 1.0); ob.ditch.push({ x0: r[0], x1: r[1], dd }); for (let xx = Math.ceil(r[0]); xx <= r[1]; xx++) HW[xx - XA] = HB[xx - XA] - dd * Math.min(1, (xx - r[0]) / 5, (r[1] - xx) / 5); }
       }
-      if (vid === 'road' ? R() < 0.75 : true) {
-        const r = place(14, (a, b) => !nearPt(a, b, 24) && !nearOb(a, b, 80) && (riv ? (a > riv.w1 + 10 && b < riv.t0 - 10) || !inFeat(a, b) : !inFeat(a, b)));
+      if (vid === 'road' ? R() < 0.75 || !ob.ditch.length : true) {
+        const r = place(14, (a, b) => !nearPt(a, b, 19) && !nearOb(a, b, 80) && (riv ? (a > riv.w1 + 10 && b < riv.t0 - 10) || !inFeat(a, b) : !inFeat(a, b)), 160);
         if (r) ob.log.push({ x0: r[0], x1: r[1], x: (r[0] + r[1]) / 2, r: rnd(4.4, 5.6) });
       }
       for (let k = ri(1, 2); k > 0; k--) {
@@ -795,6 +807,7 @@
   function createLevel(api, variant, seed) {
     const vid = variant.id;
     const w = genWorld(seed, vid);
+    const titleW = (() => { try { const c = document.createElement('canvas').getContext('2d'); c.font = 'bold 12px system-ui, sans-serif'; return c.measureText('Реечник · ' + variant.title).width; } catch (e) { return 170; } })();
     const { L, N, XA, XB, pts, ob, feats } = w;
     const R = rngOf(seed ^ 0x51ed27), rnd = (a, b) => a + R() * (b - a), ri = (a, b) => Math.floor(rnd(a, b + 1));
     const HREF = w.H0 + 2;
@@ -1026,9 +1039,9 @@
     const chunks = [];
     for (let x0 = XA; x0 < XB; x0 += CW) {
       const x1 = Math.min(XB, x0 + CW);
-      let lo = Infinity, hi = -Infinity; // свои границы у каждого куска — меньше пустой заливки
-      for (let x = x0 - 24; x <= x1 + 24; x += 2) { const y = gy(x); if (y < lo) lo = y; if (y > hi) hi = y; }
-      const top = Math.max(yTopC, Math.floor(lo - 64)), bot = Math.min(yBotC, Math.ceil(hi + 86));
+      let lo = Infinity; // свой верх у каждого куска — меньше пустой заливки
+      for (let x = x0 - 24; x <= x1 + 24; x += 2) lo = Math.min(lo, gy(x));
+      const top = Math.max(yTopC, Math.floor(lo - 64)), bot = yBotC; // низ общий — иначе ступеньки слоёв у края экрана
       const ly = layer((x1 - x0 + 2) * Z, (bot - top) * Z, c => { c.scale(Z, Z); c.translate(-x0 + 1, -top); drawChunk(c, x0, x1, bot); });
       // пустые строки сверху не рисуем: ищем первую строку с непрозрачными пикселями
       let row = 0;
@@ -1076,7 +1089,7 @@
       for (let i = 0; i + 1 < tw.length; i++) for (const d of [-6, 6]) { c.moveTo(tw[i] + d, FY - 24); c.quadraticCurveTo((tw[i] + tw[i + 1]) / 2 + d, FY - 18, tw[i + 1] + d, FY - 24); }
       c.stroke();
       const g = c.createLinearGradient(0, FY - 40, 0, FH); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, mix(TOD.haze, '#ffffff', 0.2)); c.fillStyle = g; c.globalAlpha = 0.35; c.fillRect(0, FY - 40, FW, FH); c.globalAlpha = 1;
-    }, 1);
+    });
     let distCar = null;
     const midLow = mix('#8fae5a', TOD.haze, 0.3);
     const mid = layer(MW, MH, c => {
@@ -1115,7 +1128,7 @@
       c.restore();
       const g = c.createLinearGradient(0, MY - 90, 0, MH); g.addColorStop(0, mix(TOD.haze, '#ffffff', 0.3)); g.addColorStop(1, 'rgba(255,255,255,0)');
       c.globalAlpha = 0.28; c.fillStyle = g; c.fillRect(0, 0, MW, MH); c.globalAlpha = 1;
-    }, 1);
+    });
     const clouds = [];
     for (let k = 0; k < 5; k++) {
       const cw = 60 + R() * 70, chh = 20 + R() * 12, sd = ri(1, 1e6);
@@ -1181,14 +1194,14 @@
     if (Sym.prepare) Sym.prepare(['grass', 'meadow', 'field', 'sand', 'gravel', 'asphalt', 'water', 'paper']);
 
     // ---------- состояние ----------
-    const hero = { x: -22, y: 0, vx: 0, vy: 0, jvx: 0, air: false, facing: 1, ph: 0, climb: null, climbT: 0, zone: '', splashT: 0 };
+    const hero = { auto: null, x: -22, y: 0, vx: 0, vy: 0, jvx: 0, air: false, facing: 1, ph: 0, climb: null, climbT: 0, zone: '', splashT: 0 };
     hero.y = gy(hero.x);
     const st = { x: w.st0, state: 'ready', t: 0, fromX: 0, toX: 0, dir: 1, HI: 0, no: 1, first: true, ph: 0 };
     st.HI = w.hw(st.x) + w.I;
     const bmName = deco[0].name, bmH = w.hb(-66) + 0.15;
     const staff = { on: false, active: false, done: false, blocked: '', x: 0, px0: 0, target: null, r: 0, read: 0, lift: 0 };
     const bub = { b: 0, v: 0, hold: 0, acc: 0, n: 0, ph: [R() * 6, R() * 6, R() * 6], beepT: 0 };
-    const input = { kl: false, kr: false, drag: 0 };
+    const input = { kl: false, kr: false, ks: false, drag: 0 };
     const roles = new Map();
     const swipes = new Map();
     let t = 0, clock = 0, over = false, doneAt = -1, relocs = 0, falls = 0, bias = 0, flashMove = 0;
@@ -1212,16 +1225,18 @@
       let tx = hero.x - VW * (hero.facing > 0 ? 0.42 : 0.58);
       if (st.x < hero.x && st.x > hero.x - VW * 0.66 && st.x - 22 < tx) tx = st.x - 22;
       tx = clamp(tx, XA + 4, XB - VW - 4);
-      const ty = gy(hero.x) - VH * 0.66;
+      const gH = gy(hero.x), gA = gy(clamp(hero.x + hero.facing * VW * 0.35, XA, XB));
+      const ty = gH - VH * 0.66 + clamp((gA - gH) * 0.6, 0, VH * 0.22); // впереди спуск (к воде) — камера опускается
       if (snap) { cam.x = tx; cam.y = ty; } else { cam.x = lerp(cam.x, tx, 0.08); cam.y = lerp(cam.y, ty, 0.06); }
     }
     centerCam(true);
     const toS = (x, y) => [(x - cam.x) * Z, api.TOP + (y - cam.y) * Z];
     function say(text, color) { speech = { text, color: color || '#1d1d1d', t: 2.2 }; }
     function tell(text, color, dur) { banner = { text, color: color || api.theme.ink, t: dur || 2.6 }; }
-    function popAt(x, y, text, color) { const s = toS(x, y); api.popup(s[0], s[1], text, color); }
+    const floats = []; // всплывающие надписи с обводкой (координаты мира — едут вместе с камерой)
+    function popAt(x, y, text, color) { for (let k = 0; k < 5 && floats.some(f => Math.abs(f.x - x) * Z < 120 && Math.abs(f.y - y) * Z < 15); k++) y -= 11; floats.push({ x, y, text, color: color || api.theme.accent, life: 1.6 }); if (floats.length > 6) floats.shift(); }
     function staffX() { return hero.x + hero.facing * 4; }
-    function ptNear(x, done) { let best = null, bd = TOL; for (const p of pts) { if (!!p.done !== done) continue; const d = Math.abs(p.x - x); if (d <= bd) { bd = d; best = p; } } return best; }
+    function ptNear(x, done, tol) { let best = null, bd = tol || TOL; for (const p of pts) { if (!!p.done !== done) continue; const d = Math.abs(p.x - x); if (d <= bd && !ob.log.some(o => (o.x - x) * (o.x - p.x) < 0)) { bd = d; best = p; } } return best; }
     tell(`Ст. 1: отсчёт на ${bmName} ${pad4((st.HI - bmH) * 1000)} → ГИ ${fmt(st.HI, 3)}. Начинайте с ПК0`, api.theme.accent, 4.5);
 
     // ---------- кнопки ----------
@@ -1249,7 +1264,9 @@
       api.sfx('step');
     }
     function staffDown(px) {
-      if (over || staff.on || hero.air || hero.climb) return;
+      if (over || staff.on || hero.air || hero.climb || hero.auto) return;
+      const sn = ptNear(staffX(), false, SNAP);
+      if (sn && Math.abs(sn.x - staffX()) > 0.8 && !inZ(ob.ditch, hero.x)) { hero.auto = { to: sn.x - hero.facing * 4, px }; hero.vx = 0; return; } // шаг к колышку
       staff.on = true; staff.done = false; staff.active = false; staff.blocked = ''; staff.px0 = px; staff.lift = 0;
       staff.x = staffX(); hero.vx = 0; input.drag = 0;
       if (ob.ditch.some(o => staff.x > o.x0 + 2 && staff.x < o.x1 - 2)) { staff.blocked = 'ditch'; tell('Из канавы рейку не видно — выбирайтесь', api.theme.bad); api.sfx('bad'); return; }
@@ -1269,10 +1286,10 @@
       bub.b = (api.rand(0, 1) < 0.5 ? -1 : 1) * api.rand(0.38, 0.68); bub.v = api.rand(-0.3, 0.3); bub.hold = 0; bub.acc = 0; bub.n = 0;
       api.sfx('tap');
     }
-    function staffUp() { if (staff.on) { staff.on = false; staff.active = false; } input.drag = 0; }
+    function staffUp() { if (staff.on) { staff.on = false; staff.active = false; } input.drag = 0; hero.auto = null; }
     function takeReading() {
       const p = staff.target, tilt2 = bub.n > 0 ? bub.acc / bub.n : 0.03;
-      const err = staff.r * 1000 * tilt2 * 0.12 + api.rand(-0.6, 0.6);
+      const err = staff.r * 1000 * tilt2 * 0.06 + api.rand(-0.6, 0.6); // наклонённая рейка даёт отсчёт больше верного
       const read = Math.round(staff.r * 1000 + err);
       const hm = st.HI + bias / 1000 - read / 1000;
       if (st.first) { bias += err; st.first = false; }
@@ -1280,13 +1297,14 @@
       const [sx, sy] = toS(staff.x, gy(staff.x) - STAFF * VY - 4);
       if (p) {
         p.done = true; p.read = read; p.hm = hm; p.sx = staff.x; got++;
-        api.popup(sx, sy, `${p.lab} · ${pad4(read)} → ${fmt(hm, 2)}`, api.theme.good);
+        const under = Math.abs(sx - api.W / 2) < 140 && sy < api.TOP + 160; // не под окошком отсчёта
+        popAt(staff.x, under ? gy(staff.x) + 18 : gy(staff.x) - STAFF * VY - 4, `${p.lab} · ${pad4(read)} → ${fmt(hm, 2)}`, api.theme.good);
         if (p.kind !== 'pk' || p.alt) tell(`${p.lab}: ${p.kind === 'pk' ? p.alt : p.name} — отметка ${fmt(hm, 2)} м`, api.theme.good, 2);
         api.sfx('measure'); api.sfx('good');
         api.burst(sx, sy + 12, '#9dffb5', 8);
       } else {
         extras.push({ x: staff.x, read, hm });
-        api.popup(sx, sy, `Лишняя точка · ${pad4(read)}`, '#ffb02e');
+        popAt(staff.x, gy(staff.x) - STAFF * VY - 4, `Лишняя точка · ${pad4(read)}`, '#ffb02e');
         tell('Здесь нет ни пикета, ни перегиба — лишняя точка', api.theme.accent, 2);
         api.sfx('measure'); api.sfx('warn');
       }
@@ -1297,8 +1315,8 @@
       if (over) return;
       if (st.state !== 'ready') { tell('Нивелир уже переносят', api.theme.dim, 1.4); return; }
       const sx = staff.on ? staff.x : staffX();
-      const nx = w.reloc(hero.air ? hero.x : hero.x, hero.facing, sx);
-      if (Math.abs(nx - st.x) < 6) { tell('Нивелир и так здесь', api.theme.dim, 1.4); return; }
+      const nx = w.reloc(hero.x, hero.facing, sx);
+      if (Math.abs(nx - st.x) < 6) { tell(w.sight(sx, nx).ok ? 'Нивелир и так здесь' : 'Отсюда рейку не увидеть — встаньте на точку', api.theme.dim, 1.8); return; }
       st.state = 'pack'; st.t = 0; st.fromX = st.x; st.toX = nx; relocs++;
       say('Переношу!'); tell(`Перенос станции — ${MOVE_T} с`, '#7ec8ff', 1.8); api.sfx('select');
       staffUp(); flashMove = 0;
@@ -1346,7 +1364,7 @@
       if (code === 'ArrowLeft' || code === 'KeyA') input.kl = down;
       else if (code === 'ArrowRight' || code === 'KeyD') input.kr = down;
       else if ((code === 'ArrowUp' || code === 'KeyW') && down) jump();
-      else if (code === 'Space' || code === 'ArrowDown' || code === 'KeyS') { if (down && !staff.on) staffDown(0); else if (!down) staffUp(); }
+      else if (code === 'Space' || code === 'ArrowDown' || code === 'KeyS') { input.ks = down; if (down && !staff.on) staffDown(0); else if (!down) staffUp(); }
       else if ((code === 'KeyE' || code === 'KeyR') && down) relocate();
       else if (code === 'KeyF' && down && showDone()) finish();
     }
@@ -1360,6 +1378,7 @@
       if (banner && (banner.t -= dt) <= 0) banner = null;
       if (speech && (speech.t -= dt) <= 0) speech = null;
       flashMove = Math.max(0, flashMove - dt);
+      for (let i = floats.length - 1; i >= 0; i--) { const f = floats[i]; f.life -= dt; f.y -= 14 * dt; if (f.life <= 0) floats.splice(i, 1); }
       stepStation(dt);
       let dir = walkDir();
       // после отсчёта (или «не вижу») шаг снимает рейку
@@ -1377,16 +1396,21 @@
       slow *= sl > 0 ? clamp(1 - sl * 1.4, 0.5, 1) : clamp(1 - sl * 0.4, 1, 1.12);
       if (zone !== hero.zone && !hero.air) {
         const [sx, sy] = toS(hero.x, hero.y - 30);
-        if (zone === 'nettle') { api.popup(sx, sy, 'Ай! Крапива', '#ffb02e'); api.sfx('warn'); }
+        if (zone === 'nettle') { popAt(hero.x, hero.y - 30, 'Ай! Крапива', '#ffb02e'); api.sfx('warn'); }
         else if (zone === 'puddle') { api.sfx('splash'); api.burst(sx, sy + 40, '#cfe9ff', 8); }
-        else if (zone === 'water') { api.popup(sx, sy, 'Брод — медленнее', '#7ec8ff'); api.sfx('splash'); api.burst(sx, sy + 40, '#cfe9ff', 10); }
-        else if (zone === 'ditch') { falls++; api.popup(sx, sy, 'Упал в канаву!', api.theme.bad); api.sfx('drop'); api.sfx('splash'); api.shake(3); api.burst(sx, sy + 44, '#a9d0dc', 12); }
-        else if (zone === 'bush') { api.popup(sx, sy, 'Продираюсь через кусты', api.theme.dim); api.sfx('step'); }
+        else if (zone === 'water') { popAt(hero.x, hero.y - 30, 'Брод — медленнее', '#7ec8ff'); api.sfx('splash'); api.burst(sx, sy + 40, '#cfe9ff', 10); }
+        else if (zone === 'ditch') { falls++; popAt(hero.x, hero.y - 30, 'Упал в канаву!', api.theme.bad); api.sfx('drop'); api.sfx('splash'); api.shake(3); api.burst(sx, sy + 44, '#a9d0dc', 12); }
+        else if (zone === 'bush') { popAt(hero.x, hero.y - 30, 'Продираюсь через кусты', api.theme.dim); api.sfx('step'); }
         hero.zone = zone;
       }
       if ((zone === 'water' || zone === 'puddle') && Math.abs(hero.vx) > 20 && (hero.splashT -= dt) <= 0) { hero.splashT = 0.35; const [sx, sy] = toS(hero.x, gy(hero.x) - (zone === 'water' ? (w.water.Hw - w.hw(hero.x)) * VY : 0)); api.burst(sx, sy, '#d8f0ff', 3); }
       // движение
-      if (hero.climb) {
+      if (hero.auto) { // шаг к колышку, пока держат РЕЙКА
+        const a = hero.auto, d = a.to - hero.x;
+        if (!(roleCount('staff') || input.ks)) { hero.auto = null; hero.vx = 0; }
+        else if (Math.abs(d) < 0.3) { hero.x = a.to; hero.y = gy(hero.x); hero.auto = null; hero.vx = 0; staffDown(a.px); }
+        else { hero.vx = Math.sign(d) * 150; hero.x += clamp(d, -150 * dt, 150 * dt); hero.y = gy(hero.x); }
+      } else if (hero.climb) {
         const c = hero.climb; c.t += dt;
         const k = Math.min(1, c.t / c.dur);
         hero.x = lerp(c.from, c.to, k); hero.y = gy(hero.x) - Math.sin(Math.PI * k) * c.h;
@@ -1413,7 +1437,7 @@
             break;
           }
         }
-        if (!blocked) hero.climbT = 0;
+        if (!blocked) hero.climbT = Math.max(0, hero.climbT - dt * 0.5); // короткие нажатия тоже копятся — не застрять у бревна
         hero.x = clamp(nx, XA + 40, XB - 40);
         hero.y = gy(hero.x);
       }
@@ -1422,8 +1446,9 @@
       if (staff.active && !staff.done) {
         const u = clamp((walkDir()) + input.drag, -1, 1);
         const shaky = (w.inWater(staff.x) ? 1.7 : 1) * (inZ(ob.nettle, hero.x) ? 1.25 : 1);
-        const noise = (Math.sin(clock * 1.7 + bub.ph[0]) * 0.6 + Math.sin(clock * 3.1 + bub.ph[1]) * 0.4 + Math.sin(clock * 5.3 + bub.ph[2]) * 0.3) * 1.4 * shaky;
-        const a = 2.2 * bub.b + noise + 6.5 * u - 2.8 * bub.v;
+        const noise = (Math.sin(clock * 1.7 + bub.ph[0]) * 0.6 + Math.sin(clock * 3.1 + bub.ph[1]) * 0.4 + Math.sin(clock * 5.3 + bub.ph[2]) * 0.3) * 1.5 * shaky;
+        // неустойчивость мягкая, демпфирование сильное — пузырёк ловится и с реакцией 0,3–0,4 с (палец, телефон)
+        const a = 1.4 * bub.b + noise + 3.4 * u - 5 * bub.v;
         bub.v += a * dt; bub.b += bub.v * dt;
         if (Math.abs(bub.b) > 1) { bub.b = Math.sign(bub.b); bub.v *= -0.2; }
         bub.beepT -= dt;
@@ -1471,6 +1496,11 @@
       return clamp(1 - dev / n / 0.3, 0, 1);
     }
     let resInfo = null;
+    function fitLines(vs) { // строки итога слева от бланка: на узком экране — короткий вариант
+      let c = null; try { c = document.createElement('canvas').getContext('2d'); c.font = '600 12px system-ui, sans-serif'; } catch (e) {}
+      const room = api.W * 0.52 - 14; // текст центрирован по 0,3·W, бланк — с 0,56·W
+      return vs.map(v => (c && c.measureText(v[0]).width <= room ? v[0] : v[1]));
+    }
     function finish() {
       if (over) return; over = true;
       staffUp();
@@ -1486,12 +1516,12 @@
       resInfo = { M, acc, fh, fdop, closOK, miss: pts.filter(p => !p.done), stations: st.no };
       api.finish({
         score, stars, drawResult,
-        lines: [
-          `Точек ${got} из ${total}: ПК ${dn(pk)}/${pk.length}, перегибов ${dn(br)}/${br.length}, хар. ${dn(ch)}/${ch.length}`,
-          `Точность профиля ${Math.round(acc * 100)} % · лишних точек ${extras.length}`,
-          `Невязка ${fh > 0 ? '+' : ''}${fh} мм (доп. ±${fdop}) · станций ${st.no}`,
-          full ? `Пронивелировано за ${mmss(doneAt)} · премия +${bonus}` : 'Время вышло — профиль неполный',
-        ],
+        lines: fitLines([
+          [`Точек ${got} из ${total}: ПК ${dn(pk)}/${pk.length}, перегибов ${dn(br)}/${br.length}, хар. ${dn(ch)}/${ch.length}`, `ПК ${dn(pk)}/${pk.length} · перегибы ${dn(br)}/${br.length} · хар. ${dn(ch)}/${ch.length}`],
+          [`Точность профиля ${Math.round(acc * 100)} % · лишних точек ${extras.length}`, `Точность ${Math.round(acc * 100)} % · лишних ${extras.length}`],
+          [`Невязка ${fh > 0 ? '+' : ''}${fh} мм (доп. ±${fdop}) · станций ${st.no}`, `Невязка ${fh > 0 ? '+' : ''}${fh} мм (±${fdop}) · ст. ${st.no}`],
+          full ? [`Пронивелировано за ${mmss(doneAt)} · премия +${bonus}`, `Время ${mmss(doneAt)} · премия +${bonus}`] : ['Время вышло — профиль неполный', 'Время вышло'],
+        ]),
       });
     }
 
@@ -1499,28 +1529,29 @@
     const cam0y = cam.y;
     const fblades = []; // травинки переднего плана (перед ногами)
     for (let x = XA + 2; x < XB - 2; x += 2.6 + R() * 2.2) { const m = matAt(x); if (m === 'grass' || m === 'wet' || m === 'sedge' || m === 'mown' || m === 'field') fblades.push(x, (m === 'wet' || m === 'sedge' ? 3.5 : m === 'mown' ? 1.6 : 2.4) * (0.6 + R() * 0.8), (R() - 0.4) * 1.6); }
-    let skyG = null, vignette = null;
-    function blit(c, layer, ox, y, LW, LH, W, yMax) { // вывести видимую часть длинной полосы (ниже yMax — всё равно перекрыто)
-      const k = layer.canvas.width / LW, sx = Math.max(0, -ox), sw = Math.min(W, LW - sx), hh = Math.min(LH, yMax - y);
-      if (sw <= 0 || hh <= 0) return;
-      c.drawImage(layer.canvas, sx * k, 0, sw * k, hh * k, Math.max(0, ox), y, sw, hh);
+    let skyL = null, vignette = null;
+    function blit(c, ly, ox, y, W, yMax) { // видимая часть длинной полосы; ниже yMax всё равно перекрыто
+      const k = ly.canvas.width / ly.w, sx = Math.max(0, Math.round(-ox * k)), sw = Math.min(Math.ceil(W * k) + 1, ly.canvas.width - sx), sh = Math.min(ly.canvas.height, Math.ceil((yMax - y) * k));
+      px(c, ly, sx, 0, sw, sh, Math.max(0, ox), y);
     }
     function draw(ctx) {
       const W = api.W, H = api.H, TOP = api.TOP, VW = W / Z;
-      if (!skyG) { skyG = ctx.createLinearGradient(0, TOP, 0, H * 0.72); skyG.addColorStop(0, TOD.sky0); skyG.addColorStop(1, TOD.sky1); }
+      if (!skyL || skyL.w !== W || Math.abs(skyL.k - curK()) > 0.01) skyL = layer(W, H - TOP, c => { // небо с солнцем — один раз под размер экрана
+        const g = c.createLinearGradient(0, 0, 0, H * 0.72 - TOP); g.addColorStop(0, TOD.sky0); g.addColorStop(1, TOD.sky1); c.fillStyle = g; c.fillRect(0, 0, W, H - TOP);
+        c.drawImage(sunSpr.canvas, W * TOD.sx - 60, 18 + TOD.sy * 160 - 60, 120, 120);
+      });
       // экономим заливку: небо — до сплошной части дальнего плана, дальний — до среднего, средний — до верха рельефа
       const fy = TOP + 118 - FY - (cam.y - cam0y) * Z * 0.12, my = TOP + 160 - MY - (cam.y - cam0y) * Z * 0.3;
       let gMax = -1e9; for (let x = cam.x - 12; x < cam.x + VW + 12; x += 4) gMax = Math.max(gMax, gy(x));
       const gTop = TOP + (gMax - cam.y) * Z + 2; // ниже самой низкой точки рельефа в кадре всё закрыто грунтом
-      ctx.fillStyle = skyG; ctx.fillRect(0, TOP, W, Math.min(H, gTop, fy + FY - 5) - TOP);
-      ctx.drawImage(sunSpr.canvas, W * TOD.sx - 60, TOP + 18 + TOD.sy * 160 - 60, 120, 120);
-      for (const cl of clouds) { const x = ((cl.x + clock * cl.v - cam.x * Z * 0.05) % (W + 320) + W + 320) % (W + 320) - 160; ctx.drawImage(cl.spr.canvas, x, TOP + cl.y - 16, cl.w, cl.h); }
+      px(ctx, skyL, 0, 0, skyL.canvas.width, Math.min(skyL.canvas.height, Math.ceil((Math.min(H, gTop, fy + FY - 5) - TOP) * skyL.k)), 0, TOP);
+      for (const cl of clouds) { const x = ((cl.x + clock * cl.v - cam.x * Z * 0.05) % (W + 320) + W + 320) % (W + 320) - 160; px(ctx, cl.spr, 0, 0, cl.spr.canvas.width, cl.spr.canvas.height, x, TOP + cl.y - 16); }
       ctx.strokeStyle = 'rgba(40,40,50,.55)'; ctx.lineWidth = 1; ctx.beginPath();
       for (const b of birds) { const f = Math.sin(clock * 9 + b.ph) * 2.2; ctx.moveTo(b.x - 4, TOP + b.y - f); ctx.quadraticCurveTo(b.x - 1.5, TOP + b.y - 1, b.x, TOP + b.y); ctx.quadraticCurveTo(b.x + 1.5, TOP + b.y - 1, b.x + 4, TOP + b.y - f); }
       ctx.stroke();
-      blit(ctx, far, -(cam.x - XA) * Z * PF, fy, FW, FH, W, Math.min(gTop, my + MY - 10));
+      blit(ctx, far, -(cam.x - XA) * Z * PF, fy, W, Math.min(gTop, my + MY - 10));
       const mox = -(cam.x - XA) * Z * PM;
-      blit(ctx, mid, mox, my, MW, MH, W, gTop);
+      blit(ctx, mid, mox, my, W, gTop);
       if (gTop > my + MH) { ctx.fillStyle = midLow; ctx.fillRect(0, my + MH - 1, W, gTop - my - MH + 1); }
       if (distCar) { // машина на дальней дороге
         const cx = mox + distCar.x, cy = my + distCar.gl(distCar.x) + 12.5;
@@ -1530,8 +1561,8 @@
       ctx.save();
       ctx.translate(-cam.x * Z, TOP - cam.y * Z); ctx.scale(Z, Z);
       const x0 = cam.x - 12, x1 = cam.x + VW + 12;
-      for (const tr of trees) if (tr.x + tr.hw > x0 && tr.x - tr.hw < x1) ctx.drawImage(tr.spr.canvas, tr.x - tr.hw, gy(tr.x) + 2 - tr.h - 4, tr.hw * 2, tr.h + 8);
-      for (const ch of chunks) if (ch.x1 + 1 > x0 && ch.x0 - 1 < x1) { ctx.drawImage(ch.layer.canvas, 0, ch.sy, ch.layer.canvas.width, ch.layer.canvas.height - ch.sy, ch.x0 - 1, ch.top, ch.x1 - ch.x0 + 2, ch.bot - ch.top); ctx.fillStyle = DEEP; ctx.fillRect(ch.x0 - 0.5, ch.bot - 0.5, ch.x1 - ch.x0 + 1, 400); }
+      for (const tr of trees) if (tr.x + tr.hw > x0 && tr.x - tr.hw < x1) px(ctx, tr.spr, 0, 0, tr.spr.canvas.width, tr.spr.canvas.height, tr.x - tr.hw, gy(tr.x) + 2 - tr.h - 4, Z);
+      for (const ch of chunks) if (ch.x1 + 1 > x0 && ch.x0 - 1 < x1) { px(ctx, ch.layer, 0, ch.sy, ch.layer.canvas.width, ch.layer.canvas.height - ch.sy, ch.x0 - 1, ch.top, Z); ctx.fillStyle = DEEP; ctx.fillRect(ch.x0 - 0.5, ch.bot - 0.5, ch.x1 - ch.x0 + 1, 400); }
       drawWater(ctx, x0, x1);
       drawStakes(ctx, x0, x1);
       drawStation(ctx);
@@ -1540,6 +1571,8 @@
       drawFront(ctx, x0, x1);
       ctx.restore();
       drawLabels(ctx, W);
+      for (const f of floats) { const [fx, fy] = toS(f.x, f.y); ctx.globalAlpha = Math.min(1, f.life / 0.4); outlined(ctx, f.text, clamp(fx, 90, W - 90), fy, 13, f.color); }
+      ctx.globalAlpha = 1;
       drawSpeech(ctx, W);
       drawOffscreen(ctx, W, H);
       drawPlan(ctx, W);
@@ -1592,26 +1625,31 @@
       const cand = candidate();
       if (cand) { const y = gy(cand.x), pu = 0.5 + 0.5 * Math.sin(clock * 8); c.strokeStyle = `rgba(255,215,90,${0.55 + pu * 0.45})`; c.lineWidth = 0.9; c.beginPath(); c.ellipse(cand.x, y, 6 + pu * 1.5, 2, 0, 0, TAU); c.stroke(); }
     }
-    const candidate = () => (!staff.on && !hero.air && !hero.climb ? ptNear(staffX(), false) : null);
+    const candidate = () => (!staff.on && !hero.air && !hero.climb ? ptNear(staffX(), false, SNAP) : null);
     function drawLabels(c, W) {
-      const VW = W / Z;
+      const VW = W / Z, boxes = [];
       c.textBaseline = 'alphabetic';
-      for (const p of pts) {
-        if (p.x < cam.x - 12 || p.x > cam.x + VW + 12) continue;
+      // подпись без наложений: если место занято — поднимаем выше (пикеты ставятся первыми)
+      const put = (str, x, y, size, color, weight, al) => {
+        c.font = `${weight} ${size}px system-ui, sans-serif`;
+        const hw = c.measureText(str).width / 2 + 2;
+        for (let k = 0; k < 4 && boxes.some(q => x - hw < q.x1 && x + hw > q.x0 && y - size < q.y1 && y + 2 > q.y0); k++) y -= size + 2;
+        boxes.push({ x0: x - hw, x1: x + hw, y0: y - size, y1: y + 2 });
+        c.globalAlpha = al; outlined(c, str, x, y, size, color, 'center', weight); c.globalAlpha = 1;
+      };
+      const vis = pts.filter(p => p.x > cam.x - 12 && p.x < cam.x + VW + 12);
+      for (const p of vis) if (p.kind === 'pk') {
+        const [sx, sy] = toS(p.x, gy(p.x));
+        put(p.name + (p.done ? ' ✓' : p.warned ? ' !' : ''), sx + 4, sy - 17, 11, p.done ? '#9dffb5' : p.warned ? '#ff8a7a' : '#ffffff', 'bold', 1);
+      }
+      for (const p of vis) {
         const [sx, sy] = toS(p.x, gy(p.x)), near = Math.abs(p.x - hero.x);
-        if (p.kind === 'pk') {
-          outlined(c, p.name + (p.done ? ' ✓' : p.warned ? ' !' : ''), sx + 4, sy - 17, 11, p.done ? '#9dffb5' : p.warned ? '#ff8a7a' : '#ffffff');
-          if (p.alt && near < 70 && !p.done) outlined(c, p.alt, sx + 4, sy - 30, 9, '#ffe7a0', 'center', '600');
-        } else {
-          const al = p.done || p.warned ? 1 : clamp((70 - near) / 30, 0, 1);
-          if (al <= 0) continue;
-          c.globalAlpha = al;
-          outlined(c, p.done ? '✓' : p.warned ? '!' : p.name, sx, sy - 12, p.done ? 11 : 9, p.done ? '#9dffb5' : p.warned ? '#ff8a7a' : p.kind === 'brk' ? '#ffd7a0' : '#bfe3ff', 'center', '600');
-          c.globalAlpha = 1;
-        }
+        if (p.kind === 'pk') { if (p.alt && near < 70 && !p.done) put(p.alt, sx + 4, sy - 30, 9, '#ffe7a0', '600', 1); continue; }
+        const al = p.done || p.warned ? 1 : clamp((70 - near) / 30, 0, 1);
+        if (al > 0) put(p.done ? '✓' : p.warned ? '!' : p.name, sx, sy - 12, p.done ? 11 : 9, p.done ? '#9dffb5' : p.warned ? '#ff8a7a' : p.kind === 'brk' ? '#ffd7a0' : '#bfe3ff', '600', al);
       }
       const cand = candidate();
-      if (cand) { const [sx, sy] = toS(cand.x, gy(cand.x)); outlined(c, cand.lab + ' — держите РЕЙКА', sx, sy + 20, 10, '#ffd76a'); }
+      if (cand) { const [sx, sy] = toS(cand.x, gy(cand.x)); outlined(c, cand.lab + ' — держите РЕЙКА', clamp(sx, 80, W - 80), sy + 20, 11, '#ffd76a'); }
     }
     function drawStation(c) {
       const sy = gy(st.x);
@@ -1664,7 +1702,7 @@
         if (staff.on && Math.abs(staff.x - hero.x) > 6) wade(staff.x, 2.5);
         if (st.state === 'walk') wade(st.x, 7.5);
       }
-      for (const f of front) if (f.x1 > x0 && f.x0 < x1) { const base = Math.max(gy(f.x0 + 2), gy(f.x1 - 2), gy((f.x0 + f.x1) / 2)); c.drawImage(f.spr.canvas, f.x0, base - f.top + 1.5, f.x1 - f.x0, f.top + 2); }
+      for (const f of front) if (f.x1 > x0 && f.x0 < x1) { const base = Math.max(gy(f.x0 + 2), gy(f.x1 - 2), gy((f.x0 + f.x1) / 2)); px(c, f.spr, 0, 0, f.spr.canvas.width, f.spr.canvas.height, f.x0, base - f.top + 1.5, Z); }
       // травинки перед ногами
       c.strokeStyle = 'rgba(58,110,40,.95)'; c.lineWidth = 0.7; c.lineCap = 'round'; c.beginPath();
       let i = 0; { let lo = 0, hi = fblades.length / 3 - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (fblades[m * 3] < x0) lo = m + 1; else hi = m; } i = lo * 3; }
@@ -1688,6 +1726,7 @@
       sx = clamp(sx, 50, W - 50); sy = Math.max(api.TOP + 64, sy);
       c.font = 'bold 11px system-ui, sans-serif';
       const tw = c.measureText(speech.text).width + 14, a = Math.min(1, speech.t / 0.3);
+      if (staff.on && (staff.active || staff.done) && Math.abs(sx - W / 2) < 128 + tw / 2 && sy - 30 < api.TOP + 148) sy = api.TOP + 180; // не под окошком отсчёта
       c.globalAlpha = a;
       api.roundRect(c, sx - tw / 2, sy - 30, tw, 20, 8); c.fillStyle = '#fffdf6'; c.fill(); c.strokeStyle = '#2b2e31'; c.lineWidth = 1; c.stroke();
       c.fillStyle = '#fffdf6'; c.beginPath(); c.moveTo(sx - 4, sy - 10.5); c.lineTo(sx, sy - 4); c.lineTo(sx + 4, sy - 10.5); c.fill();
@@ -1723,8 +1762,8 @@
     }
     function drawLevelUI(c, W) {
       if (!staff.on || !(staff.active || staff.done)) return;
-      const cx = W / 2, cy = api.TOP + 98, r = 29, tx = cx - 74, lx = cx + 74;
-      api.roundRect(c, cx - 118, cy - 41, 236, 86, 12); c.fillStyle = 'rgba(20,14,10,.74)'; c.fill(); c.strokeStyle = 'rgba(255,176,46,.8)'; c.lineWidth = 1.5; c.stroke();
+      const cx = W / 2, cy = api.TOP + 98, r = 29, tx = cx - 80, lx = cx + 80;
+      api.roundRect(c, cx - 128, cy - 41, 256, 88, 12); c.fillStyle = 'rgba(20,14,10,.74)'; c.fill(); c.strokeStyle = 'rgba(255,176,46,.8)'; c.lineWidth = 1.5; c.stroke();
       // поле зрения трубы: рейка с «Е»-шашками, сетка нитей
       const rm = staff.done ? staff.read : staff.r * 1000 + bub.b * bub.b * 45, kk = 0.27;
       c.save(); c.beginPath(); c.arc(tx, cy, r, 0, TAU); c.clip();
@@ -1912,6 +1951,7 @@
       const tap = (id, r) => { pointerDown(C(r, id)); pointerUp(C(r, id)); };
       const setWalk = d => { if (BOT.walk === d) return; if (BOT.walk) pointerUp(C(BOT.walk > 0 ? b.right : b.left, 901)); BOT.walk = d; if (d) pointerDown(C(d > 0 ? b.right : b.left, 901)); };
       if (BOT.staff) {
+        if (hero.auto) return;
         if (!staff.on || staff.done || staff.blocked) { pointerUp(C(b.staff, 902)); BOT.staff = false; BOT.wait = 0.05; return; }
         const u = clamp(-(bub.b * 3.2 + bub.v * 1.15), -1, 1);
         pointerMove({ x: staff.px0 + u * 34, y: b.staff.y + 20, id: 902, down: true });
@@ -1939,7 +1979,11 @@
 
     return {
       update, draw, pointerDown, pointerMove, pointerUp, key,
-      hud() { return { time: Math.max(0, T_LEVEL - t), info: [`Точки ${got}/${total}`, `Ст. ${st.no}`], progress: got / total }; },
+      hud() { // подпись сжимается, чтобы не наползать на название уровня на узком экране
+        const room = api.W - 330 - 52 - titleW;
+        const info = room > 118 ? [`Точки ${got}/${total}`, `Ст. ${st.no}`] : room > 40 ? [`${got}/${total}`] : [];
+        return { time: Math.max(0, T_LEVEL - t), info, progress: got / total };
+      },
       bot(dt) { botStep(dt); },
       _dbg: { w, pts, hero, st, staff, bub, get t() { return t; }, get relocs() { return relocs; }, get bias() { return bias; }, extras },
     };

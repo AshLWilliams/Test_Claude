@@ -239,7 +239,8 @@ function drawHUD() {
   ctx.fillStyle = 'rgba(20,14,10,.82)'; ctx.fillRect(0, 0, W, TOP);
   const L = LEVELS[levelIdx];
   text(ctx, `${L.num}/${LEVELS.length}`, 10, 19, 12, THEME.accent, 'left');
-  text(ctx, `${L.mode.title} · ${L.variant.title}`, 46, 19, 12, THEME.ink, 'left');
+  ctx.font = 'bold 12px system-ui, sans-serif'; const numW = ctx.measureText(`${L.num}/${LEVELS.length}`).width;
+  text(ctx, `${L.mode.title} · ${L.variant.title}`, 18 + numW, 19, 12, THEME.ink, 'left');
   text(ctx, 'Очки: ' + Math.floor(score + (result ? 0 : 0)), W - 122, 19, 12, THEME.ink, 'right');
   let h = null; try { h = inst && inst.hud ? inst.hud() : null; } catch (e) {}
   if (h) {

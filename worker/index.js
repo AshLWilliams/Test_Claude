@@ -16,9 +16,9 @@ const TICKET_TTL = 24 * 3600; // секунд
 const GAMES = {
   stardodger:  { path: '',          cmd: 'play', rate: 40, base: 100 },
   levelrunner: { path: 'surveyor/', cmd: 'run',  rate: 400, base: 10000 }, // кампания из 10 участков с бонусами за каждый
-  // «Топограф»: 10 уровней по 0..1000 очков. hidden — игра ещё не заведена в @BotFather (/newgame topograf):
-  // рейтинги на сайте уже работают, а в /start и inline-режиме её не показываем, чтобы Telegram не отклонил ответ
-  topograf:    { path: 'topograf/', cmd: 'survey', rate: 60, base: 2000, hidden: true },
+  // «Топограф»: 10 уровней по 0..1000 очков. hidden: true — скрыть игру из /start и inline-режима,
+  // пока её нет в @BotFather (иначе Telegram отклонит ответ); рейтинги на сайте работают и со скрытой
+  topograf:    { path: 'topograf/', cmd: 'survey', rate: 60, base: 2000 },
 };
 const listed = () => Object.keys(GAMES).filter(g => !GAMES[g].hidden); // игры, которые бот показывает в Telegram
 const gameOf = name => (GAMES[name] ? name : 'stardodger'); // старые билеты без игры — Star Dodger

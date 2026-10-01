@@ -9,7 +9,7 @@
   const G = 3;               // клетка сетки проходимости, ед.
   const HR = 3;              // «радиус» реечника при обходе препятствий
   const SNAP = 9;            // реечник ближе — точку можно снять
-  const T_LEVEL = 120;       // длительность уровня, с
+  const T_BASE = 70;         // длительность уровня: 70 с + 1 с на точку (110…135 с)
   const SPEED = 74;          // шаг реечника, ед./с
   const MPU = 0.25;          // метров в единице
   const HI = 1.6, HV = 2.0;  // высота инструмента и отражателя, м
@@ -101,7 +101,7 @@
     title: 'Пикет',
     subtitle: 'Тахеометрическая съёмка участка',
     howto: [
-      'За 2 минуты снимите участок: тап по карте — реечник идёт.',
+      'Снимите участок за ~2 мин: тап по карте — реечник идёт.',
       'У характерной точки (угол, опора, дерево) жмите ПИКЕТ.',
       'Тахеометр должен видеть веху, а до неё — не больше 60 м.',
       'Иначе СТАНЦИЯ и тап по месту; новая должна видеть прежнюю.',
@@ -834,6 +834,7 @@
       if (!o.need) o.dead = true; else NEED += o.need;
     }
     const liveObjs = objs.filter(o => !o.dead);
+    const T_LEVEL = clamp(Math.round((T_BASE + NEED) / 5) * 5, 110, 135);
 
     // ---------- статичный слой мира: рисуется один раз под масштаб экрана ----------
     statics.sort((a, b) => a.z - b.z || a.i - b.i);
@@ -851,7 +852,9 @@
     buildLayer(clamp(k0, 1, 3) * Z);
 
     // ---------- состояние уровня ----------
-    const hero = { x: cx(hs), y: cy(hs), dir: 0, ph: 0, walk: false };
+    let hc0 = hs;   // реечник начинает у первой станции — бригада приходит вместе
+    for (const [ox, oy] of [[-14, 6], [14, 6], [0, 14], [0, -14], [-14, -6], [14, -6]]) { const c = cellOf(s0.x + ox, s0.y + oy); if (!blocked[c] && reach[c]) { hc0 = c; break; } }
+    const hero = { x: cx(hc0), y: cy(hc0), dir: -Math.PI / 2, ph: 0, walk: false };
     let time = 0, over = false, finT = -1, path = null, walkPtr = null, lastRepath = -1, goal = null, tapFx = null;
     const keys = { l: 0, r: 0, u: 0, d: 0 };
     let st = { x: s0.x, y: s0.y }, stNo = 1, aim = Math.atan2(hero.y - s0.y, hero.x - s0.x);
@@ -862,7 +865,8 @@
     let lastMeas = null, mmDirty = true, mmLayer = null, mmKey = '', heroSlow = 1, slowMsgT = 0;
     let fails = 0, hintT = 0, nothingHere = false;   // подсказки новичку
     const VW = () => api.W / Z;
-    let camX = clamp(hero.x - VW() / 2, 0, Math.max(0, WW - VW()));
+    const camMax = () => Math.max(0, WW - VW() + 128 / Z);   // справа запас под кнопки: край участка не прячется под ними
+    let camX = clamp(hero.x - VW() / 2, 0, camMax());
     const partner = { x: s0.x - 7, y: s0.y + 4, dir: 0, ph: 0 };
 
     // ---------- помехи ----------
@@ -902,7 +906,9 @@
     const popW = (x, y, t, col) => {
       const s = toScreen(x, y), hw = MC.measureText(t).width / 2 + 6, px = clamp(s.x, hw, W() - hw);
       let py = clamp(s.y - 16, TOP + 30, api.H - 20);
-      for (let k = 0; k < 4; k++) { if (!pops.some(q => api.now - q.t < 1 && Math.abs(q.y - py) < 14 && Math.abs(q.x - px) < q.hw + hw)) break; py -= 15; }
+      const mr = mmRect(); if (px + hw > mr.x && py < mr.y + mr.h + 22) py = mr.y + mr.h + 24;   // не на абрис
+      if (px - hw < 220 && py < TOP + 52) py = TOP + 52;                                               // не на экран тахеометра
+      for (let k = 0; k < 4; k++) { if (!pops.some(q => api.now - q.t < 1 && Math.abs(q.y - py) < 16 && Math.abs(q.x - px) < q.hw + hw)) break; py -= 17; }
       pops.push({ t: api.now, x: px, y: py, hw }); if (pops.length > 8) pops.shift();
       api.popup(px, py, t, col);
     };
@@ -1015,7 +1021,7 @@
       if (over) return; over = true;
       const c = NEED ? got / NEED : 1, full = got >= NEED;
       const tLeft = full ? Math.max(0, T_LEVEL - doneAt) : 0, bonus = full ? Math.round(200 * tLeft / T_LEVEL) : 0;
-      const pen = Math.min(150, extra * 15) + Math.max(0, stNo - 6) * 10;
+      const pen = Math.min(400, extra * 20) + Math.max(0, stNo - 6) * 10;
       const score = clamp(Math.round(800 * c + bonus - pen), 0, 1000);
       const stars = score >= 820 ? 3 : score >= 600 ? 2 : score >= 380 ? 1 : 0;
       const doneObjs = liveObjs.filter(o => o.done).length;
@@ -1064,7 +1070,7 @@
       hero.walk = mv;
       if (mv) { hero.ph += dt; stepT -= dt; if (stepT <= 0) { stepT = 0.34; api.sfx('step'); } }
       // камера
-      camX += (clamp(hero.x - VW() / 2, 0, Math.max(0, WW - VW())) - camX) * Math.min(1, dt * 5);
+      camX += (clamp(hero.x - VW() / 2, 0, camMax()) - camX) * Math.min(1, dt * 5);
       // собака: бегает по двору; на чужого — лает издали и время от времени кидается под ноги
       if (dog) {
         const h = dogHome, dh = hyp(hero.x - dog.x, hero.y - dog.y);
@@ -1187,6 +1193,13 @@
       } else ctx.drawImage(layer.c, sx, 0, wpx, layer.c.height, 0, TOP, wpx / layer.k * Z, WH * Z);
       ctx.translate(0, oy); ctx.scale(Z, Z); ctx.translate(-cxr, 0);
       const x0 = cxr - 24, x1 = cxr + VW() + 24, vis = x => x > x0 && x < x1;
+      if (cxr + VW() > WW) { // за границей съёмки (запас камеры под кнопки)
+        ctx.fillStyle = '#26301f'; ctx.fillRect(WW, -2, cxr + VW() - WW + 4, WH + 4);
+        ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.lineWidth = 1; ctx.beginPath();
+        for (let y = -WW % 8; y < WH + 120; y += 8) { ctx.moveTo(WW, y); ctx.lineTo(WW + 120, y - 120); } ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,120,90,.85)'; ctx.lineWidth = 0.9; ctx.setLineDash([5, 2, 1, 2]); ctx.beginPath(); ctx.moveTo(WW, 0); ctx.lineTo(WW, WH); ctx.stroke(); ctx.setLineDash([]);
+        ctx.save(); ctx.translate(WW + 6, WH * 0.32); ctx.rotate(Math.PI / 2); api.text(ctx, 'граница съёмки', 0, 0, 6, 'rgba(255,170,150,.85)'); ctx.restore();
+      }
       // абрис: снятые объекты обводятся линиями
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       for (const o of objs) {
@@ -1226,8 +1239,8 @@
         }
         if (!objOpen(p) || p === nearPt) continue;
         const d = hyp(p.x - hero.x, p.y - hero.y);
-        if (d < 50 || fewLeft) {
-          const a = fewLeft ? 0.6 + 0.35 * Math.sin(t * 6 + p.i) : (0.18 + 0.15 * Math.sin(t * 5 + p.i * 1.7)) * clamp((50 - d) / 22, 0.3, 1);
+        if (d < 56 || fewLeft) {
+          const a = fewLeft ? 0.6 + 0.35 * Math.sin(t * 6 + p.i) : (0.34 + 0.22 * Math.sin(t * 5 + p.i * 1.7)) * clamp((56 - d) / 22, 0.3, 1);
           ctx.strokeStyle = `rgba(255,240,170,${a})`; ctx.lineWidth = fewLeft ? 1 : 0.6;
           ctx.beginPath(); ctx.arc(p.x, p.y, fewLeft ? 3.5 + Math.sin(t * 6) : 2.6, 0, TAU); ctx.stroke();
           ctx.fillStyle = `rgba(255,240,170,${a})`; ctx.beginPath(); ctx.arc(p.x, p.y, 0.7, 0, TAU); ctx.fill();
@@ -1261,7 +1274,9 @@
         Sym.surveyorTop(ctx, partner.x, partner.y, partner.dir, 0, { scale: 2, vest: '#2b7fd4', helmet: '#ffd23a' });
         Sym.tripodTop(ctx, st.x, st.y, t, { aim, scale: 2 });
       }
-      Sym.surveyorTop(ctx, hero.x, hero.y, hero.dir, hero.walk ? hero.ph : 0, { pole: true, scale: 2.2 });
+      ctx.fillStyle = 'rgba(255,150,40,.22)'; ctx.beginPath(); ctx.arc(hero.x, hero.y, 6.5, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,190,90,.55)'; ctx.lineWidth = 0.6; ctx.setLineDash([1.6, 2.2]); ctx.beginPath(); ctx.arc(hero.x, hero.y, SNAP, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+      Sym.surveyorTop(ctx, hero.x, hero.y, hero.dir, hero.walk ? hero.ph : 0, { pole: true, scale: 2.5 });
       // ближайшая точка
       if (nearPt) {
         const ok = !nearVis, pul = 0.5 + 0.5 * Math.sin(t * 9);
@@ -1270,8 +1285,8 @@
         ctx.fillStyle = ok ? '#6cff8a' : '#ff6b5b'; ctx.beginPath(); ctx.arc(nearPt.x, nearPt.y, 0.9, 0, TAU); ctx.fill();
         pill(ctx, nearPt.x, nearPt.y - 8, nearPt.name, ok ? '#6cff8a' : '#ff9d8f');
       }
-      // луч тахеометра → отражатель
-      if (!moving) {
+      // луч тахеометра → отражатель (при выборе места станции — не мешает)
+      if (!moving && !placing) {
         const rx = hero.x + (Math.cos(hero.dir) * 0.9 - Math.sin(hero.dir) * 1.95) * 2.2, ry = hero.y + (Math.sin(hero.dir) * 0.9 + Math.cos(hero.dir) * 1.95) * 2.2;
         const ix = st.x + Math.cos(aim) * 3.5, iy = st.y + Math.sin(aim) * 3.5;
         if (!nearVis) {
@@ -1300,7 +1315,7 @@
         ctx.beginPath(); ctx.moveTo(st.x, st.y); ctx.lineTo(inf.hit ? inf.hit.x : preview.x, inf.hit ? inf.hit.y : preview.y); ctx.stroke(); ctx.setLineDash([]);
         ctx.globalAlpha = 0.65; Sym.tripodTop(ctx, preview.x, preview.y, t, { aim: 0, scale: 2 }); ctx.globalAlpha = 1;
         if (inf.ok) { ctx.setLineDash([3, 4]); ctx.strokeStyle = 'rgba(110,255,150,.45)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(preview.x, preview.y, RANGE, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
-        pill(ctx, preview.x, preview.y - 12, inf.ok ? `отсюда видно точек: ${inf.n}` : inf.why, inf.ok ? '#6cff8a' : '#ff9d8f');
+        pill(ctx, preview.x, preview.y + (preview.y < 34 ? 14 : -12), inf.ok ? `отсюда видно точек: ${inf.n}` : inf.why, inf.ok ? '#6cff8a' : '#ff9d8f');
       }
       ctx.restore();
       drawUI(ctx, t);
@@ -1336,7 +1351,8 @@
     function drawUI(ctx, t) {
       const Wd = W();
       // экран тахеометра: последний пикет и слежение за отражателем
-      const px = 6, py = TOP + 4, pw = 214, ph = 32;
+      const px = 6, py = TOP + 4, pw = 214, ph = 32, hs = toScreen(hero.x, hero.y);
+      ctx.save(); if (hs.x < px + pw + 26 && hs.y < py + ph + 30) ctx.globalAlpha = 0.25;
       ctx.fillStyle = 'rgba(14,22,18,.82)'; api.roundRect(ctx, px, py, pw, ph, 5); ctx.fill();
       ctx.strokeStyle = 'rgba(120,200,150,.5)'; ctx.lineWidth = 1; ctx.stroke();
       const l1 = moving ? `Ст.${stNo} → Ст.${stNo + 1}: перенос, ${Math.max(0, Math.ceil(moving.dur - moving.t))} с` : lastMeas ? `Ст.${lastMeas.st} · Пк ${lastMeas.pk} · ${lastMeas.name}` : `Ст.${stNo} · ориентирование выполнено`;
@@ -1346,9 +1362,9 @@
       else if (nearVis && nearVis.far) { l2 = `S ${fmt(hyp(hero.x - st.x, hero.y - st.y) * MPU, 1)} м — дальше 60 м!`; c2 = '#ffd27a'; }
       else if (nearVis) { l2 = 'Hz ---°--′  нет отражателя'; c2 = '#ff9d8f'; }
       else { const dx = hero.x - st.x, dy = hero.y - st.y; l2 = `Hz ${dms(Math.atan2(dx, -dy) * 180 / Math.PI)}  S ${fmt(hyp(dx, dy) * MPU, 2)} м  H ${fmt(hAt(hero.x, hero.y), 2)}`; }
-      ctx.save(); ctx.font = '600 9px ui-monospace, Menlo, Consolas, monospace'; ctx.fillStyle = c2; ctx.textAlign = 'left'; ctx.fillText(l2, px + 7, py + 26); ctx.restore();
+      ctx.save(); ctx.font = '600 9px ui-monospace, Menlo, Consolas, monospace'; ctx.fillStyle = c2; ctx.textAlign = 'left'; ctx.fillText(l2, px + 7, py + 26); ctx.restore(); ctx.restore();
       // абрис (мини-план); над реечником — полупрозрачный
-      const mr = mmRect(), under = mmUnder(mr);
+      const mr = mmRect(), under = mmUnder(mr) || (placing && preview && (preview.x - camX) * Z > mr.x - 60 && TOP + preview.y * Z < mr.y + mr.h + 30);
       const key = mr.w + 'x' + mr.h;
       if (mmDirty || !mmLayer || key !== mmKey) { // один холст на весь уровень — перерисовываем по пикету
         const kk = clamp(Math.round(ctx.getTransform().a * 2) / 2, 1, 3), pw2 = Math.ceil(mr.w * kk), ph2 = Math.ceil(mr.h * kk);
@@ -1439,7 +1455,7 @@
         let sub = variant.title + ' · сечение рельефа 0,5 м · Балтийская система высот';
         c.font = '600 6.5px system-ui, sans-serif'; if (c.measureText(sub).width > w - 16) sub = variant.title + ' · сечение 0,5 м · БСВ';
         api.text(c, sub, w / 2, 26, 6.5, '#4a443c', 'center', '600');
-        const half = WW / 2, top = 31, gap = 13, s = Math.min((w - 18) / half, (h - top - 12 - gap) / (2 * WH));
+        const half = WW / 2, top = 31, gap = 13, s = Math.min((w - 18) / half, (h - top - 24 - gap) / (2 * WH));
         const pw = half * s, ph = WH * s, ox = (w - pw) / 2;
         const q = 1.8 / s;   // увеличение условных знаков: «единица знака» = 1,8 пикселя листа
         for (let k = 0; k < 2; k++) {
@@ -1450,8 +1466,8 @@
           planContents(c, 1 / q);
           c.restore();
           c.strokeStyle = '#1f1d1a'; c.lineWidth = 0.8; c.strokeRect(ox, oy, pw, ph);
-          c.beginPath();   // сетка крестов через 25 м
-          for (let gx = Math.ceil(k * half / 100) * 100; gx < (k + 1) * half; gx += 100) for (let gy = 60; gy < WH; gy += 100) {
+          c.beginPath();   // сетка крестов: 10 см плана = 50 м
+          for (let gx = Math.ceil((k * half + 1) / 200) * 200; gx < (k + 1) * half - 1; gx += 200) for (const gy of [WH / 2]) {
             const X = ox + (gx - k * half) * s, Y = oy + gy * s; c.moveTo(X - 3, Y); c.lineTo(X + 3, Y); c.moveTo(X, Y - 3); c.lineTo(X, Y + 3);
           }
           c.lineWidth = 0.5; c.stroke();
@@ -1586,7 +1602,7 @@
     // ---------- ввод ----------
     const inst = {
       update, draw,
-      hud() { return { time: Math.max(0, T_LEVEL - time), info: [api.W >= 700 ? `Точки ${got}/${NEED} · Ст.${stNo}` : `${got}/${NEED}`], progress: NEED ? got / NEED : 1 }; },
+      hud() { return { time: Math.max(0, T_LEVEL - time), info: api.W >= 700 ? [`Точки ${got}/${NEED} · Ст.${stNo}`] : [], progress: NEED ? got / NEED : 1 }; },
       pointerDown(p) {
         if (over) return;
         if (api.hit(btnP(), p)) { picket(); return; }

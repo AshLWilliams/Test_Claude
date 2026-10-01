@@ -54,7 +54,7 @@
   // ---------- генерация: общая часть ----------
   function newG(kinds) {
     return {
-      blk: new Int16Array(N), res: new Int8Array(N).fill(-1), blds: [], draws: [], hidden: [],
+      blk: new Int16Array(N), res: new Int8Array(N).fill(-1), app: new Int8Array(N).fill(-1), blds: [], draws: [], hidden: [],
       nets: kinds.map(k => ({ kind: k, links: new Uint8Array(N), ends: [], manholes: [], sig: null, cells: [] })),
     };
   }
@@ -73,7 +73,8 @@
       for (const [c, r] of cells) {
         if (!inb(c, r)) continue;
         const i = r * COLS + c, o = step(i, d);
-        if (g.blk[i] || g.res[i] >= 0 || o < 0 || g.blk[o] || g.res[o] >= 0) continue;
+        if (g.blk[i] || g.res[i] >= 0 || o < 0 || g.blk[o] || g.res[o] >= 0 || g.app[o] >= 0 || g.app[i] >= 0 || edgeCell(o)) continue;
+        const o2 = step(o, d); if (o2 < 0 || g.blk[o2]) continue; // перед вводом — не меньше трёх свободных клеток
         let near = false; // соседние вводы — не вплотную, ввод — не в узком проходе
         for (let k = 0; k < N && !near; k++) if (g.res[k] >= 0 && (Math.abs(cOf(k) - c) + Math.abs(rOf(k) - r) <= 1 || k === o)) near = true;
         let walls = 0; for (let e = 0; e < 4; e++) { const q = step(i, e); if (q >= 0 && g.blk[q]) walls++; }
@@ -86,14 +87,14 @@
     if (!cand.length) return null;
     cand.sort((a, b2) => b2.w - a.w);
     const e = cand[0];
-    g.res[e.cell] = ni;
+    g.res[e.cell] = ni; g.app[step(e.cell, e.dir)] = ni; // клетка подхода к вводу — только этой сети
     const end = { cell: e.cell, dir: e.dir, bld: b };
     g.nets[ni].ends.push(end);
     return end;
   }
 
   // трассировка Дейкстрой по состояниям (клетка, направление): повороты дороже, чужие сети — только перпендикулярно
-  function route(g, ni, starts, goal, turnCost, R) {
+  function route(g, ni, starts, goal, turnCost, R, edgeCost = 0.8) {
     const net = g.nets[ni], me = net.links;
     const noise = new Float32Array(N); for (let i = 0; i < N; i++) noise[i] = R() * 0.9;
     const dist = new Float64Array(N * 4).fill(Infinity), prev = new Int32Array(N * 4).fill(-1);
@@ -109,7 +110,7 @@
         let cost = d0 + 1;
         if (nd !== dir) { if (startSet.has(c) || cOther) continue; cost += turnCost; }
         const n = step(c, nd);
-        if (n < 0 || g.blk[n]) continue;
+        if (n < 0 || g.blk[n] || (g.app[n] >= 0 && g.app[n] !== ni)) continue;
         if (me[n] || g.res[n] >= 0) { // своя сеть или чей-то ввод: только как цель
           if (goal.join && goal.join(n, nd)) return build(st, n);
           continue;
@@ -120,7 +121,7 @@
         if (!ok || cross > 1) continue;
         let adj = 0;
         for (let d = 0; d < 4; d++) { const q = step(n, d); if (q >= 0 && q !== c && me[q]) adj = 1; }
-        cost += cross * 3 + noise[n] + adj * 1.6 + (edgeCell(n) ? 0.8 : 0);
+        cost += cross * 3 + noise[n] + adj * 1.6 + (edgeCell(n) ? edgeCost : 0);
         if (goal.free && goal.free(n, nd)) { if (!cross) return build(st, n); continue; }
         const ns = n * 4 + nd;
         if (cost < dist[ns]) { dist[ns] = cost; prev[ns] = st; heap.push(cost, ns); }
@@ -143,20 +144,21 @@
     const dir = horiz ? (flipDir ? 2 : 0) : (flipDir ? 3 : 1);
     for (let l = 0; l < count; l++) {
       const c = horiz ? (dir === 0 ? 0 : COLS - 1) : l, r = horiz ? l : (dir === 1 ? 0 : ROWS - 1), i = r * COLS + c;
-      if (g.blk[i] || g.res[i] >= 0 || otherAt(g, ni, i)) continue;
+      if (l === 0 || l === count - 1 || g.blk[i] || g.res[i] >= 0 || g.app[i] >= 0 || otherAt(g, ni, i)) continue;
       const pref = !prefLines || prefLines.includes(l);
-      starts.push({ cell: i, dir, cost: (pref ? 0 : 14) + R() * 3 + (l === 0 || l === count - 1 ? 6 : 0) });
+      starts.push({ cell: i, dir, cost: (pref ? 0 : 14) + R() * 3 });
     }
     if (!starts.length) return false;
     const far = i => dir === 0 ? cOf(i) === COLS - 1 : dir === 2 ? cOf(i) === 0 : dir === 1 ? rOf(i) === ROWS - 1 : rOf(i) === 0;
-    const path = route(g, ni, starts, { free: (n, nd) => far(n) && nd === dir }, 9, R);
+    const path = route(g, ni, starts, { free: (n, nd) => far(n) && nd === dir }, 9, R, 6);
     if (!path) return false;
     commit(g, ni, path);
+    g.nets[ni].main = true;
     return true;
   }
   // ответвление от ввода к уже проложенной сети (или первое — от ввода к выпуску источника)
   function routeBranch(g, ni, end, target, R) {
-    const net = g.nets[ni], me = net.links, tc = NET[net.kind].mh ? 5 : 2.5;
+    const net = g.nets[ni], me = net.links, tc = NET[net.kind].mh ? 5 : 4;
     const join = target
       ? (n, nd) => n === target.cell && nd === OPP(target.dir)
       : (n) => me[n] && g.res[n] < 0 && !otherAt(g, ni, n) && !edgeCell(n);
@@ -167,7 +169,7 @@
   }
 
   // колодцы, сигналы, цепочки для плана
-  function finalize(g, R) {
+  function finalize(g) {
     for (let ni = 0; ni < g.nets.length; ni++) {
       const net = g.nets[ni], L = net.links, mh = NET[net.kind].mh, isEnd = new Set(net.ends.map(e => e.cell));
       net.cells = []; for (let i = 0; i < N; i++) if (L[i]) net.cells.push(i);
@@ -234,7 +236,7 @@
     const fr = (r, h = 1) => flip ? ROWS - r - h : r;
     const fy = (y, h = 0) => flip ? GH - y - h : y;
     const fa = a => flip ? -a : a;
-    const D = (z, f) => g.draws.push({ z, f });
+    const D = (z, f, b) => g.draws.push({ z, f, b }); // b — габарит {x, y, r}: предмет поверх колодца/ввода не рисуем
     g.streetRows = [fr(9), fr(10), fr(8)];
     const street = STREETS[(R() * STREETS.length) | 0], num = 2 + ((R() * 40) | 0);
     // дом 9 эт. (ряды 1–2 канонической схемы)
@@ -290,8 +292,11 @@
       const y0 = fy(119, 24); Sym.ground(c, kc * CS + 2, y0, parkW * CS - 4, 24, 'asphalt', 8);
       c.strokeStyle = 'rgba(255,255,255,.75)'; c.lineWidth = 0.7; c.beginPath();
       for (let k = 0; k <= parkN; k++) { const x = kc * CS + 6 + k * 11; c.moveTo(x, y0 + 2); c.lineTo(x, y0 + 22); } c.stroke();
-      for (let k = 0; k < parkN; k++) if (R() < 0.85) Sym.car(c, kc * CS + 11.5 + k * 11, fy(131), fa(Math.PI / 2) + (R() - 0.5) * 0.06, null, (R() * 1e6) | 0);
     });
+    if (kc >= 0) for (let k = 0; k < parkN; k++) if (R() < 0.85) {
+      const x = kc * CS + 11.5 + k * 11, y = fy(131), a = fa(Math.PI / 2) + (R() - 0.5) * 0.06, s = (R() * 1e6) | 0;
+      D(6, c => Sym.car(c, x, y, a, null, s), { x, y, r: 7 });
+    }
     if (pc >= 0) {
       const px = pc * CS + 4, py = fy(150, 2 * CS - 12), ww = pw * CS - 8, hh = 2 * CS - 12, ps = (R() * 1e6) | 0;
       D(3, c => { Sym.playground(c, px, py, ww, hh, ps); Sym.fence(c, [[px - 2, py - 2], [px + ww + 2, py - 2], [px + ww + 2, py + hh + 2], [px - 2, py + hh + 2], [px - 2, py - 2]], 'metal'); });
@@ -307,12 +312,12 @@
         const n = Math.max(2, Math.round(b.w / 2.6)), yy = flip ? y - 1 : y + h + 1;
         for (let k = 0; k < n; k++) {
           const ex = x + (k + 0.5) * w / n, fs = (R() * 1e6) | 0;
-          D(5, c => { c.fillStyle = '#c9c2b4'; c.fillRect(ex - 4, flip ? yy - 4 : yy, 8, 4); c.fillStyle = 'rgba(0,0,0,.25)'; c.fillRect(ex - 4, flip ? yy - 1 : yy + 3, 8, 1); Sym.flowerbed(c, ex + 6, flip ? yy - 8 : yy + 3, 7, 4, fs); Sym.bush(c, ex - 8, flip ? yy - 6 : yy + 5, 2.6, fs + 1); });
+          D(5, c => { c.fillStyle = '#c9c2b4'; c.fillRect(ex - 4, flip ? yy - 4 : yy, 8, 4); c.fillStyle = 'rgba(0,0,0,.25)'; c.fillRect(ex - 4, flip ? yy - 1 : yy + 3, 8, 1); Sym.flowerbed(c, ex + 6, flip ? yy - 8 : yy + 3, 7, 4, fs); Sym.bush(c, ex - 8, flip ? yy - 6 : yy + 5, 2.6, fs + 1); }, { x: ex, y: flip ? yy - 4 : yy + 4, r: 8 });
         }
       }
     }
     // фонари вдоль проезда
-    for (let c = ca + 2; c < cb - 1; c += 4) { const x = c * CS + 12; D(7, cc => Sym.pole(cc, x, fy(yDrive + 13), 'lamp', fa(-Math.PI / 2))); }
+    for (let c = ca + 2; c < cb - 1; c += 4) { const x = c * CS + 12; D(7, cc => Sym.pole(cc, x, fy(yDrive + 13), 'lamp', fa(-Math.PI / 2)), { x, y: fy(yDrive + 13), r: 3 }); }
     for (let x = -EXT + 40; x < GW + EXT; x += 110) D(7, cc => Sym.pole(cc, x, fy(212), 'lamp', fa(Math.PI / 2)));
     // деревья: газон за домом, двор, обочина
     const kinds = ['deciduous', 'deciduous', 'birch', 'conifer', 'apple', 'deciduous', 'birch'];
@@ -338,10 +343,10 @@
     }
     for (let x = -EXT + 20; x < GW + EXT; x += 44 + R() * 30) { const y = fy(203 + R() * 5); trees.push({ x, y, r: 8 + R() * 3, kind: R() < 0.7 ? 'deciduous' : 'birch', s: (R() * 1e6) | 0 }); }
     trees.sort((a, b) => a.y - b.y);
-    for (const t of trees) D(8, c => Sym.tree(c, t.x, t.y, t.r, t.kind, t.s));
-    for (let k = 0; k < 8; k++) { const x = R() * GW, y = R() * GH, r = 3 + R() * 2; if (free(x, y, r + 4)) D(5, c => Sym.bush(c, x, y, r, k * 31 + 7)); }
+    for (const t of trees) D(8, c => Sym.tree(c, t.x, t.y, t.r, t.kind, t.s), t);
+    for (let k = 0; k < 8; k++) { const x = R() * GW, y = R() * GH, r = 3 + R() * 2; if (free(x, y, r + 4)) D(5, c => Sym.bush(c, x, y, r, k * 31 + 7), { x, y, r }); }
     // машины на улице
-    for (let x = -EXT + 30; x < GW + EXT - 20; x += 24 + R() * 60) if (R() < 0.55) { const s = (R() * 1e6) | 0; D(6, c => Sym.car(c, x, fy(yRoad - 9), 0, null, s)); }
+    for (let x = -EXT + 30; x < GW + EXT - 20; x += 24 + R() * 60) if (R() < 0.55) { const s = (R() * 1e6) | 0; D(6, c => Sym.car(c, x, fy(yRoad - 9), 0, null, s), { x, y: fy(yRoad - 9), r: 8 }); }
     g.street = street; g.num = num; g.flip = flip; g.yRoad = fy(yRoad); g.ySide = fy(ySide);
     g.roadsPlan = rl;
 
@@ -365,31 +370,34 @@
   // ---------- генерация: промзона ----------
   function layoutIndustrial(R) {
     const g = newG(['water', 'sewer', 'heat', 'gas', 'power']);
-    const D = (z, f) => g.draws.push({ z, f });
+    const D = (z, f, b) => g.draws.push({ z, f, b }); // b — габарит {x, y, r}: предмет поверх колодца/ввода не рисуем
     const rm = 4 + ((R() * 3) | 0), cv = 4 + ((R() * 14) | 0), vUp = R() < 0.5;
     const road = new Uint8Array(N);
     for (let c = 0; c < COLS; c++) road[rm * COLS + c] = 1;
     for (let r = vUp ? 0 : rm; vUp ? r <= rm : r < ROWS; r++) road[r * COLS + cv] = 1;
     const plant = 1 + ((R() * 30) | 0);
     const list = [
-      { kind: 'shop', name: 'Цех №1', label: 'кн2', w: 6 + ((R() * 3) | 0), h: 3 },
-      { kind: 'shop', name: 'Цех №2', label: 'кн1', w: 5 + ((R() * 3) | 0), h: 2 + ((R() * 2) | 0) },
-      { kind: 'store', name: 'Склад', label: 'мн1', w: 4 + ((R() * 3) | 0), h: 2 },
-      { kind: 'boiler', name: 'Котельная', label: 'кн', w: R() < 0.5 ? 3 : 2, h: 2 },
-      { kind: 'tp', name: 'ТП', label: 'ТП', w: R() < 0.5 ? 2 : 1, h: 1 },
-      { kind: 'grp', name: 'ГРП', label: 'ГРП', w: 1, h: 1 },
+      { kind: 'shop', name: 'Цех №1', label: 'кн2', w: 5 + ((R() * 3) | 0), h: 2 + ((R() * 2) | 0), gap: 2 },
+      { kind: 'shop', name: 'Цех №2', label: 'кн1', w: 4 + ((R() * 3) | 0), h: 2, gap: 2 },
+      { kind: 'store', name: 'Склад', label: 'мн1', w: 3 + ((R() * 3) | 0), h: 2, gap: 2 },
+      { kind: 'boiler', name: 'Котельная', label: 'кн', w: R() < 0.5 ? 3 : 2, h: 2, gap: 2 },
+      { kind: 'tp', name: 'ТП', label: 'ТП', w: R() < 0.5 ? 2 : 1, h: 1, gap: 1 },
+      { kind: 'grp', name: 'ГРП', label: 'ГРП', w: 1, h: 1, gap: 1, near: 'Котельная' },
     ];
     for (const b of list) {
       let placed = false;
-      for (let t = 0; t < 300 && !placed; t++) {
+      for (let t = 0; t < 400 && !placed; t++) {
         const c = 1 + ((R() * (COLS - 1 - b.w)) | 0), r = 1 + ((R() * (ROWS - 1 - b.h)) | 0);
         if (r + b.h > ROWS - 1 || c + b.w > COLS - 1) continue;
         let ok = true;
-        for (let rr = r - 1; rr <= r + b.h && ok; rr++) for (let cc = c - 1; cc <= c + b.w && ok; cc++) {
-          if (!inb(cc, rr)) continue;
-          const i = rr * COLS + cc, inside = rr >= r && rr < r + b.h && cc >= c && cc < c + b.w;
-          if (g.blk[i]) ok = false;
-          if (inside && road[i]) ok = false;
+        if (b.near) { // ГРП — рядом с котельной
+          const o = g.blds.find(q => q.name === b.near), dx = Math.max(0, o.c - (c + b.w), c - (o.c + o.w)), dy = Math.max(0, o.r - (r + b.h), r - (o.r + o.h));
+          if (dx + dy > 4) continue;
+        }
+        for (let rr = r; rr < r + b.h && ok; rr++) for (let cc = c; cc < c + b.w && ok; cc++) if (road[rr * COLS + cc]) ok = false;
+        for (const o of g.blds) {
+          const gp = Math.min(b.gap, o.gap);
+          if (c < o.c + o.w + gp && o.c < c + b.w + gp && r < o.r + o.h + gp && o.r < r + b.h + gp) ok = false;
         }
         if (ok) { addBld(g, Object.assign(b, { c, r })); placed = true; }
       }
@@ -416,7 +424,7 @@
       const x = o.c * CS + 3, y = o.r * CS + 3, w = o.w * CS - 6, h = o.h * CS - 6, s = (R() * 1e6) | 0;
       D(2, c => { Sym.ground(c, x, y, w, h, 'lawn', s); c.strokeStyle = '#9d9a92'; c.lineWidth = 1.2; c.strokeRect(x, y, w, h); });
       const n = 1 + ((R() * 3) | 0);
-      for (let k = 0; k < n; k++) { const tx = x + 8 + R() * (w - 16), ty = y + 6 + R() * (h - 12), tr = 6 + R() * 4, kind = ['deciduous', 'birch', 'conifer'][(R() * 3) | 0]; D(8, c => Sym.tree(c, tx, ty, tr, kind, s + k)); }
+      for (let k = 0; k < n; k++) { const tx = x + 8 + R() * (w - 16), ty = y + 6 + R() * (h - 12), tr = 6 + R() * 4, kind = ['deciduous', 'birch', 'conifer'][(R() * 3) | 0]; D(8, c => Sym.tree(c, tx, ty, tr, kind, s + k), { x: tx, y: ty, r: tr }); }
     }
     // ограждение с воротами
     const fp = 3;
@@ -455,29 +463,29 @@
     }
     // контейнеры, машины, фонари
     const freeCell = () => { for (let t = 0; t < 60; t++) { const c = 1 + ((R() * (COLS - 2)) | 0), r = 1 + ((R() * (ROWS - 2)) | 0), i = r * COLS + c; if (!g.blk[i] && !road[i] && !islands.some(o => c >= o.c - 1 && c <= o.c + o.w && r >= o.r - 1 && r <= o.r + o.h)) { let near = false; for (const b of g.blds) if (c >= b.c - 1 && c <= b.c + b.w && r >= b.r - 1 && r <= b.r + b.h) near = true; if (!near) return i; } } return -1; };
-    for (let k = 0; k < 3; k++) { const i = freeCell(); if (i < 0) continue; const s = (R() * 1e6) | 0, rot = R() < 0.5 ? 0 : Math.PI / 2; D(5, c => Sym.shed(c, cx(i) - (rot ? 5 : 11), cy(i) - (rot ? 11 : 5), rot ? 10 : 22, rot ? 22 : 10, { material: 'metal', seed: s, color: ['#3f6f9a', '#a6402f', '#4f7a4a', '#b07a2a'][s % 4] })); }
-    for (let k = 0; k < 4; k++) { const i = freeCell(); if (i < 0) continue; const s = (R() * 1e6) | 0, rot = R() < 0.5 ? 0 : Math.PI / 2; D(6, c => Sym.car(c, cx(i), cy(i), rot, null, s)); }
-    for (let x = 30; x < GW; x += 120) D(9, c => Sym.pole(c, x, yR - 14, 'lamp', -Math.PI / 2));
+    for (let k = 0; k < 3; k++) { const i = freeCell(); if (i < 0) continue; const s = (R() * 1e6) | 0, rot = R() < 0.5 ? 0 : Math.PI / 2; D(5, c => Sym.shed(c, cx(i) - (rot ? 5 : 11), cy(i) - (rot ? 11 : 5), rot ? 10 : 22, rot ? 22 : 10, { material: 'metal', seed: s, color: ['#3f6f9a', '#a6402f', '#4f7a4a', '#b07a2a'][s % 4] }), { x: cx(i), y: cy(i), r: 11 }); }
+    for (let k = 0; k < 4; k++) { const i = freeCell(); if (i < 0) continue; const s = (R() * 1e6) | 0, rot = R() < 0.5 ? 0 : Math.PI / 2; D(6, c => Sym.car(c, cx(i), cy(i), rot, null, s), { x: cx(i), y: cy(i), r: 9 }); }
+    for (let x = 30; x < GW; x += 120) D(9, c => Sym.pole(c, x, yR - 14, 'lamp', -Math.PI / 2), { x, y: yR - 14, r: 3 });
     g.yRoad = yR; g.roadsPlan = rl; g.plant = plant; g.islands = islands;
 
     // --- сети ---
     const shops = g.blds.filter(b => b.kind === 'shop'), store = B('Склад'), boiler = B('Котельная'), tp = B('ТП'), grp = B('ГРП');
     const sh = arr => { for (let i = arr.length - 1; i > 0; i--) { const j = (R() * (i + 1)) | 0; [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; };
-    // магистрали водопровода и канализации — первыми, через всю площадку
-    const o1 = R() < 0.5 ? 'h' : 'v';
-    if (!routeMain(g, 0, o1, null, R)) return null;
-    if (!routeMain(g, 1, o1 === 'h' ? 'v' : 'h', null, R)) return null;
     // выпуски источников
     const oHeat = pickEnd(g, 2, boiler, R, null), oGas = pickEnd(g, 3, grp, R, null), oPow = pickEnd(g, 4, tp, R, null);
     if (!oHeat || !oGas || !oPow) return null;
     for (const e of [oHeat, oGas, oPow]) e.outlet = true;
-    const wIn = [boiler, ...sh(shops.slice()).slice(0, 1 + ((R() * 2) | 0))];
+    const wIn = [...sh([...shops, store]).slice(0, 1 + ((R() * 2) | 0))];
     for (const b of wIn) if (!pickEnd(g, 0, b, R, null)) return null;
-    for (const b of sh(shops.slice()).slice(0, 1 + ((R() * 2) | 0))) if (!pickEnd(g, 1, b, R, null)) return null;
-    for (const b of sh([...shops, store]).slice(0, 2)) if (!pickEnd(g, 2, b, R, null)) return null;
+    for (const b of sh(shops.slice()).slice(0, 1 + (R() < 0.3 ? 1 : 0))) if (!pickEnd(g, 1, b, R, null)) return null;
+    const byDist = o => [...shops, store].sort((a, b) => Math.hypot(a.c + a.w / 2 - o.c - o.w / 2, a.r + a.h / 2 - o.r - o.h / 2) - Math.hypot(b.c + b.w / 2 - o.c - o.w / 2, b.r + b.h / 2 - o.r - o.h / 2));
+    for (const b of byDist(boiler).slice(0, 1 + ((R() * 2) | 0))) if (!pickEnd(g, 2, b, R, null)) return null;
     if (!pickEnd(g, 3, boiler, R, null)) return null;
-    if (R() < 0.5 && !pickEnd(g, 3, shops[(R() * shops.length) | 0], R, null)) return null;
-    for (const b of sh([...shops, store]).slice(0, 2 + ((R() * 2) | 0))) if (!pickEnd(g, 4, b, R, null)) return null;
+    for (const b of byDist(tp).slice(0, 2)) if (!pickEnd(g, 4, b, R, null)) return null;
+    // магистрали водопровода и канализации через всю площадку
+    const o1 = R() < 0.5 ? 'h' : 'v';
+    if (!routeMain(g, 0, o1, null, R)) return null;
+    if (!routeMain(g, 1, o1 === 'h' ? 'v' : 'h', null, R)) return null;
     for (const ni of [2, 3, 4]) {
       const net = g.nets[ni], src = net.ends.find(e => e.outlet), ins = net.ends.filter(e => !e.outlet);
       if (!routeBranch(g, ni, ins[0], src, R)) return null;
@@ -488,11 +496,11 @@
   }
 
   function generate(api, variant, seed) {
-    for (let attempt = 0; attempt < 60; attempt++) {
+    for (let attempt = 0; attempt < 200; attempt++) {
       const R = api.rng((seed + attempt * 7919) >>> 0);
       const g = variant.id === 'yard' ? layoutYard(R) : layoutIndustrial(R);
       if (!g) continue;
-      finalize(g, R);
+      finalize(g);
       if (g.nets.some(n => n.cells.length < 6)) continue;
       // гидрант у водопроводного колодца, «ковер» газа у ГРП — детали после трассировки
       const w = g.nets[0];
@@ -509,15 +517,15 @@
     title: 'Трассоискатель',
     subtitle: 'Поиск и съёмка подземных коммуникаций',
     howto: [
-      'Выберите сеть внизу и тапайте по клеткам: прибор покажет сигнал 0–9 (9 — прямо над трубой). Каждый замер тратит заряд.',
-      'Колодцы и вводы в здания — точки трассы. Трубы идут прямо, поворачивают и ветвятся в колодцах; ввод — перпендикулярно стене.',
-      '«Краска»: проведите пальцем по клеткам — разметьте трассу. «Ластик» стирает.',
-      'Готово — «СДАТЬ»: разметку сверят с исполнительной съёмкой (допуск — клетка 6 м).',
+      'Выберите сеть внизу и тапайте по клеткам: сигнал 0–9, 9 — прямо над трубой. Замер тратит заряд.',
+      'Колодцы и вводы — точки трассы. Трубы идут прямо, поворачивают в колодцах; ввод — перпендикулярно стене.',
+      '«Краска» — проведите пальцем по трассе, «Ластик» — стереть. Готово — «СДАТЬ».',
     ],
     variants: [
-      { id: 'yard', title: 'Двор многоэтажки', subtitle: 'Водопровод, канализация и связь: магистрали под улицей, вводы в дома', params: { battery: 45 } },
+      { id: 'yard', title: 'Двор многоэтажки', subtitle: 'Водопровод, канализация, связь: магистрали и вводы в дома',
+        howto: ['Магистрали В, К и С проходят участок насквозь, от края до края.'], params: { battery: 45 } },
       { id: 'industrial', title: 'Промзона', subtitle: 'Пять сетей, цеха, склад, котельная, ТП и ГРП за бетонным забором',
-        howto: ['Газ и кабель колодцев не имеют — повороты ищите по сигналу; Т идёт от котельной, Э — от ТП, Г — от ГРП.'], params: { battery: 40 } },
+        howto: ['В и К — магистрали насквозь; Т — от котельной. Г (от ГРП) и Э (от ТП) без колодцев — повороты ищите по сигналу.'], params: { battery: 55 } },
     ],
     create(api, variant, seed) {
       if (Sym.prepare) Sym.prepare(['lawn', 'grass', 'asphalt', 'concrete', 'paper']);
@@ -542,7 +550,7 @@
       const carMove = variant.id === 'yard' ? { x: -EXT - 40, v: 70, seed: 42 } : null;
 
       // ---------- раскладка экрана ----------
-      let L = null, layer = null, layerKey = '';
+      let L = null;
       function layout() {
         const W = api.W;
         if (L && L.W === W) return L;
@@ -564,13 +572,17 @@
       // ---------- статичный слой: сцена, колодцы, вводы ----------
       function drawStatic(c) {
         const ds = g.draws.slice().sort((a, b) => a.z - b.z);
-        for (const d of ds) d.f(c);
+        // точки, которые нельзя заслонять: колодцы, вводы, гидрант
+        const keep = [];
+        for (const n of nets) { for (const i of n.manholes) keep.push([cx(i), cy(i)]); for (const e of n.ends) keep.push([cx(e.cell) - DX[e.dir] * CS / 2, cy(e.cell) - DY[e.dir] * CS / 2]); }
+        if (g.hydrant != null) keep.push([cx(g.hydrant) - 9, cy(g.hydrant) + 7]);
+        for (const d of ds) if (!d.b || !keep.some(([x, y]) => Math.hypot(x - d.b.x, y - d.b.y) < d.b.r + 6)) d.f(c);
         // колодцы и буквы-«метки краской» рядом
         for (let ni = 0; ni < NN; ni++) {
           const n = nets[ni], k = n.kind, col = NET[k].paint;
           for (const i of n.manholes) {
-            const x = cx(i), y = cy(i), mk = NET[k].mh ? k : (k === 'gas' ? 'gas' : 'power');
-            Sym.manhole(c, x, y, mk, NET[k].mh ? 4.4 : 3.2, 0);
+            const x = cx(i), y = cy(i);
+            Sym.manhole(c, x, y, k, NET[k].mh ? 4.4 : 3.2, 0);
             c.font = 'bold 8px system-ui, sans-serif'; c.textAlign = 'center';
             c.lineWidth = 2.2; c.strokeStyle = 'rgba(0,0,0,.55)'; c.strokeText(NET[k].l, x + 8, y - 5); c.fillStyle = col; c.fillText(NET[k].l, x + 8, y - 5);
           }
@@ -589,7 +601,7 @@
         if (g.hydrant != null) Sym.hydrant(c, cx(g.hydrant) - 9, cy(g.hydrant) + 7, 0);
         // подписи зданий
         for (const b of g.blds) {
-          const x = (b.c + b.w / 2) * CS, y = (b.r + b.h / 2) * CS, t = b.kind === 'house9' || b.kind === 'house5' ? b.name : b.name;
+          const x = (b.c + b.w / 2) * CS, y = (b.r + b.h / 2) * CS, t = b.name;
           c.font = 'bold 8px system-ui, sans-serif'; const tw = c.measureText(t).width;
           c.fillStyle = 'rgba(255,255,255,.72)'; c.fillRect(x - tw / 2 - 3, y - 6, tw + 6, 11);
           c.strokeStyle = 'rgba(0,0,0,.35)'; c.lineWidth = 0.6; c.strokeRect(x - tw / 2 - 3, y - 6, tw + 6, 11);
@@ -608,24 +620,33 @@
         for (let a = 1; a < COLS; a++) for (let b = 1; b < ROWS; b++) { c.rect(a * CS - 1.5, b * CS - 0.25, 3, 0.5); c.rect(a * CS - 0.25, b * CS - 1.5, 0.5, 3); }
         c.fill();
       }
-      function ensureLayer() {
-        const l = layout(), key = l.W + ':' + l.s.toFixed(4);
-        if (layer && layerKey === key) return layer;
-        layerKey = key;
-        layer = api.layer(l.W, 360 - FIELD_TOP + 1, c => { c.translate(l.ox, l.oy - FIELD_TOP + 1); c.scale(l.s, l.s); drawStatic(c); });
-        return layer;
+      // слой в пикселях экрана (1:1 с холстом — без масштабирования при выводе; в разы дешевле api.layer с запасом плотности)
+      const px = {};
+      function pxLayer(ctx, slot, key, draw) {
+        const m = ctx.getTransform(), sc = m.a, l = layout();
+        const w = Math.round(l.W * sc), h = Math.round((360 - FIELD_TOP) * sc);
+        let P = px[slot];
+        if (!P || P.w !== w || P.h !== h) { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; P = px[slot] = { cv, g: cv.getContext('2d'), w, h, key: null }; }
+        if (P.key !== key) {
+          P.key = key; const c = P.g;
+          c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, w, h);
+          c.setTransform(sc, 0, 0, sc, 0, -FIELD_TOP * sc); draw(c, l);
+        }
+        ctx.save(); ctx.setTransform(1, 0, 0, 1, Math.round(m.e), Math.round(m.f + FIELD_TOP * sc)); ctx.drawImage(P.cv, 0, 0); ctx.restore();
       }
-      ensureLayer();
+      let ver = 0;                        // версия разметки/замеров/выбора — для перерисовки слоя
 
       // ---------- действия ----------
       function measure(i) {
+        ver++;
         const n = nets[sel], k = n.kind, p = scr(i);
-        hero.tx = cx(i) - 13; hero.ty = cy(i) + 11; hero.dir = Math.atan2(cy(i) - hero.ty, cx(i) - hero.tx);
+        hero.tx = cx(i) - 12; hero.ty = cy(i) + 10; hero.dir = Math.atan2(cy(i) - hero.ty, cx(i) - hero.tx);
         if (g.blk[i]) { api.popup(p.x, p.y - 10, 'Здание — замер невозможен', api.theme.bad); api.sfx('bad'); return; }
         if (meas[sel][i] >= 0) { last = { ni: sel, cell: i, v: meas[sel][i], t: api.now }; api.sfx('select'); return; }
         if (nodeOf[sel].has(i)) { // колодец / ввод своей сети: трасса здесь, заряд не тратим
           meas[sel][i] = 9; last = { ni: sel, cell: i, v: 9, t: api.now };
-          api.popup(p.x, p.y - 12, 'Колодец/ввод ' + NET[k].l + ' — трасса здесь', NET[k].paint); api.sfx('point'); hero.scan = api.now; return;
+          const what = n.manholes.includes(i) ? 'Колодец' : k === 'sewer' ? 'Выпуск' : 'Ввод'; // у канализации из здания — выпуск
+          api.popup(p.x, p.y - 12, what + ' ' + NET[k].l + ' — трасса здесь', NET[k].paint); api.sfx('point'); hero.scan = api.now; return;
         }
         if (battery <= 0) { api.popup(p.x, p.y - 10, 'Батарея села!', api.theme.bad); api.sfx('bad'); api.shake(3); return; }
         battery--;
@@ -642,6 +663,7 @@
       function paintCell(i, erase) {
         if (i < 0) return;
         if (g.blk[i]) return;
+        ver++;
         if (erase) {
           if (marks[sel][i]) marks[sel][i] = 0;
           else { for (let k = 0; k < NN; k++) if (marks[k][i]) { marks[k][i] = 0; break; } }
@@ -650,7 +672,7 @@
           marks[sel][i] = 1;
           fx.push({ kind: 'spray', cell: i, t: api.now, col: NET[nets[sel].kind].paint });
         }
-        hero.tx = cx(i) - 13; hero.ty = cy(i) + 11; hero.dir = Math.atan2(cy(i) - hero.ty, cx(i) - hero.tx);
+        hero.tx = cx(i) - 12; hero.ty = cy(i) + 10; hero.dir = Math.atan2(cy(i) - hero.ty, cx(i) - hero.tx);
         if (api.now - lastPaintSfx > 0.09) { api.sfx(erase ? 'paper' : 'tap'); lastPaintSfx = api.now; }
       }
       function strokeTo(p) { // протяжка: все клетки по отрезку
@@ -664,20 +686,30 @@
         }
         stroke.w = w;
       }
-      function selectNet(k) { if (k === sel || k < 0 || k >= NN) return; sel = k; api.sfx('select'); }
-      function selectTool(t) { if (t === tool) return; tool = t; api.sfx('tap'); }
+      function selectNet(k) { if (k === sel || k < 0 || k >= NN) return; sel = k; ver++; api.sfx('select'); }
+      function selectTool(t) { if (t === tool) return; tool = t; ver++; api.sfx('tap'); }
 
       // ---------- итог ----------
       function evaluate() {
+        // клетка трассы засчитывается одной меткой: точно (1) или соседней, со смещением на клетку (0,6);
+        // лишние метки рядом с трассой — штраф 0,35, мимо — 1. Так «точки у колодцев» и «полоса в три клетки» не проходят
+        const NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
         const per = nets.map((n, ni) => {
-          const T = n.cells, M = []; for (let i = 0; i < N; i++) if (marks[ni][i]) M.push(i);
-          let found = 0, exact = 0, near = 0, far = 0;
-          for (const t of T) if (M.some(m => cheb(m, t) <= 1)) found++;
-          const cls = new Int8Array(N);
-          for (const m of M) { if (n.on[m]) { exact++; cls[m] = 1; } else if (T.some(t => cheb(t, m) <= 1)) { near++; cls[m] = 2; } else { far++; cls[m] = 3; } }
-          const missed = T.filter(t => !M.some(m => cheb(m, t) <= 1));
-          const q = Math.max(0, Math.min(1, found / T.length - (far + 0.25 * near) / T.length));
-          return { kind: n.kind, T: T.length, M: M.length, found, exact, near, far, q, cls, missed, len: (T.length - 1) * CELL_M };
+          const T = n.cells, mk = marks[ni], M = []; for (let i = 0; i < N; i++) if (mk[i]) M.push(i);
+          let exact = 0, near = 0, extra = 0, far = 0;
+          const cls = new Int8Array(N), used = new Uint8Array(N), got = new Uint8Array(N);
+          for (const t of T) if (mk[t]) { got[t] = used[t] = 1; exact++; cls[t] = 1; }
+          for (const t of T) {
+            if (got[t]) continue;
+            for (const [dc, dr] of NB) {
+              const c = cOf(t) + dc, r = rOf(t) + dr, q = r * COLS + c;
+              if (inb(c, r) && mk[q] && !used[q] && !n.on[q]) { used[q] = got[t] = 1; near++; cls[q] = 2; break; }
+            }
+          }
+          for (const m of M) if (!used[m]) { if (T.some(t => cheb(t, m) <= 1)) { extra++; cls[m] = 4; } else { far++; cls[m] = 3; } }
+          const missed = T.filter(t => !got[t]);
+          const q = Math.max(0, Math.min(1, (exact + 0.6 * near - 0.35 * extra - far) / T.length));
+          return { kind: n.kind, T: T.length, M: M.length, found: exact + near, exact, near, extra, far, q, cls, missed, len: (T.length - 1) * CELL_M };
         });
         const tot = per.reduce((a, p) => a + p.T, 0), acc = per.reduce((a, p) => a + p.q * p.T, 0) / tot;
         return { per, acc };
@@ -688,11 +720,11 @@
         const ev = evaluate(), acc = ev.acc;
         const score = Math.round(acc * (800 + 130 * battery / BAT + 70 * time / LIMIT));
         const stars = score >= 800 ? 3 : score >= 600 ? 2 : score >= 350 ? 1 : 0;
-        const ok = ev.per.filter(p => p.q >= 0.6).length, extra = ev.per.reduce((a, p) => a + p.far, 0);
+        const ok = ev.per.filter(p => p.q >= 0.6).length, extra = ev.per.reduce((a, p) => a + p.far + p.extra, 0);
         const lines = [
-          `Совпадение трасс: ${Math.round(acc * 100)} % (допуск — клетка 6 м)`,
-          `Сетей найдено: ${ok}/${NN} · лишней разметки: ${extra} кл.`,
-          `Заряд: ${battery}/${BAT} · время: ${fmtTime(LIMIT - time)}`,
+          `Совпадение трасс: ${Math.round(acc * 100)} %`,
+          `Сетей найдено: ${ok}/${NN} · лишних клеток: ${extra}`,
+          `Заряд ${battery}/${BAT} · время ${fmtTime(LIMIT - time)}`,
           ev.per.map(p => NET[p.kind].l + ' ' + Math.round(p.q * 100) + '%').join(' · '),
         ];
         api.sfx(stars >= 2 ? 'win' : 'paper');
@@ -723,7 +755,7 @@
         }
         // истинные трассы
         for (const n of nets) for (const ch of n.chains) Sym.plan.utility(c, ch.map(i => P(cx(i), cy(i))), n.kind);
-        for (const n of nets) for (const i of n.manholes) { const [x, y] = P(cx(i), cy(i)); Sym.plan.manhole(c, x, y, NET[n.kind].mh ? n.kind : n.kind); }
+        for (const n of nets) for (const i of n.manholes) { const [x, y] = P(cx(i), cy(i)); Sym.plan.manhole(c, x, y, n.kind); }
         // разметка игрока: верно — цвет сети, рядом — кружок, мимо — красный крест; пропуски — красные штрихи
         ev.per.forEach((p, ni) => {
           const col = NET[p.kind].paint;
@@ -732,6 +764,7 @@
             const [x, y] = P(cx(i), cy(i)), r = 1.3;
             if (p.cls[i] === 1) { c.fillStyle = col; c.globalAlpha = 0.55; c.fillRect(x - r, y - r, 2 * r, 2 * r); c.globalAlpha = 1; }
             else if (p.cls[i] === 2) { c.strokeStyle = col; c.lineWidth = 0.5; c.strokeRect(x - r, y - r, 2 * r, 2 * r); }
+            else if (p.cls[i] === 4) { c.strokeStyle = '#e0281c'; c.lineWidth = 0.5; c.strokeRect(x - r, y - r, 2 * r, 2 * r); }
             else { c.strokeStyle = '#e0281c'; c.lineWidth = 0.6; c.beginPath(); c.moveTo(x - r, y - r); c.lineTo(x + r, y + r); c.moveTo(x + r, y - r); c.lineTo(x - r, y + r); c.stroke(); }
           }
           c.fillStyle = '#e0281c';
@@ -781,7 +814,6 @@
         }
       }
       function drawReadings(c, l) {
-        const now = api.now;
         // замеры других сетей — точки в углу клетки
         for (let ni = 0; ni < NN; ni++) {
           if (ni === sel) continue;
@@ -799,11 +831,6 @@
           c.strokeStyle = v ? col : '#888'; c.lineWidth = 1.2; c.stroke();
           c.fillStyle = v >= 9 ? '#1a120a' : '#fff'; c.fillText(String(v), x, y + 4.6);
         }
-        // свежий замер — подсветка
-        if (last && last.ni === sel && now - last.t < 0.9) {
-          const a = 1 - (now - last.t) / 0.9; c.strokeStyle = col; c.globalAlpha = a; c.lineWidth = 2;
-          c.strokeRect(cOf(last.cell) * CS + 1, rOf(last.cell) * CS + 1, CS - 2, CS - 2); c.globalAlpha = 1;
-        }
       }
       function drawHints(c) { // колодцы и вводы выбранной сети — пульсирующие кольца
         const n = nets[sel], col = NET[n.kind].paint, ph = (Math.sin(api.now * 4) + 1) / 2;
@@ -818,12 +845,12 @@
         c.restore();
       }
       function drawHero(c) {
-        const t = api.now, sc = 2.1;
+        const t = api.now, sc = 3;
         Sym.surveyorTop(c, hero.x, hero.y, hero.dir, hero.walk, { scale: sc, vest: '#ff7a1c' });
         // трассоискатель: штанга с катушкой впереди, приёмник в руке
         const ca = Math.cos(hero.dir), sa = Math.sin(hero.dir);
-        const hx = hero.x + ca * 3.5 - sa * 2.4, hy = hero.y + sa * 3.5 + ca * 2.4;
-        const ex = hero.x + ca * 14, ey = hero.y + sa * 14;
+        const hx = hero.x + ca * 4.2 - sa * 2.9, hy = hero.y + sa * 4.2 + ca * 2.9;
+        const ex = hero.x + ca * 16, ey = hero.y + sa * 16;
         c.save(); c.lineCap = 'round';
         c.strokeStyle = 'rgba(0,0,0,.25)'; c.lineWidth = 1.6; c.beginPath(); c.moveTo(hx + 2, hy + 2); c.lineTo(ex + 3, ey + 3); c.stroke();
         c.strokeStyle = '#2d3135'; c.lineWidth = 1.3; c.beginPath(); c.moveTo(hx, hy); c.lineTo(ex, ey); c.stroke();
@@ -892,7 +919,7 @@
         roundRect(c, px, py, pw, 150, 12); c.fillStyle = '#e3b62c'; c.fill(); c.strokeStyle = '#6a5010'; c.lineWidth = 2; c.stroke();
         roundRect(c, px + 8, py + 8, pw - 16, 94, 6); c.fillStyle = '#1d2a1e'; c.fill();
         const n = nets[sel], col = NET[n.kind].paint, lv = last && last.ni === sel ? last.v : null;
-        api.text(c, 'Сеть ' + NET[n.kind].l + ' · ' + NET[n.kind].full, px + pw / 2, py + 22, 9.5, '#9fe0a0', 'center', '700');
+        api.text(c, NET[n.kind].l + ' · ' + NET[n.kind].full, px + pw / 2, py + 22, pw > 120 ? 9.5 : 8.5, '#9fe0a0', 'center', '700');
         api.text(c, lv == null ? '–' : String(lv), px + pw / 2, py + 66, 38, lv == null ? '#557055' : lv >= 9 ? col : '#c8f5c0');
         for (let k = 0; k < 9; k++) { c.fillStyle = lv != null && k < lv ? col : 'rgba(160,220,160,.15)'; c.fillRect(px + 14 + k * (pw - 28) / 9, py + 82, (pw - 28) / 9 - 2, 12); }
         api.text(c, 'ТРАССОИСКАТЕЛЬ', px + pw / 2, py + 118, 9, '#3a2c08');
@@ -905,8 +932,8 @@
           const y = py + 38 + k * 22, cl = NET[nn.kind].paint; let cnt = 0; for (let i = 0; i < N; i++) cnt += marks[k][i];
           c.fillStyle = cl; c.beginPath(); c.arc(rx + 16, y - 4, 7, 0, 7); c.fill();
           api.text(c, NET[nn.kind].l, rx + 16, y, 9, '#1a120a');
-          api.text(c, NET[nn.kind].full, rx + 28, y, 9.5, k === sel ? '#fff' : api.theme.dim, 'left', '600');
-          api.text(c, cnt ? cnt + ' кл.' : '', rx + pw - 8, y, 9, cl, 'right');
+          api.text(c, NET[nn.kind].full, rx + 27, y, pw > 120 ? 9 : 8, k === sel ? '#fff' : api.theme.dim, 'left', '600');
+          api.text(c, cnt ? String(cnt) : '', rx + pw - 6, y, 9, cl, 'right');
         });
       }
 
@@ -915,11 +942,11 @@
       const tapAt = (x, y) => { this_.pointerDown({ x, y, id: 1, button: 0 }); this_.pointerUp({ x, y, id: 1, button: 0 }); };
       const center = b => [b.x + b.w / 2, b.y + b.h / 2];
       function* wait(t) { botWait = t; yield; }
-      function* tapBtn(b) { tapAt(...center(b)); yield* wait(0.25); }
+      function* tapBtn(b) { tapAt(...center(b)); yield* wait(0.35); }
       function* probe(ni, i) {
         if (meas[ni][i] >= 0) return meas[ni][i];
         if (battery <= 0 && !nodeOf[ni].has(i)) return -1;
-        const p = scr(i); tapAt(p.x, p.y); yield* wait(0.55);
+        const p = scr(i); tapAt(p.x, p.y); yield* wait(0.9);
         return meas[ni][i];
       }
       function walk(i, d, nodes) { // клетки от i в направлении d до узла / края / здания
@@ -929,22 +956,42 @@
       }
       function* botMh(ni, segs) {
         const n = nets[ni], nodes = nodeOf[ni], done = new Set();
+        // чужие колодцы и вводы (с клеткой перед вводом) — трасса через них не проходит
+        const foreign = new Set();
+        nets.forEach((o, k) => { if (k === ni) return; for (const i of o.manholes) foreign.add(i); for (const e of o.ends) { foreign.add(e.cell); foreign.add(step(e.cell, e.dir)); } });
+        const endAt = new Map(n.ends.map(e => [e.cell, e]));
         for (const e of n.ends) { // ввод: прямо от стены до первого колодца
           const w = walk(e.cell, e.dir, nodes);
           if (w.kind === 'node') { segs.push([e.cell, ...w.run, w.end]); done.add(e.cell + ':' + e.dir); done.add(w.end + ':' + OPP(e.dir)); }
         }
+        // сначала — отрезки «колодец → следующий колодец/ввод по прямой», потом — выходы магистрали за край участка
+        const exits = [], conf = new Set(), adj = [];
         for (const X of n.manholes) for (let d = 0; d < 4; d++) {
           if (done.has(X + ':' + d)) continue;
           done.add(X + ':' + d);
           const w = walk(X, d, nodes);
-          if (w.kind === 'wall') continue;
-          if (w.kind === 'node') { done.add(w.end + ':' + OPP(d)); if (!w.run.length) continue; }
-          if (!w.run.length) continue;
+          if (w.kind === 'wall' || !w.run.length) { if (w.kind === 'node') { done.add(w.end + ':' + OPP(d)); if (!endAt.has(w.end) || endAt.get(w.end).dir === OPP(d)) adj.push([X, w.end]); } continue; }
+          if (w.run.some(i => foreign.has(i))) continue;
+          if (w.kind === 'edge') { exits.push({ X, d, w }); continue; }
+          done.add(w.end + ':' + OPP(d));
+          if (endAt.has(w.end) && endAt.get(w.end).dir !== OPP(d)) continue; // ввод — только перпендикулярно стене
           const known = w.run.find(i => meas[ni][i] >= 0);
-          const pi = known != null ? known : w.kind === 'node' ? w.run[w.run.length >> 1] : w.run[0];
-          const v = yield* probe(ni, pi);
-          if (v === 9) segs.push([X, ...w.run, ...(w.kind === 'node' ? [w.end] : [])]);
+          const v = yield* probe(ni, known != null ? known : w.run[w.run.length >> 1]);
+          if (v === 9) { segs.push([X, ...w.run, w.end]); conf.add(X + ':' + d); conf.add(w.end + ':' + OPP(d)); }
         }
+        // магистраль уходит за край дважды; прямое продолжение подтверждённого отрезка — вероятнее
+        let need = n.main ? 2 : 0;
+        exits.sort((p, q) => (conf.has(q.X + ':' + OPP(q.d)) ? 1 : 0) - (conf.has(p.X + ':' + OPP(p.d)) ? 1 : 0) || p.w.run.length - q.w.run.length);
+        for (const e of exits) {
+          if (need <= 0) break;
+          // первая клетка у колодца может лежать на трассе и без выхода (край участка) — меряем вторую
+          const v = yield* probe(ni, e.w.run[Math.min(1, e.w.run.length - 1)]);
+          if (v === 9) { segs.push([e.X, ...e.w.run]); need--; }
+        }
+        // соседние колодцы (без клеток между ними) замером не различить: связываем, если колодцу не хватает связей
+        const deg = new Map(), inc = i => deg.set(i, (deg.get(i) || 0) + 1), need2 = i => endAt.has(i) ? 1 : 2;
+        for (const sg of segs) { inc(sg[0]); inc(sg[sg.length - 1]); }
+        for (const [a, b] of adj) if ((deg.get(a) || 0) < need2(a) || (deg.get(b) || 0) < need2(b)) { segs.push([a, b]); inc(a); inc(b); }
       }
       function* botFree(ni, segs) {
         const n = nets[ni], nodes = nodeOf[ni], traced = new Set();
@@ -972,7 +1019,8 @@
                 if (ok(b)) vb = yield* probe(ni, b);
                 if (vb === -1) break;
                 if (vb === 9) { path.push(a, b); own.add(a); own.add(b); cur = b; continue; }
-                const va = yield* probe(ni, a);
+                // сигнал 4 через клетку — трасса по диагонали: поворот в ближней клетке, её не меряем
+                const va = vb === 4 ? 9 : vb >= 0 && vb <= 2 ? 0 : yield* probe(ni, a);
                 if (va === -1) break;
                 if (va === 9) { path.push(a); own.add(a); cur = a; turnAt = a; } else turnAt = cur;
               }
@@ -1000,7 +1048,7 @@
         this_.pointerDown({ x: pts[0].x, y: pts[0].y, id: 1, button: 0 });
         for (let k = 1; k < pts.length; k++) this_.pointerMove({ x: pts[k].x, y: pts[k].y, id: 1, down: true });
         this_.pointerUp({ x: pts[pts.length - 1].x, y: pts[pts.length - 1].y, id: 1 });
-        yield* wait(0.45);
+        yield* wait(0.6);
       }
       function* botMain() {
         yield* wait(0.8);
@@ -1033,21 +1081,33 @@
           for (let k = fx.length - 1; k >= 0; k--) if (api.now - fx[k].t > 1) fx.splice(k, 1);
         },
         draw(ctx) {
-          const l = layout(), ly = ensureLayer();
-          ctx.drawImage(ly.canvas, 0, FIELD_TOP - 1, ly.w, ly.h);
-          ctx.save();
-          ctx.beginPath(); ctx.rect(0, FIELD_TOP, l.W, BAR_Y - 3 - FIELD_TOP); ctx.clip();
-          ctx.translate(l.ox, l.oy); ctx.scale(l.s, l.s);
+          const l = layout();
+          pxLayer(ctx, 'bg', 'bg', (c, l) => { c.save(); c.beginPath(); c.rect(0, FIELD_TOP, l.W, 360 - FIELD_TOP); c.clip(); c.translate(l.ox, l.oy); c.scale(l.s, l.s); drawStatic(c); c.restore(); });
+          const clipField = () => { ctx.save(); ctx.beginPath(); ctx.rect(0, FIELD_TOP, l.W, BAR_Y - 3 - FIELD_TOP); ctx.clip(); ctx.translate(l.ox, l.oy); ctx.scale(l.s, l.s); };
           // живая сцена: прохожие, машина
+          clipField();
           for (const w of walkers) {
             if (w.worker) Sym.surveyorTop(ctx, w.x, w.y, w.v > 0 ? 0 : Math.PI, api.now, { scale: 1.6, vest: '#e8d23a', helmet: '#f2c230' });
             else Sym.personTop(ctx, w.x, w.y, w.v > 0 ? 0 : Math.PI, api.now, w.seed);
             if (w.dog) Sym.dogTop(ctx, w.x + 9, w.y + 4, 0, api.now);
           }
           if (carMove) Sym.car(ctx, carMove.x, g.yRoad + 7, 0, '#c8a24a', carMove.seed);
-          drawPaint(ctx, l);
+          ctx.restore();
+          // разметка, замеры, панели — слоем, перерисовка только при изменениях
+          const conf = api.now - confirmAt < 2.5;
+          pxLayer(ctx, 'ov', [ver, sel, tool, battery, l.side ? Math.ceil(time) : 0, conf].join('|'), (c, l) => {
+            c.save(); c.beginPath(); c.rect(0, FIELD_TOP, l.W, BAR_Y - 3 - FIELD_TOP); c.clip(); c.translate(l.ox, l.oy); c.scale(l.s, l.s);
+            drawPaint(c, l); drawReadings(c, l);
+            c.restore();
+            if (l.side) drawSide(c, l);
+            drawBar(c, l);
+          });
+          clipField();
           drawHints(ctx);
-          drawReadings(ctx, l);
+          if (last && last.ni === sel && api.now - last.t < 0.9) { // свежий замер — подсветка клетки
+            const a = 1 - (api.now - last.t) / 0.9; ctx.strokeStyle = NET[nets[sel].kind].paint; ctx.globalAlpha = a; ctx.lineWidth = 2;
+            ctx.strokeRect(cOf(last.cell) * CS + 1, rOf(last.cell) * CS + 1, CS - 2, CS - 2); ctx.globalAlpha = 1;
+          }
           for (const f of fx) if (f.kind === 'spray') {
             const a = 1 - (api.now - f.t); if (a <= 0) continue;
             ctx.globalAlpha = a * 0.6; ctx.fillStyle = f.col;
@@ -1056,8 +1116,6 @@
           }
           drawHero(ctx);
           ctx.restore();
-          if (l.side) drawSide(ctx, l);
-          drawBar(ctx, l);
         },
         pointerDown(p) {
           if (done) return;
@@ -1087,7 +1145,7 @@
           if (code === 'Enter') this_.pointerDown({ x: layout().subB.x + 5, y: layout().subB.y + 5 });
         },
         hud() {
-          return { time, info: ['Заряд: ' + battery + '/' + BAT, 'Сеть: ' + NET[nets[sel].kind].full], progress: battery / BAT };
+          return { time, info: [], progress: api.W >= 720 ? battery / BAT : null }; // заряд и сеть — на нижней панели
         },
         bot(dt) {
           if (done) return;
