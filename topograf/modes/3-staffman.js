@@ -27,6 +27,13 @@
   const pad4 = v => String(Math.max(0, Math.round(v))).padStart(4, '0');
   const mmss = t => { t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
   const smooth = t => t * t * (3 - 2 * t);
+  // слой ровно под текущую плотность пикселей (api.layer округляет вверх до целого — лишняя выборка при каждом кадре)
+  function layer(w, h, draw) {
+    const k = clamp(typeof scale === 'number' ? scale : 1, 1, 2.5), cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.ceil(w * k)); cv.height = Math.max(1, Math.ceil(h * k));
+    const c = cv.getContext('2d'); c.scale(cv.width / w, cv.height / h); draw(c);
+    return { canvas: cv, w, h };
+  }
   function rngOf(s) { let a = s | 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   function shade(hex, k) { // k < 0 — темнее, k > 0 — светлее
     const n = parseInt(hex.slice(1), 16), r = n >> 16 & 255, g = n >> 8 & 255, b = n & 255, t = k < 0 ? 0 : 255, f = Math.abs(k);
@@ -1019,23 +1026,23 @@
     const chunks = [];
     for (let x0 = XA; x0 < XB; x0 += CW) {
       const x1 = Math.min(XB, x0 + CW);
-      chunks.push({ x0, x1, layer: api.layer((x1 - x0 + 2) * Z, (yBotC - yTopC) * Z, c => { c.scale(Z, Z); c.translate(-x0 + 1, -yTopC); drawChunk(c, x0, x1); }) });
+      chunks.push({ x0, x1, layer: layer((x1 - x0 + 2) * Z, (yBotC - yTopC) * Z, c => { c.scale(Z, Z); c.translate(-x0 + 1, -yTopC); drawChunk(c, x0, x1); }) });
     }
 
     // ---------- спрайты: деревья у трассы, крапива и кусты на трассе, камыш у воды ----------
     for (const tr of trees) {
       tr.hw = tr.h * (tr.kind === 'willow' ? 0.5 : 0.42) + 4;
-      tr.spr = api.layer(tr.hw * 2 * Z, (tr.h + 8) * Z, c => { c.scale(Z, Z); treeSide(c, tr.hw, tr.h + 4, tr.h, tr.kind, tr.seed); });
+      tr.spr = layer(tr.hw * 2 * Z, (tr.h + 8) * Z, c => { c.scale(Z, Z); treeSide(c, tr.hw, tr.h + 4, tr.h, tr.kind, tr.seed); });
     }
     const front = [];
-    for (const o of ob.nettle) { const hgt = 24; front.push({ x0: o.x0 - 2, x1: o.x1 + 2, top: hgt, spr: api.layer((o.x1 - o.x0 + 4) * Z, (hgt + 2) * Z, c => { c.scale(Z, Z); nettleSide(c, 2, hgt, o.x1 - o.x0, ri(1, 1e6)); }), base: o }); }
-    for (const o of ob.bush) { const hh = (o.top - w.hb(o.x)) * VY, wd = o.x1 - o.x0 + 12; front.push({ x0: o.x0 - 6, x1: o.x1 + 6, top: hh + 4, spr: api.layer(wd * Z, (hh + 6) * Z, c => { c.scale(Z, Z); bushSide(c, wd / 2 - 4, hh + 4, hh * 0.62, o.seed, '#4a7a33', null); bushSide(c, wd / 2 + 4, hh + 4, hh * 0.5, o.seed + 1, '#567f38', '#f4f0e6'); }) }); }
-    for (const o of ob.reeds) { const hgt = 36; front.push({ x0: o.x0, x1: o.x1, top: hgt, spr: api.layer((o.x1 - o.x0) * Z, (hgt + 2) * Z, c => { c.scale(Z, Z); reedsSide(c, 0, hgt, o.x1 - o.x0, ri(1, 1e6), true); }) }); }
+    for (const o of ob.nettle) { const hgt = 24; front.push({ x0: o.x0 - 2, x1: o.x1 + 2, top: hgt, spr: layer((o.x1 - o.x0 + 4) * Z, (hgt + 2) * Z, c => { c.scale(Z, Z); nettleSide(c, 2, hgt, o.x1 - o.x0, ri(1, 1e6)); }), base: o }); }
+    for (const o of ob.bush) { const hh = (o.top - w.hb(o.x)) * VY, wd = o.x1 - o.x0 + 12; front.push({ x0: o.x0 - 6, x1: o.x1 + 6, top: hh + 4, spr: layer(wd * Z, (hh + 6) * Z, c => { c.scale(Z, Z); bushSide(c, wd / 2 - 4, hh + 4, hh * 0.62, o.seed, '#4a7a33', null); bushSide(c, wd / 2 + 4, hh + 4, hh * 0.5, o.seed + 1, '#567f38', '#f4f0e6'); }) }); }
+    for (const o of ob.reeds) { const hgt = 36; front.push({ x0: o.x0, x1: o.x1, top: hgt, spr: layer((o.x1 - o.x0) * Z, (hgt + 2) * Z, c => { c.scale(Z, Z); reedsSide(c, 0, hgt, o.x1 - o.x0, ri(1, 1e6), true); }) }); }
 
     // ---------- дальний и средний планы (параллакс) ----------
     const PF = 0.18, PM = 0.42, FH = 150, FY = 104, MH = 300, MY = 128;
     const FW = Math.ceil((XB - XA) * Z * PF + 900), MW = Math.ceil((XB - XA) * Z * PM + 900);
-    const far = api.layer(FW, FH, c => {
+    const far = layer(FW, FH, c => {
       const Rf = rngOf(seed ^ 0x7777);
       const hill = (base, amp, col, f1, f2) => { c.fillStyle = col; c.beginPath(); c.moveTo(0, FH); for (let x = 0; x <= FW; x += 10) c.lineTo(x, base - amp * (0.5 + 0.5 * Math.sin(x * f1 + base)) - amp * 0.4 * Math.sin(x * f2 + 1.3)); c.lineTo(FW, FH); c.closePath(); c.fill(); };
       hill(FY - 8, 26, TOD.far, 0.006, 0.017);
@@ -1059,7 +1066,7 @@
       const g = c.createLinearGradient(0, FY - 40, 0, FH); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, mix(TOD.haze, '#ffffff', 0.2)); c.fillStyle = g; c.globalAlpha = 0.35; c.fillRect(0, FY - 40, FW, FH); c.globalAlpha = 1;
     });
     let distCar = null;
-    const mid = api.layer(MW, MH, c => {
+    const mid = layer(MW, MH, c => {
       const Rm = rngOf(seed ^ 0x3131);
       const gl = x => MY + 6 * Math.sin(x * 0.004 + 1) + 3 * Math.sin(x * 0.013);
       // поля полосами
@@ -1099,14 +1106,14 @@
     const clouds = [];
     for (let k = 0; k < 5; k++) {
       const cw = 60 + R() * 70, chh = 20 + R() * 12, sd = ri(1, 1e6);
-      clouds.push({ x: R() * 1400, y: 38 + R() * 60, w: cw, h: chh, v: 3 + R() * 5, spr: api.layer(cw, chh, c => {
+      clouds.push({ x: R() * 1400, y: 38 + R() * 60, w: cw, h: chh, v: 3 + R() * 5, spr: layer(cw, chh, c => {
         const Rc = rngOf(sd);
         c.fillStyle = 'rgba(255,255,255,.85)';
         for (let j = 0; j < 9; j++) { const px = cw * (0.15 + Rc() * 0.7), py = chh * (0.45 + Rc() * 0.25), r = chh * (0.22 + Rc() * 0.2); c.beginPath(); c.arc(px, py, r, 0, TAU); c.fill(); }
         c.fillStyle = 'rgba(200,210,225,.4)'; c.fillRect(cw * 0.12, chh * 0.72, cw * 0.76, chh * 0.1);
       }) });
     }
-    const sunSpr = api.layer(120, 120, c => {
+    const sunSpr = layer(120, 120, c => {
       const g = c.createRadialGradient(60, 60, 4, 60, 60, 60); g.addColorStop(0, TOD.sun); g.addColorStop(0.18, 'rgba(255,245,215,.85)'); g.addColorStop(0.4, 'rgba(255,240,200,.25)'); g.addColorStop(1, 'rgba(255,240,200,0)');
       c.fillStyle = g; c.fillRect(0, 0, 120, 120);
     });
@@ -1117,7 +1124,7 @@
     let planCache = null;
     function planLayer(pw, ph) {
       const k = pw / (XR1 - XR0), hh = ph / 2 / k;
-      return api.layer(pw, ph, c => {
+      return layer(pw, ph, c => {
         const was = Sym.cache; Sym.cache = false;
         try {
           c.save(); c.scale(k, k); c.translate(-XR0, hh);
@@ -1480,25 +1487,28 @@
     const fblades = []; // травинки переднего плана (перед ногами)
     for (let x = XA + 2; x < XB - 2; x += 2.6 + R() * 2.2) { const m = matAt(x); if (m === 'grass' || m === 'wet' || m === 'sedge' || m === 'mown' || m === 'field') fblades.push(x, (m === 'wet' || m === 'sedge' ? 3.5 : m === 'mown' ? 1.6 : 2.4) * (0.6 + R() * 0.8), (R() - 0.4) * 1.6); }
     let skyG = null, vignette = null;
-    function blit(c, layer, ox, y, LW, LH, W) { // вывести видимую часть длинной полосы
-      const k = layer.canvas.width / LW, sx = Math.max(0, -ox), sw = Math.min(W, LW - sx);
-      if (sw <= 0) return;
-      c.drawImage(layer.canvas, sx * k, 0, sw * k, layer.canvas.height, Math.max(0, ox) + (ox > 0 ? 0 : 0), y, sw, LH);
+    function blit(c, layer, ox, y, LW, LH, W, yMax) { // вывести видимую часть длинной полосы (ниже yMax — всё равно перекрыто)
+      const k = layer.canvas.width / LW, sx = Math.max(0, -ox), sw = Math.min(W, LW - sx), hh = Math.min(LH, yMax - y);
+      if (sw <= 0 || hh <= 0) return;
+      c.drawImage(layer.canvas, sx * k, 0, sw * k, hh * k, Math.max(0, ox), y, sw, hh);
     }
     function draw(ctx) {
       const W = api.W, H = api.H, TOP = api.TOP, VW = W / Z;
-      const PR = window.__prof; let pt = performance.now(); const mk = n => { if (PR) { if (window.__flush) ctx.getImageData(0, 0, 1, 1); const q = performance.now(); PR[n] = (PR[n] || 0) + q - pt; pt = q; } };
+      const SK = window.__skip || {}; const PR = window.__prof; let pt = performance.now(); const mk = n => { if (PR) { const q = performance.now(); PR[n] = (PR[n] || 0) + q - pt; pt = q; } };
       if (!skyG) { skyG = ctx.createLinearGradient(0, TOP, 0, H * 0.72); skyG.addColorStop(0, TOD.sky0); skyG.addColorStop(1, TOD.sky1); }
-      ctx.fillStyle = skyG; ctx.fillRect(0, TOP, W, H - TOP);
-      ctx.drawImage(sunSpr.canvas, W * TOD.sx - 60, TOP + 18 + TOD.sy * 160 - 60, 120, 120);
-      for (const cl of clouds) { const x = ((cl.x + clock * cl.v - cam.x * Z * 0.05) % (W + 320) + W + 320) % (W + 320) - 160; ctx.drawImage(cl.spr.canvas, x, TOP + cl.y - 16, cl.w, cl.h); }
+      // экономим заливку: небо — до сплошной части дальнего плана, дальний — до среднего, средний — до верха рельефа
+      const fy = TOP + 118 - FY - (cam.y - cam0y) * Z * 0.12, my = TOP + 160 - MY - (cam.y - cam0y) * Z * 0.3;
+      let gMin = 1e9; for (let x = cam.x - 4; x < cam.x + VW + 8; x += 5) gMin = Math.min(gMin, gy(x));
+      const gTop = TOP + (gMin - cam.y) * Z + 1;
+      if(!SK.sky){ctx.fillStyle = skyG; ctx.fillRect(0, TOP, W, Math.min(H, gTop, fy + FY - 5) - TOP);}
+      if(!SK.sun)ctx.drawImage(sunSpr.canvas, W * TOD.sx - 60, TOP + 18 + TOD.sy * 160 - 60, 120, 120);
+      if(!SK.clouds)for (const cl of clouds) { const x = ((cl.x + clock * cl.v - cam.x * Z * 0.05) % (W + 320) + W + 320) % (W + 320) - 160; ctx.drawImage(cl.spr.canvas, x, TOP + cl.y - 16, cl.w, cl.h); }
       ctx.strokeStyle = 'rgba(40,40,50,.55)'; ctx.lineWidth = 1; ctx.beginPath();
       for (const b of birds) { const f = Math.sin(clock * 9 + b.ph) * 2.2; ctx.moveTo(b.x - 4, TOP + b.y - f); ctx.quadraticCurveTo(b.x - 1.5, TOP + b.y - 1, b.x, TOP + b.y); ctx.quadraticCurveTo(b.x + 1.5, TOP + b.y - 1, b.x + 4, TOP + b.y - f); }
       ctx.stroke(); mk('sky');
-      const fy = TOP + 118 - FY - (cam.y - cam0y) * Z * 0.12, my = TOP + 160 - MY - (cam.y - cam0y) * Z * 0.3;
-      blit(ctx, far, -(cam.x - XA) * Z * PF, fy, FW, FH, W);
+      if(!SK.far)blit(ctx, far, -(cam.x - XA) * Z * PF, fy, FW, FH, W, Math.min(gTop, my + MY - 10));
       const mox = -(cam.x - XA) * Z * PM;
-      blit(ctx, mid, mox, my, MW, MH, W); mk('strips');
+      if(!SK.mid)blit(ctx, mid, mox, my, MW, MH, W, gTop); mk('strips');
       if (distCar) { // машина на дальней дороге
         const cx = mox + distCar.x, cy = my + distCar.gl(distCar.x) + 12.5;
         if (cx > -10 && cx < W + 10) { ctx.fillStyle = '#c0392b'; ctx.fillRect(cx - 4, cy - 2.4, 8, 2.4); ctx.fillRect(cx - 2, cy - 4, 4, 1.8); ctx.fillStyle = '#9ccbe3'; ctx.fillRect(cx - 1.4, cy - 3.6, 2.6, 1.2); ctx.fillStyle = '#222'; ctx.fillRect(cx - 3, cy - 0.4, 1.4, 1); ctx.fillRect(cx + 1.6, cy - 0.4, 1.4, 1); }
@@ -1507,21 +1517,21 @@
       ctx.save();
       ctx.translate(-cam.x * Z, TOP - cam.y * Z); ctx.scale(Z, Z);
       const x0 = cam.x - 12, x1 = cam.x + VW + 12;
-      for (const tr of trees) if (tr.x + tr.hw > x0 && tr.x - tr.hw < x1) ctx.drawImage(tr.spr.canvas, tr.x - tr.hw, gy(tr.x) + 2 - tr.h - 4, tr.hw * 2, tr.h + 8);
-      mk('trees'); for (const ch of chunks) if (ch.x1 + 1 > x0 && ch.x0 - 1 < x1) ctx.drawImage(ch.layer.canvas, ch.x0 - 1, yTopC, ch.x1 - ch.x0 + 2, yBotC - yTopC);
+      if(!SK.trees)for (const tr of trees) if (tr.x + tr.hw > x0 && tr.x - tr.hw < x1) ctx.drawImage(tr.spr.canvas, tr.x - tr.hw, gy(tr.x) + 2 - tr.h - 4, tr.hw * 2, tr.h + 8);
+      mk('trees'); if(!SK.chunks)for (const ch of chunks) if (ch.x1 + 1 > x0 && ch.x0 - 1 < x1) ctx.drawImage(ch.layer.canvas, ch.x0 - 1, yTopC, ch.x1 - ch.x0 + 2, yBotC - yTopC);
       ctx.fillStyle = DEEP; ctx.fillRect(x0, yBotC - 0.5, x1 - x0, 400); mk('chunks');
       drawWater(ctx, x0, x1); mk('water');
       drawStakes(ctx, x0, x1); mk('stakes');
-      drawStation(ctx); mk('station');
+      if(!SK.station)drawStation(ctx); mk('station');
       drawRay(ctx);
-      drawHero(ctx); mk('hero');
-      drawFront(ctx, x0, x1); mk('front');
+      if(!SK.hero)drawHero(ctx); mk('hero');
+      if(!SK.front)drawFront(ctx, x0, x1); mk('front');
       ctx.restore();
-      drawLabels(ctx, W); mk('labels');
+      if(!SK.labels)drawLabels(ctx, W); mk('labels');
       drawSpeech(ctx, W);
       drawOffscreen(ctx, W, H);
-      drawPlan(ctx, W); mk('plan');
-      drawLevelUI(ctx, W); mk('levelui');
+      if(!SK.plan)drawPlan(ctx, W); mk('plan');
+      if(!SK.levelui)drawLevelUI(ctx, W); mk('levelui');
       if (banner) {
         ctx.font = 'bold 12px system-ui, sans-serif';
         const tw = Math.min(W - 24, ctx.measureText(banner.text).width + 20), a = Math.min(1, banner.t / 0.3);
@@ -1529,7 +1539,7 @@
         ctx.save(); ctx.beginPath(); ctx.rect(W / 2 - tw / 2 + 4, TOP + 32, tw - 8, 22); ctx.clip();
         api.text(ctx, banner.text, W / 2, TOP + 47, 12, banner.color); ctx.restore(); ctx.globalAlpha = 1;
       }
-      mk('banner'); drawButtons(ctx); mk('buttons');
+      mk('banner'); if(!SK.buttons)drawButtons(ctx); mk('buttons');
     }
     function drawWater(c, x0, x1) {
       if (!w.water) return;
@@ -1757,7 +1767,7 @@
     let sheet = null;
     function drawResult(ctx, x, y, wd, ht) {
       const key = Math.round(wd) + 'x' + Math.round(ht);
-      if (!sheet || sheet.key !== key) sheet = { key, layer: api.layer(wd, ht, c => drawSheet(c, wd, ht)) };
+      if (!sheet || sheet.key !== key) sheet = { key, layer: layer(wd, ht, c => drawSheet(c, wd, ht)) };
       ctx.drawImage(sheet.layer.canvas, x, y, wd, ht);
     }
     function drawSheet(c, wd, ht) {
