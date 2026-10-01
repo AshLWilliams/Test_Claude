@@ -1,14 +1,64 @@
 'use strict';
-// Звук «Топографа»: синтезированные эффекты и музыка (music.js — своя тема на каждый участок), всё на Web Audio, без файлов.
+// Звук «Топографа»: синтезированные эффекты и музыка (music.js — своя тема на каждый участок) либо петли из файлов music/ — на выбор игрока.
 // Браузеры разрешают звук только после действия игрока — всё включается при первом нажатии.
 const Sound = (() => {
   const MUTE_KEY = 'topograf-muted', MUSIC_VOL = 0.5, SFX_VOL = 0.85;
   let muted = false; try { muted = localStorage.getItem(MUTE_KEY) === '1'; } catch (e) {}
   let ac = null, master = null, musicOut = null, noiseBuf = null, unlocked = false;
+  // Источник музыки: 'synth' — синтез music.js (в конце уровня ускоряется и добавляет напряжённый слой),
+  // 'files' — петли из music/ (их делает локальный генератор ACE-Step; список — music/manifest.json), в конце уровня — чуть быстрее.
+  const SRC_KEY = 'topograf-music-src';
+  let source = 'synth'; try { if (localStorage.getItem(SRC_KEY) === 'files') source = 'files'; } catch (e) {}
+  let manifest, manifestReq = null, fileCur = null; const buffers = {}, loading = {};
+  const canOgg = (() => { try { return !!document.createElement('audio').canPlayType('audio/ogg; codecs="vorbis"'); } catch (e) { return false; } })();
+  function loadManifest() {
+    if (manifestReq) return manifestReq;
+    return (manifestReq = fetch('music/manifest.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null).then(m => (manifest = m && m.tracks ? m : null)));
+  }
+  function loadBuffer(id) {
+    const tr = manifest && manifest.tracks[id]; if (!tr || loading[id]) return;
+    loading[id] = true;
+    const file = canOgg && tr.ogg ? tr.ogg : tr.mp3 || tr.ogg;
+    fetch('music/' + file).then(r => r.arrayBuffer()).then(b => new Promise((ok, no) => ac.decodeAudioData(b, ok, no)))
+      .then(buf => { buffers[id] = buf; }).catch(() => { buffers[id] = null; });
+  }
+  function fileStop(fade = 0.6) {
+    if (!fileCur) return; const c = fileCur; fileCur = null; const t = ac.currentTime;
+    c.gain.gain.cancelScheduledValues(t); c.gain.gain.setValueAtTime(c.gain.gain.value, t); c.gain.gain.linearRampToValueAtTime(0, t + fade);
+    try { c.src.stop(t + fade + 0.05); } catch (e) {}
+  }
+  const filesReady = id => !!(manifest && manifest.tracks[id]);
+  function fileUpdate(id, play, inten) { // true — играет (или грузится) файл; false — файла нет, нужен синтез
+    if (manifest === undefined) { loadManifest(); return true; } // ждём список, пока молчим
+    if (!filesReady(id)) { fileStop(); return false; }
+    if (!play) { fileStop(0.3); return true; }
+    if (buffers[id] === undefined) { loadBuffer(id); return true; }
+    if (buffers[id] === null) { fileStop(); return false; } // не загрузился — синтез
+    const rate = inten ? 1.06 : 1;
+    if (fileCur && fileCur.id === id) { if (fileCur.rate !== rate) { fileCur.src.playbackRate.setTargetAtTime(rate, ac.currentTime, 0.8); fileCur.rate = rate; } return true; }
+    fileStop();
+    const tr = manifest.tracks[id], buf = buffers[id], src = ac.createBufferSource(), g = ac.createGain();
+    src.buffer = buf; src.loop = true;
+    src.loopStart = Math.max(0, +tr.loop_start || 0); src.loopEnd = Math.min(buf.duration, +tr.loop_end || buf.duration);
+    src.playbackRate.value = rate;
+    g.gain.setValueAtTime(0, ac.currentTime); g.gain.linearRampToValueAtTime(0.55, ac.currentTime + 0.8); // файлы −16 LUFS — громче синтеза
+    src.connect(g); g.connect(musicOut); src.start();
+    fileCur = { id, src, gain: g, rate };
+    return true;
+  }
   function music(id, playing, intensity) { // каждый кадр: какой трек, играть ли, напряжение 0/1
     if (!ac || typeof Music === 'undefined') return;
-    if (ac.state === 'suspended' && playing && !muted) ac.resume();
-    Music.update(ac, musicOut, id, playing && !muted && !document.hidden, intensity);
+    const on = playing && !muted && !document.hidden;
+    if (ac.state === 'suspended' && on) ac.resume();
+    let useFile = false;
+    if (source === 'files') { try { useFile = fileUpdate(id, on, intensity); } catch (e) { useFile = false; } }
+    else if (fileCur) fileStop();
+    Music.update(ac, musicOut, id, on && !useFile, intensity);
+  }
+  function toggleSource() { // вернуть: что теперь выбрано и есть ли файлы
+    source = source === 'synth' ? 'files' : 'synth';
+    try { localStorage.setItem(SRC_KEY, source); } catch (e) {}
+    return loadManifest().then(m => ({ source, files: !!m }));
   }
   function unlock() {
     if (unlocked) return; unlocked = true;
@@ -63,5 +113,5 @@ const Sound = (() => {
     try { SFX[name](); } catch (e) {}
   }
   function toggleMute() { muted = !muted; try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch (e) {} }
-  return { play, music, unlock, toggleMute, get muted() { return muted; }, names: Object.keys(SFX) };
+  return { play, music, unlock, toggleMute, toggleSource, get muted() { return muted; }, get source() { return source; }, get hasFiles() { return !!manifest; }, names: Object.keys(SFX) };
 })();

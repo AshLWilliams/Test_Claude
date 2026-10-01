@@ -108,7 +108,7 @@ function registerMode(m) {
 let mode = 'menu'; // menu | intro | play | pause | clear | over
 let levelIdx = 0, startLevel = 0, practice = false, inst = null, result = null, overAt = 0, menuLevel = 0;
 let score = 0, time = 0, levelTime = 0, shake = 0, results = [];
-let popups = [], particles = [];
+let popups = [], particles = [], hudDrawn = false;
 let board = null, globalBoard = null, session = null, final = null;
 const nameForm = document.getElementById('nameForm'), nameInput = document.getElementById('nameInput');
 try { nameInput.value = localStorage.getItem(NAME_KEY) || ''; } catch (e) {}
@@ -195,11 +195,36 @@ function draw() {
   if (mode === 'pause') drawPause();
   if (mode === 'clear') drawClear();
   if (mode === 'over') drawEnd();
+  if (!hudDrawn) { drawSoundButton(); drawMusicButton(); }
+  drawNotice(); hudDrawn = false;
 }
 
 // ---------- HUD ----------
 const SOUND_BTN = () => ({ x: W - 22, y: 15, r: 12 });
 const PAUSE_BTN = () => ({ x: W - 52, y: 15, r: 13 });
+// выбор музыки рядом со звуком: «синт» — синтез с ускорением в конце, «файл» — петли локального генератора (music/)
+const MUSIC_BTN = () => ({ x: W - (mode === 'play' ? 112 : 82), y: 4, w: 46, h: 22 });
+let notice = null; // короткое сообщение под HUD: { text, life }
+function drawMusicButton() {
+  const b = MUSIC_BTN(), files = Sound.source === 'files';
+  ctx.fillStyle = 'rgba(255,255,255,.12)'; roundRect(ctx, b.x, b.y, b.w, b.h, 6); ctx.fill();
+  ctx.strokeStyle = files ? THEME.accent : 'rgba(255,255,255,.45)'; ctx.lineWidth = 1; roundRect(ctx, b.x, b.y, b.w, b.h, 6); ctx.stroke();
+  text(ctx, files ? '♪ файл' : '♪ синт', b.x + b.w / 2, b.y + 15, 10, files ? THEME.accent : THEME.ink, 'center', '700');
+}
+function drawNotice() {
+  if (!notice) return;
+  ctx.globalAlpha = Math.min(1, notice.life / 0.4);
+  ctx.font = '600 12px system-ui, sans-serif'; const w = ctx.measureText(notice.text).width + 24;
+  ctx.fillStyle = 'rgba(20,14,10,.9)'; roundRect(ctx, W / 2 - w / 2, TOP + 6, w, 24, 8); ctx.fill();
+  text(ctx, notice.text, W / 2, TOP + 22, 12, THEME.ink, 'center', '600'); ctx.globalAlpha = 1;
+}
+function toggleMusicSource() {
+  Sound.toggleSource().then(r => {
+    notice = { life: 2.6, text: r.source === 'synth' ? 'Музыка: синтез (в конце уровня ускоряется)'
+      : r.files ? 'Музыка: треки из файлов' : 'Треков пока нет — играет синтез; появятся сами' };
+  });
+  Sound.play('select');
+}
 function drawSoundButton() {
   const b = SOUND_BTN(), m = Sound.muted;
   ctx.save(); ctx.translate(b.x, b.y);
@@ -215,15 +240,15 @@ function drawHUD() {
   const L = LEVELS[levelIdx];
   text(ctx, `${L.num}/${LEVELS.length}`, 10, 19, 12, THEME.accent, 'left');
   text(ctx, `${L.mode.title} · ${L.variant.title}`, 46, 19, 12, THEME.ink, 'left');
-  text(ctx, 'Очки: ' + Math.floor(score + (result ? 0 : 0)), W - 72, 19, 12, THEME.ink, 'right');
+  text(ctx, 'Очки: ' + Math.floor(score + (result ? 0 : 0)), W - 122, 19, 12, THEME.ink, 'right');
   let h = null; try { h = inst && inst.hud ? inst.hud() : null; } catch (e) {}
   if (h) {
-    let x = W - 160;
+    let x = W - 200;
     if (h.time != null) { const t = Math.max(0, Math.ceil(h.time)); text(ctx, `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`, x, 19, 13, t <= 10 ? THEME.bad : THEME.ink, 'right'); x -= 50; }
     if (h.progress != null) { const pw = 70; ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(x - pw, 12, pw, 5); ctx.fillStyle = THEME.accent; ctx.fillRect(x - pw, 12, pw * clamp(h.progress, 0, 1), 5); x -= pw + 10; }
     if (h.info && h.info.length) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, x, TOP); ctx.clip(); text(ctx, h.info.join(' · '), x, 19, 11, THEME.dim, 'right', '600'); ctx.restore(); }
   }
-  drawSoundButton();
+  drawSoundButton(); drawMusicButton(); hudDrawn = true;
   if (mode === 'play') { const pb = PAUSE_BTN(); ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillRect(pb.x - 6, pb.y - 7, 4, 14); ctx.fillRect(pb.x + 2, pb.y - 7, 4, 14); }
 }
 
@@ -405,6 +430,7 @@ canvas.addEventListener('pointerdown', e => {
   const p = toGame(e); p.id = e.pointerId; p.button = e.button;
   const sb = SOUND_BTN();
   if (Math.hypot(p.x - sb.x, p.y - sb.y) < sb.r * 1.8) { Sound.toggleMute(); return; }
+  { const mb = MUSIC_BTN(); if (p.x > mb.x - 4 && p.x < mb.x + mb.w + 4 && p.y > mb.y - 4 && p.y < mb.y + mb.h + 10) { toggleMusicSource(); return; } }
   if (mode !== 'play' && inLink(p)) { openGroup(); return; }
   if (mode === 'menu') {
     const a = menuArrows();
@@ -444,6 +470,7 @@ addEventListener('blur', () => { if (mode === 'play') mode = 'pause'; });
 let last = 0;
 function frame(now) {
   let dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (notice && (notice.life -= dt) <= 0) notice = null;
   while (dt > 0) { const s = Math.min(dt, 1 / 60); update(s); dt -= s; }
   draw();
   // музыка: в меню и на итогах смены — главная тема, на уровне — своя; мало времени — напряжённый слой
