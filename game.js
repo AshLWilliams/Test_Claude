@@ -16,7 +16,9 @@ const stars = Array.from({ length: 90 }, () => ({
 
 // Telegram: бот открывает игру со ссылкой ?t=<билет>. Без билета (обычный сайт) рекорды не отправляются.
 const API = 'https://star-dodger.ashlwilliams.workers.dev';
-const TICKET = new URLSearchParams(location.search).get('t');
+let TICKET = new URLSearchParams(location.search).get('t');
+const MINIAPP = !!window.TG_APP; // открыта как Telegram Mini App (на весь экран): билет без чата — только мировой рейтинг
+if (!TICKET && window.tgTicket) tgTicket(API, 'stardodger').then(t => { if (t) TICKET = t; });
 let board = null;       // таблица рекордов чата (только в Telegram): { state: 'loading' | 'ok' | 'error', rows, newRecord }
 let globalBoard = null; // мировой рейтинг: { state, rows, rank, improved, sent }
 let session = null;     // Promise с подписанной сессией партии от сервера (нужна для мирового рейтинга)
@@ -219,7 +221,7 @@ function gameOver() {
     try { localStorage.setItem(STORAGE_KEY, best); } catch (e) {}
   }
   final = { score: Math.floor(score), duration: time };
-  if (TICKET) { submitScore(); submitGlobal(); } // в Telegram имя берётся из аккаунта
+  if (TICKET) { if (!MINIAPP) submitScore(); submitGlobal(); } // в Telegram имя берётся из аккаунта
   else { loadGlobal(); nameForm.hidden = false; } // на сайте игрок сам вводит имя
 }
 
@@ -298,7 +300,8 @@ function drawOver() {
   text(`Очки: ${Math.floor(score)}   Рекорд: ${best}`, W / 2, 148, 18, '#cfd8ff');
   text(`Сбито астероидов: ${kills}`, W / 2, 174, 16, '#cfd8ff');
   text('Пробел или тап — играть снова', W / 2, 208, 14, '#9aa5e0');
-  if (TICKET) { drawTable(globalBoard, 'Мировой рейтинг', 20, 228, 250); drawTable(board, 'Рекорды чата', 252, 460, 250); }
+  if (TICKET && MINIAPP) drawTable(globalBoard, 'Мировой рейтинг', 100, 380, 250);
+  else if (TICKET) { drawTable(globalBoard, 'Мировой рейтинг', 20, 228, 250); drawTable(board, 'Рекорды чата', 252, 460, 250); }
   else {
     drawTable(globalBoard, 'Мировой рейтинг', 100, 380, 250);
     if (!nameForm.hidden) text('Введите имя под игрой, чтобы попасть в рейтинг', W / 2, H - 22, 13, '#9aa5e0');
