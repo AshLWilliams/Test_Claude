@@ -446,7 +446,9 @@ function frame(now) {
   let dt = Math.min(0.05, (now - last) / 1000); last = now;
   while (dt > 0) { const s = Math.min(dt, 1 / 60); update(s); dt -= s; }
   draw();
-  Sound.music(mode !== 'pause');
+  // музыка: в меню и на итогах смены — главная тема, на уровне — своя; мало времени — напряжённый слой
+  let tense = 0; if (mode === 'play' && inst && inst.hud) { try { const h = inst.hud(); if (h && h.time != null && h.time < 20) tense = 1; } catch (e) {} }
+  Sound.music(mode === 'menu' || mode === 'over' || !LEVELS[levelIdx] ? 'menu' : LEVELS[levelIdx].key, mode !== 'pause', tense);
   requestAnimationFrame(frame);
 }
 function startGame() {

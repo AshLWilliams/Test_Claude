@@ -1,28 +1,25 @@
 'use strict';
-// Звук «Топографа»: саундтрек «КиШ Геодезия» (из Level Runner) и синтезированные эффекты (Web Audio, без файлов).
+// Звук «Топографа»: синтезированные эффекты и музыка (music.js — своя тема на каждый участок), всё на Web Audio, без файлов.
 // Браузеры разрешают звук только после действия игрока — всё включается при первом нажатии.
 const Sound = (() => {
-  const MUTE_KEY = 'topograf-muted', MUSIC_VOL = 0.22, SFX_VOL = 0.85;
+  const MUTE_KEY = 'topograf-muted', MUSIC_VOL = 0.5, SFX_VOL = 0.85;
   let muted = false; try { muted = localStorage.getItem(MUTE_KEY) === '1'; } catch (e) {}
-  let ac = null, master = null, noiseBuf = null, unlocked = false, wantPlay = false;
-  const track = new Audio(); track.src = '../surveyor/music/kish-geodeziya.mp3'; track.loop = true; track.preload = 'none'; track.volume = MUSIC_VOL;
-  function syncMusic() {
-    const should = wantPlay && unlocked && !muted && !document.hidden;
-    if (should && track.paused) track.play().catch(() => {});
-    if (!should && !track.paused) track.pause();
+  let ac = null, master = null, musicOut = null, noiseBuf = null, unlocked = false;
+  function music(id, playing, intensity) { // каждый кадр: какой трек, играть ли, напряжение 0/1
+    if (!ac || typeof Music === 'undefined') return;
+    if (ac.state === 'suspended' && playing && !muted) ac.resume();
+    Music.update(ac, musicOut, id, playing && !muted && !document.hidden, intensity);
   }
-  function music(playing) { wantPlay = playing; syncMusic(); }
-  document.addEventListener('visibilitychange', syncMusic);
   function unlock() {
     if (unlocked) return; unlocked = true;
     try {
       ac = new (window.AudioContext || window.webkitAudioContext)();
       const comp = ac.createDynamicsCompressor(); comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 4; comp.connect(ac.destination);
       master = ac.createGain(); master.gain.value = SFX_VOL; master.connect(comp);
+      musicOut = ac.createGain(); musicOut.gain.value = MUSIC_VOL; musicOut.connect(comp);
       noiseBuf = ac.createBuffer(1, ac.sampleRate * 0.6, ac.sampleRate);
       const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     } catch (e) { ac = null; }
-    syncMusic();
   }
   function tone(type, f0, f1, dur, vol = 0.3, delay = 0) {
     const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
@@ -65,6 +62,6 @@ const Sound = (() => {
     if (ac.state === 'suspended') ac.resume();
     try { SFX[name](); } catch (e) {}
   }
-  function toggleMute() { muted = !muted; try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch (e) {} syncMusic(); }
+  function toggleMute() { muted = !muted; try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch (e) {} }
   return { play, music, unlock, toggleMute, get muted() { return muted; }, names: Object.keys(SFX) };
 })();

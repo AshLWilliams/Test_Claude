@@ -20,7 +20,7 @@ function harness(modeFiles) {
   const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><base href="file://${ROOT}/">
 <link rel="stylesheet" href="style.css"></head><body><main><h1>test</h1><div id="stage"><canvas id="game"></canvas>
 <form id="nameForm" hidden><input id="nameInput"><button>ok</button></form></div><p class="hint">h</p></main>
-<script src="audio.js"></script><script src="core.js"></script><script src="symbols.js"></script>${modeFiles.map(f => `<script src="file://${f}"></script>`).join('')}
+<script src="music.js"></script><script src="audio.js"></script><script src="core.js"></script><script src="symbols.js"></script>${modeFiles.map(f => `<script src="file://${f}"></script>`).join('')}
 <script>startGame();</script></body></html>`;
   const file = path.join(OUT, `harness-${process.pid}.html`);
   fs.writeFileSync(file, html);
