@@ -456,7 +456,7 @@
         params: { ravine: true, iv: 0.5, levels: [8, 11] } },
     ],
     create(api, variant, seed) {
-      const LIMIT = !api.sandbox && variant.id === 'ravine' ? 420 : api.timeLimit(LIMIT0); // последний уровень (овраг) — 7 минут (просьба пользователя)
+      const LIMIT = !api.sandbox && variant.id === 'ravine' ? 900 : api.timeLimit(LIMIT0); // уровень 10 (овраг) — 15 минут (просьба пользователя)
       if (Sym.prepare) Sym.prepare(['paper']);
       const ravine = !!variant.params.ravine, iv = variant.params.iv;
       const avW0 = api.W - PANEL_W - 14, s0 = (360 - 40) / (MH + 2 * PAD);

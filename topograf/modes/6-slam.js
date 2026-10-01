@@ -85,7 +85,7 @@
     const R = api.rng(seed), rr = (a, b) => a + R() * (b - a), ri = (a, b) => Math.floor(rr(a, b + 1));
     const sdx = () => ri(1, 999999999);
     const YARD = variant.id === 'yard', TOP = api.TOP;
-    const LIMIT = api.sandbox ? api.timeLimit(300) : 300;
+    const LIMIT = api.sandbox ? api.timeLimit(480) : 480 /* 8 минут — просьба пользователя */;
     const BG = YARD ? [9, 13, 12] : [7, 9, 13], BGS = `rgb(${BG})`;
 
     // ---------- сетки участка ----------
