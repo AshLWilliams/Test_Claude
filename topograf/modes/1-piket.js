@@ -181,7 +181,7 @@
       H0 = rr(141, 168);
       hAt = (x, y) => H0 + x * 0.0016 - y * 0.001;
       WW = Math.round(rr(860, 960));
-      const nP = R() < 0.45 ? 4 : 3, mL = Math.round(rr(34, 80)), mR = Math.round(rr(34, 80));
+      const nP = R() < 0.35 ? 4 : 3, mL = Math.round(rr(34, 80)), mR = Math.round(rr(34, 80));
       const gaps = []; for (let k = 0; k < nP - 1; k++) gaps.push(R() < 0.5 ? 0 : Math.round(rr(34, 60)));
       const usable = WW - mL - mR - gaps.reduce((a, b) => a + b, 0), ws = [];
       for (let k = 0; k < nP; k++) ws.push(rr(0.9, 1.1));
@@ -207,14 +207,14 @@
       const plots = [];
       let x = mL;
       for (let k = 0; k < nP; k++) { plots.push({ x0: x, x1: x + ws[k], w: ws[k], yF: yN, depth: yN, k }); x += ws[k] + (gaps[k] || 0); }
-      const kinds = shuffle(['shed', 'greenhouse', 'bath', 'toilet']), vacant = nP > 3 ? Math.floor(R() * nP) : -1;
+      const kinds = shuffle(['shed', 'greenhouse', 'bath', 'toilet']), vacant = nP > 3 || R() < 0.25 ? Math.floor(R() * nP) : -1;
       let fk = 0;
       plots.forEach((pl, k) => { if (k === vacant) { pl.vacant = true; fillVacant(pl); } else { fillPlot(pl, fk === 0 ? 'shed' : fk === 1 ? 'greenhouse' : kinds[fk], fk); fk++; } });
       // заборы: передний с калиткой и воротами, боковые — за край съёмки
       const sideDone = new Set();
       for (const pl of plots) {
         if (pl.vacant) { // межевые знаки по передним углам незастроенного участка
-          const ms = [pt(pl.x0 + 3, pl.yF - 3, 'межевой знак'), pt(pl.x1 - 3, pl.yF - 3, 'межевой знак')];
+          const ms = [pt(pl.x0, pl.yF, 'межевой знак'), pt(pl.x1, pl.yF, 'межевой знак')];
           S(24, c => { for (const q of ms) Sym.marker(c, q.x, q.y, 'boundary'); });
           obj('marker', 'Межевые знаки', ms, 2, { pts: ms.map(q => ({ x: q.x, y: q.y })) });
           continue;
@@ -244,7 +244,7 @@
         const a = along(RD, RC, s), px = Math.round(a.x + Math.sin(a.a) * 21), py = Math.round(a.y - Math.cos(a.a) * 21);
         if (plots.some(pl => Math.abs(px - pl.vu) < 16 || Math.abs(px - pl.gu) < 12)) { s += 20; continue; }
         if (px > 12 && px < WW - 12) poles.push({ x: px, y: py, a: a.a });
-        s += rr(185, 215);
+        s += rr(200, 230);
       }
       poles.forEach(p => {
         wCircs.push({ x: p.x, y: p.y, r: 1.2 });
@@ -263,7 +263,7 @@
         }
       });
       // люк водопровода на улице, гидрант на обочине, лавочка у калитки
-      if (R() < 0.6) for (let t = 0; t < 30; t++) {
+      if (R() < 0.45) for (let t = 0; t < 30; t++) {
         const x = Math.round(rr(70, WW - 70)), y = Math.round(roadY(x) + rr(-3, 3));
         if (plots.some(pl => Math.abs(x - pl.vu) < 18)) continue;
         S(14, c => Sym.manhole(c, x, y, 'water', 2.3, 0.4));
@@ -278,7 +278,7 @@
         obj('hydrant', 'Гидрант', [pt(x, y, 'пожарный гидрант')], 1, { x, y });
         break;
       }
-      if (R() < 0.55) {
+      if (R() < 0.45) {
         const pl = pickR(plots), x = Math.round(pl.gu + (pl.gu < pl.vu ? -16 : 16)), y = pl.yF + 4;
         if (x > pl.x0 + 6 && x < pl.x1 - 6 && !poles.some(p => Math.abs(p.x - x) < 10)) {
           solid(x - 3.6, y - 1.3, 7.2, 2.6, 'скамейка', false);
@@ -323,7 +323,7 @@
       S(10, c => Sym.roads(c, streets));
     }
 
-    function fillVacant(pl) { // незастроенный участок под ИЖС: забор, бурьян, бытовка, межевые знаки
+    function fillVacant(pl) { // незастроенный участок под ИЖС: бурьян, иногда бытовка; по углам — межевые знаки
       const { x0, w, yF } = pl, gateLeft = R() < 0.5;
       pl.vu = Math.round(x0 + (gateLeft ? rr(22, 40) : w - rr(22, 40))); pl.gu = pl.vu + (gateLeft ? 22 : -22);
       const ms = sdx(); S(2, c => Sym.ground(c, x0, 0, w, yF, 'meadow', ms));
@@ -335,7 +335,7 @@
       }
       for (let n = 0; n < 10; n++) { const x = x0 + rr(8, w - 8), y = rr(8, yF - 8), r = rr(2.5, 5); if (occFree(x - r, y - r, x + r, y + r, 2)) bush(x, y, r); }
     }
-    function fillPlot(pl, forced, k, lean) {
+    function fillPlot(pl, forced, k) {
       const { x0, w, yF, depth } = pl;
       const Pp = (u, v) => ({ x: x0 + u, y: yF - v });
       const Rc = (u, v, ww, hh) => ({ x: x0 + u, y: yF - v - hh, w: ww, h: hh });
@@ -361,7 +361,7 @@
       if (two) hopt.height = 7;
       pl.house = hr;
       addBuilding('house', hr.x, hr.y, hr.w, hr.h, ['Дом', 'дома', 'дом'], two ? 'кж2' : wood ? 'дж1' : 'кж1', (c, x, y, ww, hh) => Sym.house(c, x, y, ww, hh, hopt));
-      if (R() < (lean ? 0.3 : 0.45)) {
+      if (R() < 0.45) {
         const aw = Math.round(Math.min(rr(14, 22), hw - 6)), ad = Math.round(rr(10, 15)), au = R() < 0.5 ? u0 : u0 + hw - aw;
         const ar = Rc(au, v0 + hd, aw, ad), aopt = { roof: R() < 0.5 ? 'flat' : 'gable', color: pickR(ROOFS), height: 2.4, chimney: false, solar: false, skylights: false, dish: false, seed: sdx() };
         const far = [Pp(au, v0 + hd + ad), Pp(au + aw, v0 + hd + ad)];
@@ -385,7 +385,7 @@
         return null;
       };
       const list = [forced];
-      if (!lean && R() < 0.15) list.push(pickR(['shed', 'greenhouse', 'bath', 'toilet'].filter(q => q !== forced)));
+      if (R() < 0.15) list.push(pickR(['shed', 'greenhouse', 'bath', 'toilet'].filter(q => q !== forced)));
       const outs = [];
       for (const kind of list) {
         const rot = R() < 0.5;
@@ -423,7 +423,7 @@
         break;
       }
       // яблони, колодец, кусты вдоль забора
-      const nt = 1 + (!lean && R() < 0.2 ? 1 : 0);
+      const nt = 1 + (R() < 0.2 ? 1 : 0);
       for (let n = 0, t = 0; n < nt && t < 60; t++) {
         const r = rr(9, 12), u = rr(r * 0.8 + 4, w - r * 0.8 - 4), v = rr(r * 0.8 + 6, depth - r * 0.8 - 4), q = Pp(u, v);
         if (!occFree(q.x - r, q.y - r, q.x + r, q.y + r, 3)) continue;
@@ -818,10 +818,11 @@
       if (cd.x > Math.min(api.W, 640) / Z * 0.7 || Math.abs(cd.y - laneY(cd.x)) > 34) continue;
       if (!s0 || cd.vis.length > s0.vis.length) s0 = cd;
     }
-    if (!s0) s0 = cands.reduce((a, b) => (b.vis.length > a.vis.length ? b : a));
+    if (!s0) s0 = cands.length ? cands.reduce((a, b) => (b.vis.length > a.vis.length ? b : a)) : { x: cx(hs), y: cy(hs), vis: [], ok: true, i: -1, adj: [] };
     { // ход: места станций, достижимые цепочкой взаимной видимости от первой
       const q = [s0]; s0.ok = true;
-      for (let k = 0; k < q.length && k < 120; k++) for (const b of adjOf(q[k])) if (!b.ok) { b.ok = true; q.push(b); }
+      let left = cands.length - 1;
+      for (let k = 0; k < q.length && k < 120 && left > 0; k++) for (const b of adjOf(q[k])) if (!b.ok) { b.ok = true; q.push(b); left--; }
     }
     const seen = new Uint8Array(pts.length);
     for (const cd of cands) if (cd.ok) for (const i of cd.vis) seen[i] = 1;
@@ -859,13 +860,14 @@
     let picketNo = 0, extra = 0, got = 0, doneAt = -1, failFx = 0, okFx = 0, stepT = 0, nearPt = null, nearVis = null;
     const extras = [], rings = [];
     let lastMeas = null, mmDirty = true, mmLayer = null, mmKey = '', heroSlow = 1, slowMsgT = 0;
+    let fails = 0, hintT = 0, nothingHere = false;   // подсказки новичку
     const VW = () => api.W / Z;
     let camX = clamp(hero.x - VW() / 2, 0, Math.max(0, WW - VW()));
     const partner = { x: s0.x - 7, y: s0.y + 4, dir: 0, ph: 0 };
 
     // ---------- помехи ----------
     const R2 = api.rng(seed ^ 0x5bd1e995), r2 = (a, b) => a + R2() * (b - a);
-    const dog = !PARK && dogHome ? { x: (dogHome.x0 + dogHome.x1) / 2, y: (dogHome.y0 + dogHome.y1) / 2, dir: 0, tx: 0, ty: 0, wait: 0, bark: 0, said: 0, ph: 0, color: ['#b5783e', '#3b3330', '#d9c8a8', '#8a6a4a'][Math.floor(R2() * 4)] } : null;
+    const dog = !PARK && dogHome ? { x: (dogHome.x0 + dogHome.x1) / 2, y: (dogHome.y0 + dogHome.y1) / 2, dir: 0, tx: 0, ty: 0, wait: 0, bark: 0, said: 0, lunge: 2, ph: 0, color: ['#b5783e', '#3b3330', '#d9c8a8', '#8a6a4a'][Math.floor(R2() * 4)] } : null;
     if (dog) { const c = nearestFree(dog.x, dog.y, 30); if (c >= 0) { dog.x = cx(c); dog.y = cy(c); } dog.tx = dog.x; dog.ty = dog.y; }
     const laneC = lanes.map(l => cum(l));
     let car = null, carT = r2(4, 8);
@@ -930,10 +932,10 @@
       if (moving) { api.sfx('warn'); popW(hero.x, hero.y, 'Станция ещё в пути…', api.theme.accent); return; }
       if (placing) { placing = false; preview = null; }
       const dist = hyp(hero.x - st.x, hero.y - st.y);
-      if (dist > RANGE) { api.sfx('bad'); failFx = 1.1; popW(hero.x, hero.y, `Далеко: ${fmt(dist * MPU, 1)} м — норма до 60 м`, api.theme.bad); return; }
+      if (dist > RANGE) { api.sfx('bad'); failFx = 1.1; fails++; popW(hero.x, hero.y, `Далеко: ${fmt(dist * MPU, 1)} м — норма до 60 м`, api.theme.bad); return; }
       const blk = sight(st.x, st.y, hero.x, hero.y, true);
       if (blk) {
-        api.sfx('bad'); failFx = 1.1;
+        api.sfx('bad'); failFx = 1.1; fails++;
         popW(hero.x, hero.y, 'Нет видимости!' + (blk.what ? ' (' + blk.what + ')' : ''), api.theme.bad);
         return;
       }
@@ -1037,8 +1039,8 @@
       if (tapFx) { tapFx.t += dt; if (tapFx.t > 0.6) tapFx = null; }
       // реечник
       heroSlow = 1;
-      if (dog && hyp(dog.x - hero.x, dog.y - hero.y) < 18) {
-        heroSlow = 0.45;
+      if (dog && hyp(dog.x - hero.x, dog.y - hero.y) < 11) {
+        heroSlow = 0.5;
         if (time > slowMsgT) { slowMsgT = time + 4; popW(hero.x, hero.y - 8, 'Собака не даёт пройти!', api.theme.accent); }
       }
       const sp = SPEED * slow[cellOf(hero.x, hero.y)] * heroSlow * dt;
@@ -1063,21 +1065,23 @@
       if (mv) { hero.ph += dt; stepT -= dt; if (stepT <= 0) { stepT = 0.34; api.sfx('step'); } }
       // камера
       camX += (clamp(hero.x - VW() / 2, 0, Math.max(0, WW - VW())) - camX) * Math.min(1, dt * 5);
-      // собака: бегает по двору, на прохожего — к забору с лаем
+      // собака: бегает по двору; на чужого — лает издали и время от времени кидается под ноги
       if (dog) {
         const h = dogHome, dh = hyp(hero.x - dog.x, hero.y - dog.y);
         const near = hero.x > h.x0 - 26 && hero.x < h.x1 + 26 && hero.y > h.y0 - 26 && hero.y < h.y1 + 30 && dh < 70;
         dog.bark -= dt;
         let tx = dog.tx, ty = dog.ty, v = 28;
         if (near) {
-          tx = clamp(hero.x, h.x0, h.x1); ty = clamp(hero.y, h.y0, h.y1); v = 60;
+          dog.lunge -= dt; if (dog.lunge < -0.7) dog.lunge = r2(2.5, 4);
+          const want = dog.lunge < 0 ? 6 : 15, ang = Math.atan2(dog.y - hero.y, dog.x - hero.x) + 0.6 * dt;
+          tx = clamp(hero.x + Math.cos(ang) * want, h.x0, h.x1); ty = clamp(hero.y + Math.sin(ang) * want, h.y0, h.y1); v = dog.lunge < 0 ? 75 : 45;
           if (dog.bark <= 0) { dog.bark = 1.3; api.sfx('bark'); if (++dog.said % 2) popW(dog.x, dog.y - 6, 'Гав! Гав!', '#ffd76a'); }
         } else {
           dog.wait -= dt;
           if (dog.wait <= 0 && hyp(dog.tx - dog.x, dog.ty - dog.y) < 2) { dog.tx = r2(h.x0, h.x1); dog.ty = r2(h.y0, h.y1); dog.wait = r2(0.6, 2.2); }
         }
         const dx = tx - dog.x, dy = ty - dog.y, d = hyp(dx, dy);
-        if (d > (near ? 8 : 1)) {
+        if (d > 1) {
           const s2 = Math.min(d, v * dt), nx = dog.x + dx / d * s2, ny = dog.y + dy / d * s2;
           if (free(nx, ny) || !free(dog.x, dog.y)) { dog.x = nx; dog.y = ny; } else { dog.tx = r2(h.x0, h.x1); dog.ty = r2(h.y0, h.y1); }
           dog.dir = turn(dog.dir, Math.atan2(dy, dx), Math.min(1, dt * 10)); dog.ph += dt;
@@ -1088,18 +1092,23 @@
         carT -= dt;
         if (!car && carT <= 0) {
           const li = R2() < 0.5 ? 0 : 1, L = laneC[li][laneC[li].length - 1];
-          car = { li, s: li === 0 ? 0 : L, dir: li === 0 ? 1 : -1, v: 0, vmax: r2(80, 100), x: -50, y: 0, a: 0, seed: Math.floor(R2() * 1e6), col: CARS[Math.floor(R2() * CARS.length)], snd: false, horn: 0 };
+          car = { li, s: li === 0 ? 0 : L, dir: li === 0 ? 1 : -1, v: 0, vmax: r2(80, 100), x: -50, y: 0, a: 0, seed: Math.floor(R2() * 1e6), col: CARS[Math.floor(R2() * CARS.length)], snd: false, horn: 0, off: 0, offT: 0, wait: 0 };
           car.v = car.vmax;
         }
         if (car) {
           const lane = lanes[car.li], C = laneC[car.li], L = C[C.length - 1];
-          const ahead = along(lane, C, car.s + car.dir * 22);
-          const stop = hyp(ahead.x - hero.x, ahead.y - hero.y) < 13 || (hyp(car.x - hero.x, car.y - hero.y) < 20 && Math.cos(Math.atan2(hero.y - car.y, hero.x - car.x) - car.a) > 0.4);
-          car.v = stop ? Math.max(0, car.v - 260 * dt) : Math.min(car.vmax, car.v + 120 * dt);
+          // реечник на пути: притормозить, посигналить и объехать его по обочине
+          const a0 = along(lane, C, car.s), ca = Math.cos(a0.a), sa = Math.sin(a0.a);
+          const fwd = ((hero.x - a0.x) * ca + (hero.y - a0.y) * sa) * car.dir, lat = -(hero.x - a0.x) * sa + (hero.y - a0.y) * ca;
+          const inPath = fwd > -6 && fwd < 26 && Math.abs(lat - car.off) < 8.5;
+          if (inPath) { car.wait += dt; car.offT = clamp(lat > 0 ? lat - 12 : lat + 12, -10, 10); }
+          else { car.wait = 0; car.offT = Math.abs(lat - car.off) < 12 && fwd > -12 && fwd < 30 ? car.offT : 0; }
+          car.off += clamp(car.offT - car.off, -14 * dt, 14 * dt);
+          car.v = inPath ? (car.wait < 1.2 ? Math.max(0, car.v - 260 * dt) : Math.min(16, car.v + 40 * dt)) : Math.min(car.vmax, car.v + 120 * dt);
           car.horn -= dt;
-          if (stop && car.horn <= 0) { car.horn = 2.5; api.sfx('warn'); popW(car.x, car.y - 8, 'Би-бип!', '#ffd76a'); }
+          if (inPath && car.horn <= 0) { car.horn = 2.5; api.sfx('warn'); popW(car.x, car.y - 8, 'Би-бип!', '#ffd76a'); }
           car.s += car.dir * car.v * dt;
-          const a = along(lane, C, car.s); car.x = a.x; car.y = a.y; car.a = a.a + (car.dir < 0 ? Math.PI : 0);
+          const a = along(lane, C, car.s); car.x = a.x - Math.sin(a.a) * car.off; car.y = a.y + Math.cos(a.a) * car.off; car.a = a.a + (car.dir < 0 ? Math.PI : 0);
           if (!car.snd && car.x > camX - 40 && car.x < camX + VW() + 40) { car.snd = true; api.sfx('car'); }
           if (car.s < -30 || car.s > L + 30) { car = null; carT = r2(7, 13); }
         }
@@ -1149,6 +1158,11 @@
         partner.x = st.x - Math.cos(aim) * 7; partner.y = st.y - Math.sin(aim) * 7; partner.dir = aim;
       }
       nearPt = moving ? null : nearestUntaken(hero.x, hero.y, SNAP);
+      hintT -= dt;
+      if (hintT <= 0) { // со станции больше ничего не снять?
+        hintT = 0.5;
+        nothingHere = !moving && !pts.some(p => !p.taken && !p.dead && objOpen(p) && visFrom(st.x, st.y, p));
+      }
       if (moving) nearVis = null;
       else { const d = hyp(hero.x - st.x, hero.y - st.y); nearVis = d > RANGE ? { t: RANGE / d, what: 'далеко', far: true } : sight(st.x, st.y, hero.x, hero.y, true); }
       if (time >= T_LEVEL) finish();
@@ -1367,11 +1381,18 @@
       const bp = btnP(), bs = btnS(), ready = !moving && nearPt && !nearVis;
       api.button(ctx, bs, placing ? 'ОТМЕНА' : 'СТАНЦИЯ', { active: placing, color: placing ? '#ffd76a' : '#7ec8ff', size: 13, disabled: !!moving });
       api.button(ctx, bp, 'ПИКЕТ', { active: !!ready, color: ready ? (Math.sin(t * 8) > 0 ? '#6cff8a' : '#9dffb5') : api.theme.accent, size: 17, disabled: !!moving });
-      if (placing) { // подсказка внизу слева, не под кнопками
-        const s = api.IS_TOUCH ? 'Тап по карте — место станции (должна видеть прежнюю)' : 'Клик по карте — место станции (должна видеть прежнюю) · Пробел — здесь';
+      let hint = null;
+      if (placing) hint = api.IS_TOUCH ? 'Тап по карте — место станции (должна видеть прежнюю)' : 'Клик по карте — место станции (должна видеть прежнюю) · Пробел — здесь';
+      else if (!picketNo && time < 25) hint = 'Подойдите к мерцающей точке и нажмите ПИКЕТ';
+      else if (nothingHere && got < NEED) hint = 'Отсюда больше нечего снимать — нажмите СТАНЦИЯ';
+      else if (fails >= 2 && stNo === 1 && !moving) hint = 'Не видно или далеко? Перенесите тахеометр: СТАНЦИЯ';
+      if (hint) { // подсказка внизу слева, не под кнопками
+        const s = hint;
         ctx.font = 'bold 11px system-ui, sans-serif'; const w = Math.min(Wd - 140, ctx.measureText(s).width + 20);
+        const hx = (hero.x - camX) * Z, hy = TOP + hero.y * Z;
+        ctx.save(); ctx.globalAlpha = hx < w + 20 && hy > api.H - 50 ? 0.35 : 1;
         ctx.fillStyle = 'rgba(20,14,10,.86)'; api.roundRect(ctx, 8, api.H - 30, w, 22, 8); ctx.fill();
-        ctx.save(); ctx.beginPath(); ctx.rect(8, api.H - 30, w, 22); ctx.clip(); api.text(ctx, s, 18, api.H - 15, 11, '#ffd76a', 'left'); ctx.restore();
+        ctx.beginPath(); ctx.rect(8, api.H - 30, w, 22); ctx.clip(); api.text(ctx, s, 18, api.H - 15, 11, '#ffd76a', 'left'); ctx.restore();
       }
       const left = T_LEVEL - time;
       if (left < 10 && !over) api.text(ctx, String(Math.ceil(left)), Wd / 2, TOP + 34, 18, `rgba(255,107,91,${0.5 + 0.5 * Math.sin(t * 8)})`);
@@ -1599,7 +1620,6 @@
       },
       bot(dt) { botStep(dt); },
     };
-    inst._dbg = { get NEED() { return NEED; }, get got() { return got; }, pts, objs, cands, s0, get extra() { return extra; }, get stNo() { return stNo; }, WW, hero, get st() { return st; }, get camX() { return camX; }, set camX(v) { camX = v; }, sight, free, RANGE, Z, toScreen };
     return inst;
   }
 })();
