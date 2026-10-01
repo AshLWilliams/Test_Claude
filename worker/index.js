@@ -5,6 +5,7 @@
 //  GET  /session?game= — подписанная сессия партии (игра и время старта), нужна для общего рейтинга
 //  POST /global    — результат в общий рейтинг { s: сессия, t?: билет Telegram, name?, score, duration }
 //  GET  /global?game= — топ-10 общего рейтинга игры (хранится в KV)
+//  POST /webapp   — игра открыта как Mini App (на весь экран): проверка initData Telegram → билет игрока без чата
 // Билет выдаётся при нажатии «Play»: кто играет и в каком сообщении, с HMAC-подписью.
 
 const enc = new TextEncoder();
@@ -14,11 +15,11 @@ const TICKET_TTL = 24 * 3600; // секунд
 
 // Игры бота: короткое имя из @BotFather → папка на сайте, команда бота и граница правдоподобия (очков в секунду + запас)
 const GAMES = {
-  stardodger:  { path: '',          cmd: 'play', rate: 40, base: 100 },
-  levelrunner: { path: 'surveyor/', cmd: 'run',  rate: 400, base: 10000 }, // кампания из 10 участков с бонусами за каждый
+  stardodger:  { path: '',          cmd: 'play', rate: 40, base: 100, title: 'Star Dodger' },
+  levelrunner: { path: 'surveyor/', cmd: 'run',  rate: 400, base: 10000, title: 'Level Runner' }, // кампания из 10 участков с бонусами за каждый
   // «Топограф»: 10 уровней по 0..1000 очков. hidden: true — скрыть игру из /start и inline-режима,
   // пока её нет в @BotFather (иначе Telegram отклонит ответ); рейтинги на сайте работают и со скрытой
-  topograf:    { path: 'topograf/', cmd: 'survey', rate: 60, base: 2000 },
+  topograf:    { path: 'topograf/', cmd: 'survey', rate: 60, base: 2000, title: 'Топограф' },
 };
 const listed = () => Object.keys(GAMES).filter(g => !GAMES[g].hidden); // игры, которые бот показывает в Telegram
 const gameOf = name => (GAMES[name] ? name : 'stardodger'); // старые билеты без игры — Star Dodger
@@ -59,8 +60,28 @@ async function tg(env, method, params) {
   return res.json();
 }
 
-// куда писать очки: обычное сообщение (chat_id + message_id) или сообщение из inline-режима
+// куда писать очки: обычное сообщение (chat_id + message_id) или сообщение из inline-режима; у билета Mini App чата нет
 const target = t => t.i ? { inline_message_id: t.i } : { chat_id: t.c, message_id: t.m };
+const hasChat = t => !!(t.i || t.c);
+
+// Mini App: проверка подписи initData (core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app)
+const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+async function hmac(keyBytes, data) {
+  const k = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return crypto.subtle.sign('HMAC', k, typeof data === 'string' ? enc.encode(data) : data);
+}
+async function checkInitData(env, initData) {
+  const q = new URLSearchParams(String(initData || '')), hash = q.get('hash');
+  if (!hash) return null;
+  q.delete('hash');
+  const check = [...q.entries()].map(([k, v]) => k + '=' + v).sort().join('\n');
+  const secret = await hmac(enc.encode('WebAppData'), env.BOT_TOKEN);
+  if (hex(await hmac(secret, check)) !== hash) return null;
+  if (Date.now() / 1000 - Number(q.get('auth_date') || 0) > TICKET_TTL) return null;
+  try { return JSON.parse(q.get('user') || 'null'); } catch (e) { return null; }
+}
+// кнопка «на весь экран»: в личке — Mini App прямо в чате (web_app), в группе такие кнопки не разрешены
+const fullBtn = (env, g) => ({ text: '🖥 ' + GAMES[g].title + ' — на весь экран', web_app: { url: env.GAME_URL + GAMES[g].path } });
 
 async function handleUpdate(env, u) {
   const m = u.message;
@@ -69,6 +90,8 @@ async function handleUpdate(env, u) {
     const games = cmd[1] === 'start' ? listed() : listed().filter(g => GAMES[g].cmd === cmd[1]);
     if (cmd[1] === 'start') await tg(env, 'sendMessage', { chat_id: m.chat.id, text: 'Выберите игру: /play — Star Dodger, /run — Level Runner' + (listed().includes('topograf') ? ', /survey — Топограф' : '') + '. Чтобы сыграть с друзьями, наберите в любом чате @' + (env.BOT_USERNAME || 'ashlwilliamsgithubio_bot') + '.' });
     for (const g of games) await tg(env, 'sendGame', { chat_id: m.chat.id, game_short_name: g });
+    if (games.length && m.chat.type === 'private') // в личке — ещё и запуск на весь экран (Mini App, без шапки Telegram)
+      await tg(env, 'sendMessage', { chat_id: m.chat.id, text: 'Играть на весь экран, без верхней полосы Telegram (таблица рекордов чата там не ведётся, мировой рейтинг — да):', reply_markup: { inline_keyboard: games.map(g => [fullBtn(env, g)]) } });
   }
   const q = u.callback_query;
   if (q && GAMES[q.game_short_name]) {
@@ -153,6 +176,7 @@ export default {
       const body = await req.json().catch(() => ({}));
       const t = await readTicket(env, body.t);
       if (!t || !t.u) return json({ error: 'bad ticket' }, 403);
+      if (!hasChat(t)) return json({ newRecord: false, scores: [] }); // Mini App: чата нет — только мировой рейтинг
       const score = Math.floor(Number(body.score)), duration = Number(body.duration);
       // простая проверка правдоподобия: не больше 40 очков за секунду полёта
       if (!plausible(gameOf(t.g), score, duration)) return json({ error: 'implausible score' }, 400);
@@ -166,7 +190,15 @@ export default {
     if (url.pathname === '/scores' && req.method === 'GET') {
       const t = await readTicket(env, url.searchParams.get('t'));
       if (!t || !t.u) return json({ error: 'bad ticket' }, 403);
-      return json({ scores: await highScores(env, t) });
+      return json({ scores: hasChat(t) ? await highScores(env, t) : [] });
+    }
+
+    if (url.pathname === '/webapp' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({}));
+      const user = await checkInitData(env, body.initData);
+      if (!user || !user.id) return json({ error: 'bad initData' }, 403);
+      const name = [user.first_name, user.last_name].filter(Boolean).join(' ').slice(0, 20) || 'Игрок';
+      return json({ t: await makeTicket(env, { u: user.id, n: name, g: gameOf(body.game) }) });
     }
 
     if (url.pathname === '/session' && req.method === 'GET') {

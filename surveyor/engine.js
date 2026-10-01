@@ -16,7 +16,9 @@ if (IS_TOUCH) document.body.classList.add('touch');
 const GAME = 'levelrunner';
 const API = 'https://star-dodger.ashlwilliams.workers.dev';
 const PARAMS = new URLSearchParams(location.search);
-const TICKET = PARAMS.get('t'); // билет от Telegram-бота
+let TICKET = PARAMS.get('t'); // билет от Telegram-бота
+const MINIAPP = !!window.TG_APP; // открыта как Telegram Mini App: билет без чата — только мировой рейтинг
+if (!TICKET && window.tgTicket) tgTicket(API, GAME).then(t => { if (t) TICKET = t; });
 const STORAGE_KEY = 'level-runner-best', UNLOCK_KEY = 'level-runner-unlocked', NAME_KEY = 'star-dodger-name';
 let best = 0, unlocked = 1;
 try { best = +localStorage.getItem(STORAGE_KEY) || 0; unlocked = +localStorage.getItem(UNLOCK_KEY) || 1; } catch (e) {}
@@ -89,7 +91,9 @@ const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h 
 
 // ---------- раскладка: горизонтальный кадр на любом экране ----------
 function layout() {
-  const vw = innerWidth, vh = innerHeight;
+  const ins = window.tgInsets ? tgInsets() : { t: 0, b: 0, l: 0, r: 0 }; // Telegram Mini App на весь экран: обходим вырез и кнопки Telegram
+  const vw = innerWidth - ins.l - ins.r, vh = innerHeight - ins.t - ins.b;
+  stage.style.left = ins.l ? ins.l + 'px' : ''; stage.style.top = ins.t ? ins.t + 'px' : '';
   rotated = IS_TOUCH && vh > vw;
   document.body.classList.toggle('rotated', rotated);
   let sw = rotated ? vh : vw, sh = rotated ? vw : vh; // размеры сцены в её собственной, горизонтальной системе
@@ -109,7 +113,7 @@ addEventListener('orientationchange', () => setTimeout(layout, 250));
 // точка на экране → координаты игры (с учётом поворота сцены)
 function toGame(e) {
   let x = e.clientX, y = e.clientY;
-  if (rotated) { const t = x; x = y; y = innerWidth - t; }
+  if (rotated) { const ins = window.tgInsets ? tgInsets() : { t: 0, r: 0 }, t = x; x = y - ins.t; y = innerWidth - ins.r - t; }
   else { const r = stage.getBoundingClientRect(); x -= r.left; y -= r.top; }
   return { x: (x - canvas.offsetLeft) / cssScale, y: (y - canvas.offsetTop) / cssScale };
 }
@@ -1136,7 +1140,7 @@ function endGame(won) {
   final = { score: Math.floor(score), duration: time, level: levelIdx + 1 };
   if (final.score > best && !practice) { best = final.score; try { localStorage.setItem(STORAGE_KEY, best); } catch (e) {} }
   if (practice) return;
-  if (TICKET) { submitScore(); submitGlobal(); } else { loadGlobal(); nameForm.hidden = false; }
+  if (TICKET) { if (!MINIAPP) submitScore(); submitGlobal(); } else { loadGlobal(); nameForm.hidden = false; }
 }
 
 // ---------- эффекты ----------
@@ -2423,7 +2427,8 @@ function drawEnd() {
   text((IS_TOUCH ? 'Тап' : 'Пробел или тап') + ' — в меню (новая смена)', W / 2, 116, 12, '#c9b89e');
   const y = 146, ox = (W - 640) / 2;
   if (practice) { text('Тренировка не с первого участка — результат не идёт в рейтинг', W / 2, y + 10, 12, '#c9b89e'); return; }
-  if (TICKET) { drawTable(globalBoard, 'Мировой рейтинг', ox + 40, ox + 300, y); drawTable(board, 'Рекорды чата', ox + 340, ox + 600, y); }
+  if (TICKET && MINIAPP) drawTable(globalBoard, 'Мировой рейтинг', ox + 190, ox + 450, y, 5);
+  else if (TICKET) { drawTable(globalBoard, 'Мировой рейтинг', ox + 40, ox + 300, y); drawTable(board, 'Рекорды чата', ox + 340, ox + 600, y); }
   else {
     drawTable(globalBoard, 'Мировой рейтинг', ox + 190, ox + 450, y, 5); // внизу остаётся место для поля имени
     if (!nameForm.hidden) text('Введите имя, чтобы попасть в рейтинг', W / 2, y + 128, 12, '#c9b89e');
