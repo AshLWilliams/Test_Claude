@@ -1,0 +1,24 @@
+{
+  "id": "slam/yard",
+  "file": "slam-yard",
+  "duration": 40.0,
+  "loop_start": 0,
+  "loop_end": 40.0,
+  "samplerate": 48000,
+  "bpm": 96.0,
+  "bars": 16,
+  "beats_per_bar": 4,
+  "key": "F major",
+  "lufs": -16.0,
+  "true_peak_dbtp": -2.79,
+  "seam": 0.991,
+  "crossfade_ms": 625.0,
+  "source_window_s": [
+    31.9733,
+    71.9733
+  ],
+  "seed": 247183163,
+  "style": "instrumental background music for a calm casual game, pleasant and unobtrusive, warm natural production, no vocals, city courtyard with an archway, bright and calm urban mood, electric piano, soft lo-fi beat, gentle guitar harmonics",
+  "engine": "ACE-Step 1.5 (acestep-v15-turbo, LM acestep-5Hz-lm-0.6B)",
+  "made_by": "music-generator 0.3.0 (локальный Claude)"
+}
