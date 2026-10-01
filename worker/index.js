@@ -15,11 +15,11 @@ const TICKET_TTL = 24 * 3600; // секунд
 
 // Игры бота: короткое имя из @BotFather → папка на сайте, команда бота и граница правдоподобия (очков в секунду + запас)
 const GAMES = {
-  stardodger:  { path: '',          cmd: 'play', rate: 40, base: 100, title: 'Star Dodger' },
-  levelrunner: { path: 'surveyor/', cmd: 'run',  rate: 400, base: 10000, title: 'Level Runner' }, // кампания из 10 участков с бонусами за каждый
+  stardodger:  { path: '',          cmd: 'play', rate: 40, base: 100, title: 'Star Dodger', app: 'stardodgernew' },
+  levelrunner: { path: 'surveyor/', cmd: 'run',  rate: 400, base: 10000, title: 'Level Runner', app: 'levelrunnernew' }, // кампания из 10 участков с бонусами за каждый
   // «Топограф»: 10 уровней по 0..1000 очков. hidden: true — скрыть игру из /start и inline-режима,
   // пока её нет в @BotFather (иначе Telegram отклонит ответ); рейтинги на сайте работают и со скрытой
-  topograf:    { path: 'topograf/', cmd: 'survey', rate: 60, base: 2000, title: 'Топограф' },
+  topograf:    { path: 'topograf/', cmd: 'survey', rate: 60, base: 2000, title: 'Топограф', app: 'topografnew' },
 };
 const listed = () => Object.keys(GAMES).filter(g => !GAMES[g].hidden); // игры, которые бот показывает в Telegram
 const gameOf = name => (GAMES[name] ? name : 'stardodger'); // старые билеты без игры — Star Dodger
@@ -80,8 +80,12 @@ async function checkInitData(env, initData) {
   if (Date.now() / 1000 - Number(q.get('auth_date') || 0) > TICKET_TTL) return null;
   try { return JSON.parse(q.get('user') || 'null'); } catch (e) { return null; }
 }
-// кнопка «на весь экран»: в личке — Mini App прямо в чате (web_app), в группе такие кнопки не разрешены
-const fullBtn = (env, g) => ({ text: '🖥 ' + GAMES[g].title + ' — на весь экран', web_app: { url: env.GAME_URL + GAMES[g].path } });
+// кнопка «на весь экран»: в личке — Mini App прямо в чате (web_app); в группе web_app запрещены — прямая ссылка
+// на Mini App из @BotFather (/newapp, короткое имя — GAMES[g].app)
+const BOT = env => env.BOT_USERNAME || 'ashlwilliamsgithubio_bot';
+const fullBtn = (env, g, priv) => priv || !GAMES[g].app
+  ? { text: '🖥 ' + GAMES[g].title + ' — на весь экран', web_app: { url: env.GAME_URL + GAMES[g].path } }
+  : { text: '🖥 ' + GAMES[g].title + ' — на весь экран', url: `https://t.me/${BOT(env)}/${GAMES[g].app}` };
 
 async function handleUpdate(env, u) {
   const m = u.message;
@@ -90,8 +94,9 @@ async function handleUpdate(env, u) {
     const games = cmd[1] === 'start' ? listed() : listed().filter(g => GAMES[g].cmd === cmd[1]);
     if (cmd[1] === 'start') await tg(env, 'sendMessage', { chat_id: m.chat.id, text: 'Выберите игру: /play — Star Dodger, /run — Level Runner' + (listed().includes('topograf') ? ', /survey — Топограф' : '') + '. Чтобы сыграть с друзьями, наберите в любом чате @' + (env.BOT_USERNAME || 'ashlwilliamsgithubio_bot') + '.' });
     for (const g of games) await tg(env, 'sendGame', { chat_id: m.chat.id, game_short_name: g });
-    if (games.length && m.chat.type === 'private') // в личке — ещё и запуск на весь экран (Mini App, без шапки Telegram)
-      await tg(env, 'sendMessage', { chat_id: m.chat.id, text: 'Играть на весь экран, без верхней полосы Telegram (таблица рекордов чата там не ведётся, мировой рейтинг — да):', reply_markup: { inline_keyboard: games.map(g => [fullBtn(env, g)]) } });
+    const priv = m.chat.type === 'private', full = games.filter(g => priv || GAMES[g].app);
+    if (full.length) // ещё и запуск на весь экран (Mini App, без шапки Telegram)
+      await tg(env, 'sendMessage', { chat_id: m.chat.id, text: 'Играть на весь экран, без верхней полосы Telegram (таблица рекордов чата там не ведётся, мировой рейтинг — да):', reply_markup: { inline_keyboard: full.map(g => [fullBtn(env, g, priv)]) } });
   }
   const q = u.callback_query;
   if (q && GAMES[q.game_short_name]) {

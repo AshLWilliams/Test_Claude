@@ -6,6 +6,9 @@
 
 Все игры работают в браузере и в Telegram через бота @ashlwilliamsgithubio_bot (`/play`, `/run`, `/survey`), у всех общий сервер рейтингов.
 
+**На весь экран** (Telegram Mini App, без шапки Telegram): кнопка «🖥 … — на весь экран» после `/play`, `/run`, `/survey` или прямые ссылки
+`t.me/ashlwilliamsgithubio_bot/stardodgernew`, `…/levelrunnernew`, `…/topografnew` (заведены в @BotFather `/newapp`). Общий код — `webapp.js`.
+
 # ★ Star Dodger
 
 Мини-игра на чистом JavaScript + Canvas, без зависимостей.
