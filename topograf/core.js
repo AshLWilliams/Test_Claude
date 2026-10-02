@@ -12,7 +12,7 @@ if (IS_TOUCH) document.body.classList.add('touch');
 const GAME = 'topograf';
 const API = 'https://star-dodger.ashlwilliams.workers.dev';
 const PARAMS = new URLSearchParams(location.search);
-let TICKET = PARAMS.get('t');
+let TICKET = window.WEB_ONLY ? null : PARAMS.get('t'); // в браузерной версии (web.html) — без Telegram
 const MINIAPP = !!window.TG_APP; // открыта как Telegram Mini App: билет без чата — только мировой рейтинг
 if (!TICKET && window.tgTicket) tgTicket(API, GAME).then(t => { if (t) TICKET = t; });
 const STORAGE_KEY = 'topograf-best', UNLOCK_KEY = 'topograf-unlocked', STARS_KEY = 'topograf-stars', NAME_KEY = 'star-dodger-name';
