@@ -16,7 +16,7 @@ const stars = Array.from({ length: 90 }, () => ({
 
 // Telegram: бот открывает игру со ссылкой ?t=<билет>. Без билета (обычный сайт) рекорды не отправляются.
 const API = 'https://star-dodger.ashlwilliams.workers.dev';
-let TICKET = new URLSearchParams(location.search).get('t');
+let TICKET = window.WEB_ONLY ? null : new URLSearchParams(location.search).get('t'); // браузерная версия (web.html) Telegram не знает
 const MINIAPP = !!window.TG_APP; // открыта как Telegram Mini App (на весь экран): билет без чата — только мировой рейтинг
 if (!TICKET && window.tgTicket) tgTicket(API, 'stardodger').then(t => { if (t) TICKET = t; });
 let board = null;       // таблица рекордов чата (только в Telegram): { state: 'loading' | 'ok' | 'error', rows, newRecord }
