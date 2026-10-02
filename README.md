@@ -1,5 +1,7 @@
 # Мини-игры: Star Dodger, Level Runner и Топограф
 
+Презентационная страница всех трёх игр — https://ashlwilliams.github.io/Test_Claude/igroteka/ (`igroteka/index.html`).
+
 - **Star Dodger** (корень репозитория) — космос, астероиды, стрельба: https://ashlwilliams.github.io/Test_Claude/
 - **Level Runner** (`surveyor/`) — платформер про геодезиста на стройке: https://ashlwilliams.github.io/Test_Claude/surveyor/
 - **Топограф** (`topograf/`) — топосъёмка: шесть видов работ топографа, 12 участков: https://ashlwilliams.github.io/Test_Claude/topograf/
