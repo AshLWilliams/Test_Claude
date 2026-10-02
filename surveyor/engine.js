@@ -94,11 +94,11 @@ function layout() {
   const ins = window.tgInsets ? tgInsets() : { t: 0, b: 0, l: 0, r: 0 }; // Telegram Mini App на весь экран: обходим вырез и кнопки Telegram
   const vw = innerWidth - ins.l - ins.r, vh = innerHeight - ins.t - ins.b;
   stage.style.left = ins.l ? ins.l + 'px' : ''; stage.style.top = ins.t ? ins.t + 'px' : '';
-  if (window.TG_APP) stage.style.position = 'fixed'; // Mini App: сцена на всё окно, даже если style.css из кэша старый
+  if (window.TG_APP || document.documentElement.classList.contains('fs')) stage.style.position = 'fixed'; // Mini App: сцена на всё окно, даже если style.css из кэша старый
   rotated = IS_TOUCH && vh > vw;
   document.body.classList.toggle('rotated', rotated);
   let sw = rotated ? vh : vw, sh = rotated ? vw : vh; // размеры сцены в её собственной, горизонтальной системе
-  if (!IS_TOUCH && !window.TG_APP) { sw = Math.min(vw * 0.96, 1100, vh * 0.78 * 16 / 9); sh = sw * 9 / 16; } // Mini App (и на компьютере) — на всё окно // компьютер — окно 16:9
+  if (!IS_TOUCH && !window.TG_APP && !document.documentElement.classList.contains('fs')) { sw = Math.min(vw * 0.96, 1100, vh * 0.78 * 16 / 9); sh = sw * 9 / 16; } // Mini App (и на компьютере) — на всё окно // компьютер — окно 16:9
   stage.style.width = sw + 'px'; stage.style.height = sh + 'px';
   W = Math.round(Math.max(560, Math.min(860, H * sw / sh)));
   cssScale = Math.min(sw / W, sh / H);

@@ -31,3 +31,10 @@ html.tgapp main { display: block; padding: 0; }
 html.tgapp h1, html.tgapp .hint { display: none; }
 html.tgapp #stage { position: fixed; left: 0; top: 0; background: #14110f; }
 html.tgapp #stage canvas { border-radius: 0; outline: none; box-shadow: none; }
+
+/* браузерная версия на весь экран (fullscreen.js ставит html.fs): игра на весь экран, без заголовка и подписей */
+html.fs body { overflow: hidden; }
+html.fs main { display: block; padding: 0; }
+html.fs h1, html.fs .hint { display: none; }
+html.fs #stage { position: fixed; left: 0; top: 0; background: #14110f; }
+html.fs #stage canvas { border-radius: 0; outline: none; box-shadow: none; }

@@ -7,7 +7,8 @@
 Все игры работают в браузере и в Telegram через бота @ashlwilliamsgithubio_bot (`/play`, `/run`, `/survey`), у всех общий сервер рейтингов.
 
 **В браузере, без Telegram** — отдельные версии: https://ashlwilliams.github.io/Test_Claude/web/ (Star Dodger — `web.html`, Level Runner — `surveyor/web.html`,
-Топограф — `topograf/web.html`). Они не загружают скрипты Telegram и не принимают билет `?t=`; рейтинг общий — те же ключи на сервере.
+Топограф — `topograf/web.html`). Кнопка «⛶ На весь экран» (и клавиша F) — `fullscreen.js` (Fullscreen API; на iPhone недоступен — там «На экран „Домой“»).
+Они не загружают скрипты Telegram и не принимают билет `?t=`; рейтинг общий — те же ключи на сервере.
 Собираются из `index.html` игр скриптом `tools/make_web.py` при публикации (в репозитории их нет — не разъезжаются с основными).
 
 **На весь экран** (Telegram Mini App, без шапки Telegram): кнопка «🖥 … — на весь экран» после `/play`, `/run`, `/survey` или прямые ссылки
