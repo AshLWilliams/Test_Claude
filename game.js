@@ -21,6 +21,12 @@ const MINIAPP = !!window.TG_APP; // открыта как Telegram Mini App (н�
 if (!TICKET && window.tgTicket) tgTicket(API, 'stardodger').then(t => { if (t) TICKET = t; });
 let board = null;       // таблица рекордов чата (только в Telegram): { state: 'loading' | 'ok' | 'error', rows, newRecord }
 let globalBoard = null; // мировой рейтинг: { state, rows, rank, improved, sent }
+let menuBoard = null, menuBoardAt = 0; // рейтинг на экране запуска
+function loadMenuBoard() { // при запуске и при возврате в меню (не чаще раза в 30 с)
+  if (menuBoard && menuBoard.state === 'ok' && performance.now() - menuBoardAt < 30000) return;
+  menuBoardAt = performance.now(); const b = { state: 'loading', rows: [] }; if (!menuBoard || menuBoard.state !== 'ok') menuBoard = b;
+  fetch(API + '/global').then(r => r.json()).then(d => { menuBoard = { state: 'ok', rows: d.top || [] }; }).catch(() => { if (menuBoard === b) b.state = 'error'; });
+}
 let session = null;     // Promise с подписанной сессией партии от сервера (нужна для мирового рейтинга)
 let final = null;       // итог партии для отправки: { score, duration }
 const NAME_KEY = 'star-dodger-name';
@@ -272,13 +278,13 @@ async function submitScore() {
 }
 
 // таблица результатов в колонке от x1 до x2
-function drawTable(b, title, x1, x2, y) {
+function drawTable(b, title, x1, x2, y, maxRows = 10) {
   const cx = (x1 + x2) / 2, maxName = x2 - x1 < 260 ? 11 : 18;
   text(title, cx, y, 15, '#ffd76a');
   if (!b) return;
   if (b.state !== 'ok') { text(b.state === 'loading' ? 'Загрузка…' : 'Нет связи с сервером', cx, y + 26, 13, '#9aa5e0'); return; }
   if (!b.rows.length) { text('Пока пусто — будьте первым!', cx, y + 26, 13, '#9aa5e0'); return; }
-  const rows = b.rows.slice().sort((a, c) => a.pos - c.pos).slice(0, 10);
+  const rows = b.rows.slice().sort((a, c) => a.pos - c.pos).slice(0, maxRows);
   const me = b.rows.find(r => r.me);
   if (me && !rows.includes(me)) rows[rows.length - 1] = me;
   for (const r of rows) {
@@ -383,7 +389,7 @@ function draw() {
   text('Сбито: ' + kills, W - 14, 48, 14, '#9aa5e0', 'right');
   text('♥'.repeat(Math.max(0, lives)), 14, 52, 20, '#ff5d7a', 'left');
 
-  if (mode === 'menu') overlay('STAR DODGER', 'Стреляй, уворачивайся,\nсобирай кристаллы\nОгонь — пробел, клик или касание', 'Нажми пробел или тапни, чтобы начать');
+  if (mode === 'menu') { overlay('STAR DODGER', 'Стреляй, уворачивайся,\nсобирай кристаллы\nОгонь — пробел, клик или касание', 'Нажми пробел или тапни, чтобы начать'); drawTable(menuBoard, 'Мировой рейтинг', 110, 370, H / 2 + 135, 6); } // рейтинг виден до начала игры
   if (mode === 'pause') overlay('ПАУЗА', '', 'Пробел, P или тап — продолжить');
   if (mode === 'over') drawOver();
 }
@@ -438,3 +444,5 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+loadMenuBoard(); // рейтинг на экране запуска

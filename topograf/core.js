@@ -306,6 +306,33 @@ function drawMenuBackground() { // ожившая карта: горизонта
 }
 function modeButtons() { return { shift: { x: W / 2 - 124, y: 212, w: 120, h: 30 }, sand: { x: W / 2 + 4, y: 212, w: 120, h: 30 } }; }
 function menuArrows() { return { left: { x: W / 2 - 200, y: 268, w: 36, h: 32 }, right: { x: W / 2 + 164, y: 268, w: 36, h: 32 } }; }
+
+// ---------- рейтинг на экране запуска: строка с тройкой лучших, по тапу — весь топ-10 ----------
+let menuBoard = null, menuBoardAt = 0, boardOpen = false, boardBtn = null;
+function loadMenuBoard() { // при запуске и при возврате в меню (не чаще раза в 30 с)
+  if (performance.now() - menuBoardAt < 30000 && menuBoard && menuBoard.state === 'ok') return;
+  menuBoardAt = performance.now();
+  const b = { state: 'loading', rows: [] }; if (!menuBoard || menuBoard.state !== 'ok') menuBoard = b;
+  fetch(`${API}/global?game=${GAME}`).then(r => r.json()).then(d => { menuBoard = { state: 'ok', rows: d.top || [] }; }).catch(() => { if (menuBoard === b) b.state = 'error'; });
+}
+function drawMenuBoard(y) {
+  const b = menuBoard; let s;
+  if (!b || b.state === 'loading') s = '🏆 Мировой рейтинг: загрузка…';
+  else if (b.state !== 'ok') s = '🏆 Мировой рейтинг: нет связи с сервером';
+  else if (!b.rows.length) s = '🏆 Мировой рейтинг пока пуст — будь первым!';
+  else s = '🏆 ' + b.rows.slice(0, 3).map(r => `${r.pos}. ${r.name.length > 12 ? r.name.slice(0, 11) + '…' : r.name} — ${r.score}`).join(' · ') + '   ▸ весь топ';
+  ctx.font = 'bold 12px system-ui, sans-serif'; const w = Math.min(W - 24, ctx.measureText(s).width + 20);
+  boardBtn = { x: W / 2 - w / 2, y: y - 15, w, h: 22 };
+  ctx.fillStyle = 'rgba(20,14,10,.75)'; ctx.fillRect(boardBtn.x, boardBtn.y, w, 22);
+  ctx.strokeStyle = '#ffb02e'; ctx.lineWidth = 1; ctx.strokeRect(boardBtn.x + .5, boardBtn.y + .5, w - 1, 21);
+  fitText(ctx, s, W / 2, y, 12, '#f1e6d6');
+}
+function drawBoardOverlay() { // весь топ-10 поверх меню; любой тап или клавиша — закрыть
+  ctx.fillStyle = 'rgba(10,7,5,.9)'; ctx.fillRect(0, 0, W, H);
+  drawTable(menuBoard, 'Мировой рейтинг — топ 10', W / 2 - 170, W / 2 + 170, 52, 10);
+  text(ctx, IS_TOUCH ? 'Тап — назад' : 'Клик или пробел — назад', W / 2, H - 18, 12, '#c9b89e');
+}
+const hitBoardBtn = p => boardBtn && p.x > boardBtn.x && p.x < boardBtn.x + boardBtn.w && p.y > boardBtn.y - 4 && p.y < boardBtn.y + boardBtn.h + 4;
 function drawMenu() {
   ctx.fillStyle = 'rgba(15,10,8,.66)'; ctx.fillRect(0, 0, W, H);
   drawLogo(W / 2, 48, 32);
@@ -323,6 +350,8 @@ function drawMenu() {
     text(ctx, sandbox ? 'песочница — можно играть сколько угодно' : '★'.repeat(st) + '☆'.repeat(3 - st) + (menuLevel ? ' · тренировка — не в рейтинг' : ' · с первого уровня — в рейтинг'), W / 2, 308, 11, THEME.dim);
     button(ctx, a.left, '◀'); button(ctx, a.right, '▶');
   }
+  drawMenuBoard(340);
+  if (boardOpen) drawBoardOverlay();
 }
 function wrapLines(str, maxW, size) { // перенос строки по ширине
   ctx.font = `600 ${size}px system-ui, sans-serif`;
@@ -344,7 +373,7 @@ function drawIntro() { // карточка правил перед уровне�
   text(ctx, IS_TOUCH ? 'Тап — начать' : 'Пробел или клик — начать', W / 2, 306, 13, '#ffd76a');
 }
 function pauseButtons() { return { go: { x: W / 2 - 134, y: 160, w: 128, h: 44 }, menu: { x: W / 2 + 6, y: 160, w: 128, h: 44 } }; }
-function toMenu() { mode = 'menu'; inst = null; result = null; menuLevel = sandbox ? levelIdx : startLevel; nameForm.hidden = true; pointers.clear(); Sound.play('select'); }
+function toMenu() { loadMenuBoard(); mode = 'menu'; inst = null; result = null; menuLevel = sandbox ? levelIdx : startLevel; nameForm.hidden = true; pointers.clear(); Sound.play('select'); }
 function drawPause() {
   ctx.fillStyle = 'rgba(15,10,8,.7)'; ctx.fillRect(0, 0, W, H);
   text(ctx, 'ПАУЗА', W / 2, 130, 34, THEME.accent);
@@ -436,7 +465,7 @@ function advance() { // «тап по экрану» вне игры
   if (mode === 'pause') { mode = 'play'; return; }
   if (performance.now() - overAt < 500) return;
   if (mode === 'clear') nextLevel();
-  else if (mode === 'over') { mode = 'menu'; inst = null; menuLevel = startLevel; nameForm.hidden = true; }
+  else if (mode === 'over') { mode = 'menu'; inst = null; menuLevel = startLevel; nameForm.hidden = true; loadMenuBoard(); }
 }
 function selectLevel(d) { menuLevel = clamp(menuLevel + d, 0, maxSelectable() - 1); Sound.play('select'); }
 const pointers = new Set();
@@ -446,6 +475,8 @@ canvas.addEventListener('pointerdown', e => {
   const sb = SOUND_BTN();
   if (Math.hypot(p.x - sb.x, p.y - sb.y) < sb.r * 1.8) { Sound.toggleMute(); return; }
   { const mb = MUSIC_BTN(); if (p.x > mb.x - 4 && p.x < mb.x + mb.w + 4 && p.y > mb.y - 4 && p.y < mb.y + mb.h + 10) { toggleMusicSource(); return; } }
+  if (mode === 'menu' && boardOpen) { boardOpen = false; return; } // открыт топ-10 — тап закрывает
+  if (mode === 'menu' && hitBoardBtn(p)) { boardOpen = true; loadMenuBoard(); Sound.play('select'); return; }
   if (mode === 'menu') {
     const a = menuArrows();
     if (maxSelectable() > 1) { if (hit(a.left, p)) { selectLevel(-1); return; } if (hit(a.right, p)) { selectLevel(1); return; } }
@@ -470,6 +501,7 @@ addEventListener('keydown', e => {
   Sound.unlock();
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyM') { Sound.toggleMute(); return; }
+  if (mode === 'menu' && boardOpen) { if (!e.repeat) boardOpen = false; return; }
   if (mode === 'menu' && !e.repeat && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { selectLevel(e.code === 'ArrowLeft' ? -1 : 1); return; }
   if (mode === 'play') {
     if (e.code === 'KeyP' || e.code === 'Escape') { mode = 'pause'; return; }
@@ -495,6 +527,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 function startGame() {
+  loadMenuBoard();
   if (!MODES.length) throw new Error('Не загружено ни одного вида работ');
   layout();
   menuLevel = clamp(PARAMS.has('level') ? forcedLevel : 0, 0, LEVELS.length - 1);
