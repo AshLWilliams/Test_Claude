@@ -2480,6 +2480,33 @@ const inLink = p => groupLink && p.x > groupLink.x && p.x < groupLink.x + groupL
 
 function menuArrows() { return { left: { x: W / 2 - 190, y: 262, r: 16 }, right: { x: W / 2 + 190, y: 262, r: 16 } }; }
 
+
+// ---------- рейтинг на экране запуска: строка с тройкой лучших, по тапу — весь топ-10 ----------
+let menuBoard = null, menuBoardAt = 0, boardOpen = false, boardBtn = null;
+function loadMenuBoard() { // при запуске и при возврате в меню (не чаще раза в 30 с)
+  if (performance.now() - menuBoardAt < 30000 && menuBoard && menuBoard.state === 'ok') return;
+  menuBoardAt = performance.now();
+  const b = { state: 'loading', rows: [] }; if (!menuBoard || menuBoard.state !== 'ok') menuBoard = b;
+  fetch(`${API}/global?game=${GAME}`).then(r => r.json()).then(d => { menuBoard = { state: 'ok', rows: d.top || [] }; }).catch(() => { if (menuBoard === b) b.state = 'error'; });
+}
+function drawMenuBoard(y) {
+  const b = menuBoard; let s;
+  if (!b || b.state === 'loading') s = '🏆 Мировой рейтинг: загрузка…';
+  else if (b.state !== 'ok') s = '🏆 Мировой рейтинг: нет связи с сервером';
+  else if (!b.rows.length) s = '🏆 Мировой рейтинг пока пуст — будь первым!';
+  else s = '🏆 ' + b.rows.slice(0, 3).map(r => `${r.pos}. ${r.name.length > 12 ? r.name.slice(0, 11) + '…' : r.name} — ${r.score}`).join(' · ') + '   ▸ весь топ';
+  ctx.font = 'bold 12px system-ui, sans-serif'; const w = Math.min(W - 24, ctx.measureText(s).width + 20);
+  boardBtn = { x: W / 2 - w / 2, y: y - 15, w, h: 22 };
+  ctx.fillStyle = 'rgba(20,14,10,.75)'; ctx.fillRect(boardBtn.x, boardBtn.y, w, 22);
+  ctx.strokeStyle = '#ffb02e'; ctx.lineWidth = 1; ctx.strokeRect(boardBtn.x + .5, boardBtn.y + .5, w - 1, 21);
+  fitText(s, W / 2, y, 12, '#f1e6d6');
+}
+function drawBoardOverlay() { // весь топ-10 поверх меню; любой тап или клавиша — закрыть
+  ctx.fillStyle = 'rgba(10,7,5,.9)'; ctx.fillRect(0, 0, W, H);
+  drawTable(menuBoard, 'Мировой рейтинг — топ 10', W / 2 - 170, W / 2 + 170, 52, 10);
+  text(IS_TOUCH ? 'Тап — назад' : 'Клик или пробел — назад', W / 2, H - 18, 12, '#c9b89e');
+}
+const hitBoardBtn = p => boardBtn && p.x > boardBtn.x && p.x < boardBtn.x + boardBtn.w && p.y > boardBtn.y - 4 && p.y < boardBtn.y + boardBtn.h + 4;
 function drawMenu() {
   ctx.fillStyle = 'rgba(15,10,8,.72)'; ctx.fillRect(0, 0, W, H);
   drawLogo(W / 2, 50, 34);
@@ -2499,6 +2526,8 @@ function drawMenu() {
     }
   }
   text(IS_TOUCH ? 'Тап — начать смену' : 'Пробел или тап — начать смену', W / 2, 226, 14, '#ffd76a');
+  drawMenuBoard(318);
+  if (boardOpen) drawBoardOverlay();
 }
 
 function overlay(title, lines, hint) {
@@ -2614,7 +2643,7 @@ function startOrToggle() {
   else if (mode === 'play') mode = 'pause';
   else if (performance.now() - overAt < 600) return; // пауза после экрана, чтобы не пролистать его случайно
   else if (mode === 'clear') nextLevel();
-  else { mode = 'menu'; menuLevel = startLevel; nameForm.hidden = true; } // после финала — в меню: можно выбрать участок
+  else { mode = 'menu'; menuLevel = startLevel; nameForm.hidden = true; loadMenuBoard(); } // после финала — в меню: можно выбрать участок
 }
 function selectLevel(d) { Sound.play('select');
  const maxSel = Math.max(unlocked, forcedLevel + 1); menuLevel = clamp(menuLevel + d, 0, Math.min(maxSel, THEMES.length) - 1); }
@@ -2627,6 +2656,7 @@ const UP_KEYS = ['ArrowUp', 'KeyW']; // на лестнице ↑/W — лезт
 addEventListener('keydown', e => {
   if (e.target === nameInput) return;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  if (mode === 'menu' && boardOpen) { if (!e.repeat) boardOpen = false; return; }
   if (mode === 'menu' && KEYMAP[e.code] && !e.repeat) { if (KEYMAP[e.code] !== 'down') selectLevel(KEYMAP[e.code] === 'left' ? -1 : 1); return; }
   if (KEYMAP[e.code]) { kb[KEYMAP[e.code]] = true; syncInput(); return; }
   if (e.repeat) return;
@@ -2675,6 +2705,8 @@ canvas.addEventListener('pointerdown', e => {
   const p = toGame(e);
   const sb = SOUND_BTN();
   if (Math.hypot(p.x - sb.x, p.y - sb.y) < sb.r * 1.8) { Sound.unlock(); Sound.toggleMute(); return; } // кнопка звука работает в любом режиме
+  if (mode === 'menu' && boardOpen) { boardOpen = false; return; } // открыт топ-10 — тап закрывает
+  if (mode === 'menu' && hitBoardBtn(p)) { boardOpen = true; loadMenuBoard(); Sound.play('pickup'); return; }
   if (mode !== 'play' && inLink(p)) { openGroup(); return; } // ссылка на группу в меню и на финальном экране
   if (mode === 'menu') { // стрелки выбора участка
     const a = menuArrows();
@@ -2744,6 +2776,7 @@ function frame(now) {
 for (const ev of ['pointerdown', 'keydown', 'touchstart']) addEventListener(ev, () => Sound.unlock(), { capture: true, passive: true }); // звук разрешается первым нажатием
 
 function startGame() {
+  loadMenuBoard();
   if (!THEMES.length) throw new Error('Не загружено ни одной темы');
   layout();
   menuLevel = clamp(PARAMS.has('level') ? forcedLevel : 0, 0, THEMES.length - 1);
