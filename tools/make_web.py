@@ -15,6 +15,9 @@ for s, d in GAMES:
     t = (src / s).read_text(encoding='utf-8')
     t = re.sub(r'<script src="https://telegram\.org/js/telegram-web-app\.js"></script>\n?', '', t)
     t = re.sub(r'<script src="(?:\.\./)?webapp\.js[^"]*"></script>\n?', '<script>window.WEB_ONLY = true; // браузерная версия: без Telegram</script>\n', t)
+    fs = '../fullscreen.js' if '/' in d else 'fullscreen.js'
+    t = t.replace('</body>', f'<script src="{fs}?v=20261002b"></script>\n</body>', 1) # кнопка «На весь экран»
+    t = t.replace('<meta name="viewport"', '<meta name="mobile-web-app-capable" content="yes">\n<meta name="apple-mobile-web-app-capable" content="yes">\n<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n<meta name="viewport"', 1)
     t = re.sub(r'<title>(.*?)</title>', r'<title>\1 — в браузере</title>', t, count=1)
     t = re.sub(r'href="(surveyor/|topograf/|\.\./topograf/|\.\./surveyor/|\.\./)"', lambda m: f'href="{LINKS[m.group(1)]}"', t)
     hub = '../web/' if '/' in d else 'web/'
@@ -47,6 +50,8 @@ for s, d in GAMES:
   <h1>Игры в браузере</h1>
   <p>Отдельные версии без Telegram — открываются прямо в браузере, на компьютере и телефоне.
      Рейтинг общий с Telegram: после игры введи имя, и результат попадёт в тот же мировой топ.</p>
+  <p>На весь экран — кнопка «⛶» в игре или клавиша F. На iPhone браузер этого не умеет: открой игру, нажми «Поделиться» →
+     «На экран „Домой“» и запускай с иконки — она откроется без адресной строки.</p>
   <div class="games">
     <a class="game" href="../web.html"><b>★ Star Dodger</b><span>Космос, астероиды, стрельба</span></a>
     <a class="game" href="../surveyor/web.html"><b>⛑ Level Runner</b><span>Геодезист сдаёт объект: 10 участков и босс</span></a>

@@ -11,3 +11,6 @@ canvas { max-width: 96vw; max-height: 82vh; aspect-ratio: 3 / 4; background: #0a
 
 /* Telegram Mini App на весь экран: ниже кнопок «Закрыть» и «⋯» Telegram */
 html.tgapp main { padding: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px)) 0 var(--tg-safe-area-inset-bottom, 0px); box-sizing: border-box; }
+/* на весь экран (fullscreen.js): только холст, как можно крупнее */
+html.fs h1, html.fs .hint { display: none; }
+html.fs canvas { max-height: 98vh; max-width: 98vw; }
